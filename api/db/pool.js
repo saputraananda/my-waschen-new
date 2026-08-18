@@ -1,0 +1,56 @@
+import mysql from 'mysql2/promise';
+import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Ensure env variables are loaded if this file is imported directly in tests/scripts
+const envFile = process.env.NODE_ENV === 'production' ? '.env.prod' : '.env';
+const envPath = path.resolve(__dirname, '../../', envFile);
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+} else {
+  dotenv.config();
+}
+
+export const mainPool = mysql.createPool({
+  host: process.env.DB_HOST,
+  port: parseInt(process.env.DB_PORT || '3306'),
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME,
+  timezone: '+07:00',
+  waitForConnections: true,
+  connectionLimit: 10,
+  maxIdle: 10,
+  idleTimeout: 60000,
+  queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 10000, // 10 detik keep-alive ping
+  connectTimeout: 10000         // 10 detik timeout koneksi
+});
+
+export const myWaschenPool = mysql.createPool({
+  host: process.env.DB_HOST_MY_WASCHEN,
+  port: parseInt(process.env.DB_PORT_MY_WASCHEN || '3306'),
+  user: process.env.DB_USER_MY_WASCHEN,
+  password: process.env.DB_PASS_MY_WASCHEN,
+  database: process.env.DB_NAME_MY_WASCHEN,
+  timezone: '+07:00',
+  waitForConnections: true,
+  connectionLimit: 10,
+  maxIdle: 10,
+  idleTimeout: 60000,
+  queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 10000, // 10 detik keep-alive ping
+  connectTimeout: 10000         // 10 detik timeout koneksi
+});
+
+export default {
+  mainPool,
+  myWaschenPool
+};
