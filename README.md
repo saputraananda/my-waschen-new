@@ -1,52 +1,131 @@
-# Monorepo React + Express Starter
+# PT Waschen Alora Indonesia - My Waschen SuperApp
 
-Proyek ini adalah **starter template** untuk aplikasi full-stack dengan **React (Vite)** di frontend dan **Express.js** di backend, dijalankan bersamaan dengan `concurrently`.
+**My Waschen** adalah platform sistem manajemen laundry terpadu (SuperApp) yang dikembangkan untuk **PT Waschen Alora Indonesia**. Aplikasi ini dibangun menggunakan arsitektur monorepo modern dengan **React (Vite)** pada sisi *frontend* dan **Node.js (Express.js)** pada sisi *backend*.
 
-## Struktur
+---
+
+## 🚀 Fitur Utama
+
+- 📊 **Dashboard & Analisis Real-time**: Visualisasi data transaksi, grafik performa outlet, dan laporan keuangan berbasis [Recharts](https://recharts.org/).
+- 🔐 **Autentikasi & Keamanan**: Dukungan autentikasi berbasis JWT, enkripsi kata sandi, serta integrasi biometrik WebAuthn.
+- 🏢 **Multi-Tenant / Multi-Outlet Management**: Pengelolaan data outlet, pengguna, peran (roles), dan hak akses secara aman.
+- 🗄️ **Koneksi Multi-Database**: Dukungan koneksi ganda ke database SuperApp dan database operasional berbasis MySQL.
+- 🧾 **Laporan & Ekspor Data**: Pengolahan laporan Excel menggunakan `exceljs` dan manajemen gambar/upload menggunakan `sharp` & `multer`.
+
+---
+
+## 🛠️ Teknologi & Stack
+
+### Frontend
+- **Framework**: React 18 + Vite
+- **Styling**: Tailwind CSS, PostCSS, Autoprefixer
+- **UI & Icon**: Lucide React, SweetAlert2
+- **Routing & State**: React Router DOM (v6)
+- **Charts**: Recharts
+
+### Backend
+- **Runtime**: Node.js (ES Modules)
+- **Framework**: Express.js
+- **Database**: MySQL (driver `mysql2` dengan Connection Pooling)
+- **Keamanan**: JSON Web Token (`jsonwebtoken`), `bcryptjs`, CORS
+- **Pengolahan File**: Multer, Sharp, ExcelJS
+
+---
+
+## 📁 Struktur Direktori
 
 ```
-├── api/              # Backend Express (routes, controllers, models)
-├── src/              # Frontend React (components, pages, hooks)
-├── public/           # Static assets
-├── server.js         # Entry point Express
-├── vite.config.js    # Konfigurasi Vite
-└── package.json      # Dependencies & scripts
+my-waschen-new/
+├── api/                    # Backend API (Express.js)
+│   ├── controllers/        # Logika bisnis & pengolahan request (auth, info, dll.)
+│   ├── db/                 # Konfigurasi koneksi MySQL pool
+│   └── routes/             # Definisikan endpoint API
+├── public/                 # Asset statis publik
+├── src/                    # Frontend React
+│   ├── assets/             # Gambar & file statis pendukung
+│   ├── components/         # Komponen UI modular (Toast, Popups, Navbar, dll.)
+│   ├── pages/              # Halaman utama (Dashboard, LoginPage, dll.)
+│   ├── utils/              # Utility functions & helpers
+│   ├── App.jsx             # Router utama aplikasi
+│   ├── main.jsx            # Entry point React
+│   └── index.css           # Styling global & Tailwind CSS directives
+├── server.js               # Entry point Express API Server
+├── vite.config.js          # Konfigurasi Vite & Proxy API
+├── package.json            # Dependencies & Script npm
+└── README.md               # Dokumentasi proyek
 ```
 
-## Cara Pakai
+---
+
+## ⚙️ Persyaratan Sistem
+
+- **Node.js**: v18.0.0 atau yang lebih baru
+- **npm**: v9.0.0 atau yang lebih baru
+- **Database**: MySQL v8.0 / MariaDB
+
+---
+
+## 🚀 Panduan Instalasi & Penggunaan
+
+### 1. Clone Repository & Install Dependencies
+```bash
+git clone <repository-url>
+cd my-waschen-new
+npm install
+```
+
+### 2. Konfigurasi Environment Variable
+Buat file `.env` di root proyek menggunakan variabel contoh berikut:
+
+```env
+PORT=7001
+NODE_ENV=development
+CORS_ORIGIN=http://localhost:7000
+SESSION_SECRET=your_session_secret
+
+# Database SuperAPP
+DB_HOST=your_db_host
+DB_PORT=3306
+DB_USER=your_db_user
+DB_PASS=your_db_password
+DB_NAME=your_db_name
+
+# Database My Waschen
+DB_HOST_MY_WASCHEN=your_db_host
+DB_PORT_MY_WASCHEN=3306
+DB_USER_MY_WASCHEN=your_db_user
+DB_PASS_MY_WASCHEN=your_db_password
+DB_NAME_MY_WASCHEN=your_db_name
+```
+
+### 3. Menjalankan Aplikasi dalam Mode Development
+
+Aplikasi dapat dijalankan secara bersamaan (*concurrently*) untuk Frontend dan Backend:
 
 ```bash
-# Clone repository
-git clone <repo-url>
-cd <project-folder>
-
-# Install dependencies
-npm install
-
-# Jalankan development (server + client concurrently)
 npm run dev
 ```
 
-- Frontend: `http://localhost:7000`
-- Backend: `http://localhost:7001`
+- **Frontend App**: [http://localhost:7000](http://localhost:7000)
+- **Backend API**: [http://localhost:7001](http://localhost:7001)
 
-## Scripts
+---
 
-| Script          | Deskripsi                              |
-| --------------- | -------------------------------------- |
-| `npm run dev`   | Jalankan server & client bersamaan     |
-| `npm run dev:server` | Backend saja (nodemon)           |
-| `npm run dev:client` | Frontend saja (Vite)             |
-| `npm run build` | Build frontend untuk production        |
-| `npm start`     | Jalankan server production             |
-| `npm run preview` | Preview build Vite                  |
+## 📜 Daftar NPM Scripts
 
-## Ganti Nama Project
+| Script | Command | Deskripsi |
+| :--- | :--- | :--- |
+| `npm run dev` | `concurrently "nodemon server.js" "vite"` | Jalankan server backend & client frontend secara bersamaan |
+| `npm run dev:server` | `nodemon server.js` | Jalankan hanya backend Express (port 7001) |
+| `npm run dev:client` | `vite` | Jalankan hanya frontend Vite (port 7000) |
+| `npm run build` | `vite build` | Build bundle frontend untuk lingkungan produksi |
+| `npm start` | `node server.js` | Jalankan server Express di lingkungan produksi |
+| `npm run preview` | `vite preview` | Preview hasil build produksi dari Vite |
 
-Ubah field `"name"` di `package.json` sesuai nama project Anda:
+---
 
-```json
-{
-  "name": "nama-project-anda"
-}
-```
+## 🛡️ Hak Cipta & Lisensi
+
+© 2026 **PT Waschen Alora Indonesia**. All rights reserved.
+
+
