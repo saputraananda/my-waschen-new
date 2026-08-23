@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Sparkles, HelpCircle } from 'lucide-react';
-import maskotLogo from '../../assets/images/maskot.png';
+import maskotLogo from '../../assets/images/maskot.webp';
 
 export default function ChatbotBubble() {
   const [isOpen, setIsOpen] = useState(false);

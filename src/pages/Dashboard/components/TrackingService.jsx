@@ -1,0 +1,498 @@
+import React, { useState } from 'react';
+import {
+  Search,
+  Printer,
+  CheckCircle2,
+  Clock,
+  ArrowRight,
+  PackageCheck,
+  AlertCircle,
+  Truck,
+  Layers,
+  Shirt,
+  Wind,
+  X,
+  RotateCcw
+} from 'lucide-react';
+import { formatName } from '../../../utils/FormatName.js';
+
+const STATUS_STEPS = {
+  'Antrean': { text: 'text-slate-600', bg: 'bg-slate-100 border-slate-200', icon: Clock },
+  'Diterima': { text: 'text-slate-600', bg: 'bg-slate-100 border-slate-200', icon: Clock },
+  'Pencucian': { text: 'text-sky-700', bg: 'bg-sky-50 border-sky-200', icon: Wind },
+  'Proses Cuci': { text: 'text-sky-700', bg: 'bg-sky-50 border-sky-200', icon: Wind },
+  'Penyetrikaan': { text: 'text-indigo-700', bg: 'bg-indigo-50 border-indigo-200', icon: Shirt },
+  'Proses Setrika': { text: 'text-indigo-700', bg: 'bg-indigo-50 border-indigo-200', icon: Shirt },
+  'Pengemasan': { text: 'text-purple-700', bg: 'bg-purple-50 border-purple-200', icon: Layers },
+  'Proses Packing': { text: 'text-purple-700', bg: 'bg-purple-50 border-purple-200', icon: Layers },
+  'Siap Diambil': { text: 'text-amber-700', bg: 'bg-amber-50 border-amber-200', icon: PackageCheck },
+  'Siap Diantar': { text: 'text-blue-700', bg: 'bg-blue-50 border-blue-200', icon: Truck },
+  'Delivery': { text: 'text-blue-700', bg: 'bg-blue-50 border-blue-200', icon: Truck },
+  'Selesai': { text: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200', icon: CheckCircle2 }
+};
+
+export default function TrackingService({
+  filteredOrders,
+  orders,
+  searchQuery,
+  setSearchQuery,
+  activeFilterTab,
+  setActiveFilterTab,
+  handlePayOrder,
+  handleUpdateStatus,
+  handlePrintNota
+}) {
+  const [selectedOrderModal, setSelectedOrderModal] = useState(null);
+
+  // WhatsApp Helper
+  const handleOpenWA = (e, order) => {
+    if (e) e.stopPropagation();
+    let rawPhone = (order.customerPhone || '').replace(/[^0-9]/g, '');
+    if (rawPhone.startsWith('0')) {
+      rawPhone = '62' + rawPhone.slice(1);
+    }
+    if (!rawPhone) rawPhone = '628123456789';
+    const message = encodeURIComponent(`Halo Kak ${order.customerName || 'Pelanggan'}, update status pengerjaan nota ${order.id} Anda saat ini: ${order.workStatus}. Terima kasih telah mempercayakan Waschen Laundry! 😊`);
+    window.open(`https://wa.me/${rawPhone}?text=${message}`, '_blank');
+  };
+
+  // Filter States: Payment Status & Date
+  const [paymentFilter, setPaymentFilter] = useState('Semua');
+  const [dateFilter, setDateFilter] = useState('');
+
+  // Compute final displayed orders
+  const displayOrders = filteredOrders.filter(order => {
+    if (paymentFilter === 'Lunas' && order.paymentStatus !== 'Lunas') return false;
+    if (paymentFilter === 'Belum Lunas' && order.paymentStatus !== 'Belum Lunas') return false;
+
+    if (dateFilter) {
+      const orderDateStr = order.rawDate
+        ? new Date(order.rawDate).toISOString().slice(0, 10)
+        : '';
+      if (orderDateStr !== dateFilter) return false;
+    }
+
+    return true;
+  });
+
+  // Helper to count orders for each status tab
+  const getTabCount = (tabName) => {
+    const baseList = orders.filter(order => {
+      if (paymentFilter === 'Lunas' && order.paymentStatus !== 'Lunas') return false;
+      if (paymentFilter === 'Belum Lunas' && order.paymentStatus !== 'Belum Lunas') return false;
+      if (dateFilter) {
+        const orderDateStr = order.rawDate ? new Date(order.rawDate).toISOString().slice(0, 10) : '';
+        if (orderDateStr !== dateFilter) return false;
+      }
+      return true;
+    });
+
+    if (tabName === 'Semua') return baseList.length;
+    if (tabName === 'Antrean') return baseList.filter(o => o.workStatus === 'Antrean' || o.workStatus === 'Diterima').length;
+    if (tabName === 'Pencucian') return baseList.filter(o => o.workStatus === 'Pencucian' || o.workStatus === 'Proses Cuci').length;
+    if (tabName === 'Penyetrikaan') return baseList.filter(o => o.workStatus === 'Penyetrikaan' || o.workStatus === 'Proses Setrika').length;
+    if (tabName === 'Pengemasan') return baseList.filter(o => o.workStatus === 'Pengemasan' || o.workStatus === 'Proses Packing').length;
+    if (tabName === 'Siap Diambil / Diantar') return baseList.filter(o => o.workStatus === 'Siap Diambil' || o.workStatus === 'Siap Diantar' || o.workStatus === 'Delivery').length;
+    if (tabName === 'Selesai') return baseList.filter(o => o.workStatus === 'Selesai').length;
+    return 0;
+  };
+
+  return (
+    <div id="tracking-service-section" className="bg-white border border-[#e0e0e0]/70 rounded-3xl shadow-xs flex flex-col overflow-hidden transition-all duration-300">
+      {/* Table Header Controls (Sleek Single Line Toolbar) */}
+      <div className="p-4 sm:p-5 border-b border-[#e0e0e0]/70 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-slate-50/50">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-extrabold text-[#313030] tracking-tight">Antrean Cucian Hari Ini</h3>
+            <span className="px-2.5 py-0.5 rounded-full bg-[#5f1340]/10 text-[#5f1340] text-[10px] font-black border border-[#5f1340]/15">
+              {displayOrders.length} Order
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 font-medium mt-0.5">Klik baris untuk rincian status pengerjaan per item</p>
+        </div>
+
+        {/* Clean Filter Controls Toolbar */}
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          {/* Search Input */}
+          <div className="relative flex-1 md:w-56">
+            <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+            <input
+              id="tracking-search-input"
+              type="text"
+              placeholder="Cari Struk, Pelanggan..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-8 pr-7 py-1.5 border border-[#e0e0e0] rounded-xl text-xs bg-white focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340] outline-none font-medium text-[#313030]"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1.5 text-slate-400 text-xs font-bold">&times;</button>
+            )}
+          </div>
+
+          {/* Date Picker */}
+          <input
+            type="date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="px-2.5 py-1.5 border border-[#e0e0e0] rounded-xl text-xs font-bold text-[#313030] bg-white outline-none focus:border-[#5f1340] cursor-pointer"
+            title="Filter Tanggal Transaksi"
+          />
+
+          {/* Payment Status Dropdown Select */}
+          <select
+            value={paymentFilter}
+            onChange={(e) => setPaymentFilter(e.target.value)}
+            className="px-3 py-1.5 border border-[#e0e0e0] bg-white rounded-xl outline-none focus:border-[#5f1340] text-xs font-bold text-[#313030] cursor-pointer"
+          >
+            <option value="Semua">Semua Bayar</option>
+            <option value="Lunas">Lunas Only</option>
+            <option value="Belum Lunas">Belum Lunas Only</option>
+          </select>
+
+          {/* Reset Filters Button */}
+          {(dateFilter || paymentFilter !== 'Semua') && (
+            <button
+              type="button"
+              onClick={() => { setDateFilter(''); setPaymentFilter('Semua'); }}
+              className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-all cursor-pointer"
+              title="Reset Filter Tanggal & Bayar"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Filter Tabs with Live Counters */}
+      <div className="px-5 border-b border-[#e0e0e0]/60 flex gap-2 overflow-x-auto py-2.5 bg-slate-50/30 no-scrollbar">
+        {['Semua', 'Antrean', 'Pencucian', 'Penyetrikaan', 'Pengemasan', 'Siap Diambil / Diantar', 'Selesai'].map((tab) => {
+          const active = activeFilterTab === tab;
+          const count = getTabCount(tab);
+
+          return (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveFilterTab(tab)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                active
+                  ? 'bg-[#5f1340] text-white shadow-2xs font-extrabold'
+                  : 'bg-white border border-[#e0e0e0]/70 text-slate-600 hover:border-[#5f1340]/40 hover:text-[#5f1340]'
+              }`}
+            >
+              <span>{tab}</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
+                active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Table Content */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="border-b border-[#e0e0e0]/70 text-[10px] uppercase font-extrabold text-slate-400 tracking-wider bg-slate-50/70">
+              <th className="py-3.5 px-6">No. Struk Nota</th>
+              <th className="py-3.5 px-6 text-center">Pelanggan</th>
+              <th className="py-3.5 px-6 text-center">Status Pengerjaan</th>
+              <th className="py-3.5 px-6">Tagihan</th>
+              <th className="py-3.5 px-6 text-center">Status Bayar</th>
+              <th className="py-3.5 px-6 text-center">Aksi</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#e0e0e0]/40 text-xs font-medium">
+            {displayOrders.length === 0 ? (
+              <tr>
+                <td colSpan="6" className="py-12 text-center text-slate-400 font-bold">
+                  Tidak ada data antrean yang sesuai dengan filter.
+                </td>
+              </tr>
+            ) : (
+              displayOrders.map((order) => {
+                const statusMeta = STATUS_STEPS[order.workStatus] || { text: 'text-slate-600', bg: 'bg-slate-100 border-slate-200', icon: Clock };
+                const StatusIcon = statusMeta.icon;
+
+                return (
+                  <tr
+                    key={order.id}
+                    onClick={() => setSelectedOrderModal(order)}
+                    className="hover:bg-[#5f1340]/[0.03] cursor-pointer transition-colors group"
+                    title="Klik untuk melihat rincian pengerjaan per item"
+                  >
+                    {/* No Struk */}
+                    <td className="py-3.5 px-6 font-mono font-black text-[#5f1340] whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm tracking-tight group-hover:underline">{order.id}</span>
+                        {order.isDelivery && (
+                          <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[8px] font-extrabold px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+                            <Truck className="h-2.5 w-2.5" /> Delivery
+                          </span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Pelanggan */}
+                    <td className="py-3.5 px-6 text-center">
+                      <span className="font-extrabold text-[#313030] block leading-tight">{formatName(order.customerName)}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => handleOpenWA(e, order)}
+                        className="text-[10px] text-emerald-600 hover:text-emerald-700 font-mono font-bold mt-0.5 hover:underline cursor-pointer inline-flex items-center gap-0.5"
+                        title={`Klik untuk kirim pesan WhatsApp ke ${order.customerName}`}
+                      >
+                        <span>{order.customerPhone}</span>
+                      </button>
+                    </td>
+
+                    {/* Status Pengerjaan */}
+                    <td className="py-3.5 px-6 text-center whitespace-nowrap">
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-black shadow-2xs ${statusMeta.bg} ${statusMeta.text}`}>
+                        <StatusIcon className="h-3.5 w-3.5" />
+                        <span>{order.workStatus}</span>
+                      </span>
+                    </td>
+
+                    {/* Tagihan */}
+                    <td className="py-3.5 px-6 font-black text-[#313030] text-sm whitespace-nowrap">
+                      Rp {order.totalAmount.toLocaleString('id-ID')}
+                    </td>
+
+                    {/* Status Bayar */}
+                    <td className="py-3.5 px-6 text-center whitespace-nowrap">
+                      {order.paymentStatus === 'Lunas' ? (
+                        <span className="px-3 py-1 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black inline-flex items-center gap-1 shadow-2xs whitespace-nowrap">
+                          <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                          <span>Lunas ({order.paymentMethod})</span>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePayOrder(order.id);
+                          }}
+                          className="px-3 py-1 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 text-[10px] font-black inline-flex items-center gap-1 transition-all shadow-2xs cursor-pointer whitespace-nowrap group/pay"
+                          title="Klik untuk proses pelunasan nota"
+                        >
+                          <AlertCircle className="h-3 w-3 text-rose-600 group-hover/pay:text-white" />
+                          <span>Belum Lunas</span>
+                        </button>
+                      )}
+                    </td>
+
+                    {/* Aksi Kasir */}
+                    <td className="py-3.5 px-6 text-center whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePrintNota(order);
+                        }}
+                        className="p-2 rounded-xl border border-[#e0e0e0] bg-white hover:bg-[#5f1340] hover:text-white text-slate-700 transition-all cursor-pointer shadow-2xs inline-flex items-center justify-center group/print"
+                        title="Cetak Struk Nota Bluetooth"
+                      >
+                        <Printer className="h-4 w-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Table footer */}
+      <div className="p-4 border-t border-[#e0e0e0]/70 bg-slate-50/50 flex justify-between items-center text-[10px] text-slate-400 font-bold">
+        <span>Menampilkan {displayOrders.length} dari {orders.length} transaksi terdaftar</span>
+      </div>
+
+      {/* Modal Rincian Status Per Item */}
+      {selectedOrderModal && (
+        <div className="fixed inset-0 z-50 bg-[#313030]/60 backdrop-blur-sm flex justify-center items-center p-4">
+          <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-2xl shadow-2xl overflow-hidden animate-fade-in flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-[#e0e0e0] flex justify-between items-center bg-gradient-to-r from-slate-50 via-white to-pink-50/20">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-black text-[#313030]">Rincian Status Nota {selectedOrderModal.id}</h3>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                    (STATUS_STEPS[selectedOrderModal.workStatus] || {}).bg
+                  } ${(STATUS_STEPS[selectedOrderModal.workStatus] || {}).text}`}>
+                    Akumulasi: {selectedOrderModal.workStatus}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">Detail pengerjaan item cucian & status pelunasan</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedOrderModal(null)}
+                className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto flex flex-col gap-5 text-xs">
+              {/* Customer & Order Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 bg-slate-50 border border-[#e0e0e0] rounded-2xl">
+                <div>
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Pelanggan</span>
+                  <span className="font-extrabold text-[#313030] text-sm mt-0.5 block">{selectedOrderModal.customerName}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => handleOpenWA(e, selectedOrderModal)}
+                    className="text-[10px] text-emerald-600 hover:text-emerald-700 font-mono font-bold hover:underline cursor-pointer inline-flex items-center gap-0.5"
+                    title={`Kirim WA ke ${selectedOrderModal.customerName}`}
+                  >
+                    <span>{selectedOrderModal.customerPhone}</span>
+                  </button>
+                </div>
+                <div>
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Kategori & Parfum</span>
+                  <span className="font-extrabold text-[#313030] mt-0.5 block">{selectedOrderModal.serviceType}</span>
+                  <span className="text-[10px] text-pink-700 font-bold block">Aroma: {selectedOrderModal.perfume || 'Sakura Fresh'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Tagihan & Bayar</span>
+                  <span className="font-black text-[#5f1340] text-sm mt-0.5 block">Rp {selectedOrderModal.totalAmount.toLocaleString('id-ID')}</span>
+                  <span className={`text-[10px] font-extrabold ${selectedOrderModal.paymentStatus === 'Lunas' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {selectedOrderModal.paymentStatus} ({selectedOrderModal.paymentMethod})
+                  </span>
+                </div>
+              </div>
+
+              {/* Rincian Status Per Item Section */}
+              <div>
+                <div className="flex justify-between items-center mb-2.5">
+                  <h4 className="font-black text-[#313030] text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <Layers className="h-4 w-4 text-[#5f1340]" />
+                    <span>Rincian Pengerjaan Item Cucian ({selectedOrderModal.items?.length || 1} Item)</span>
+                  </h4>
+                  <span className="text-[10px] text-slate-400">Rata-Rata Pengerjaan Status</span>
+                </div>
+
+                <div className="border border-[#e0e0e0] rounded-2xl overflow-hidden">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100/70 border-b border-[#e0e0e0] text-[10px] uppercase font-extrabold text-slate-500 tracking-wider">
+                        <th className="py-2.5 px-4">Nama Item / Layanan</th>
+                        <th className="py-2.5 px-4">Qty</th>
+                        <th className="py-2.5 px-4">Status Item</th>
+                        <th className="py-2.5 px-4 text-right">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#e0e0e0] text-xs font-semibold">
+                      {(selectedOrderModal.items && selectedOrderModal.items.length > 0) ? (
+                        selectedOrderModal.items.map((it, idx) => {
+                          const itemMeta = STATUS_STEPS[it.status || selectedOrderModal.workStatus] || { text: 'text-slate-600', bg: 'bg-slate-100 border-slate-200', icon: Clock };
+                          const ItemIcon = itemMeta.icon;
+
+                          return (
+                            <tr key={it.id || idx} className="hover:bg-slate-50">
+                              <td className="py-3 px-4">
+                                <span className="font-extrabold text-[#313030] block">{it.serviceName || selectedOrderModal.serviceType}</span>
+                                {it.conditionNotes && (
+                                  <span className="text-[10px] text-slate-400 block font-normal mt-0.5">Catatan: {it.conditionNotes}</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 font-bold text-slate-600">
+                                {it.qty}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10px] font-black ${itemMeta.bg} ${itemMeta.text}`}>
+                                  <ItemIcon className="h-3 w-3" />
+                                  <span>{it.status || selectedOrderModal.workStatus}</span>
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-right font-mono font-bold text-[#313030]">
+                                Rp {(it.subtotal || selectedOrderModal.totalAmount).toLocaleString('id-ID')}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr className="hover:bg-slate-50">
+                          <td className="py-3 px-4 font-extrabold text-[#313030]">
+                            {selectedOrderModal.serviceType}
+                          </td>
+                          <td className="py-3 px-4 font-bold text-slate-600">
+                            {selectedOrderModal.qty}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10px] font-black bg-slate-100 border-slate-200 text-slate-700">
+                              <Clock className="h-3 w-3" />
+                              <span>{selectedOrderModal.workStatus}</span>
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono font-bold text-[#313030]">
+                            Rp {selectedOrderModal.totalAmount.toLocaleString('id-ID')}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Action Buttons Inside Modal */}
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-3 border-t border-[#e0e0e0] mt-2">
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleUpdateStatus(selectedOrderModal.id, selectedOrderModal.workStatus);
+                      setSelectedOrderModal(null);
+                    }}
+                    className="flex-1 sm:flex-initial px-4 py-2 bg-gradient-to-r from-[#5f1340] to-[#7d1956] hover:from-[#4d0f33] hover:to-[#6a1549] text-white text-xs font-black rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span>Lanjut Status ({selectedOrderModal.workStatus})</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+
+                  {selectedOrderModal.paymentStatus !== 'Lunas' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handlePayOrder(selectedOrderModal.id);
+                        setSelectedOrderModal(null);
+                      }}
+                      className="flex-1 sm:flex-initial px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl shadow-xs cursor-pointer"
+                    >
+                      Bayar Pelunasan
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex gap-2 w-full sm:w-auto justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handlePrintNota(selectedOrderModal);
+                    }}
+                    className="px-4 py-2 border border-[#e0e0e0] bg-white hover:bg-slate-800 hover:text-white text-slate-700 text-xs font-bold rounded-xl cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Printer className="h-4 w-4" />
+                    <span>Cetak Struk</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOrderModal(null)}
+                    className="px-4 py-2 border border-[#e0e0e0] bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+                  >
+                    Tutup
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

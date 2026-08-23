@@ -1,30 +1,15 @@
 import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import infoRoutes from './api/routes/info.routes.js';
-import authRoutes from './api/routes/auth/login.routes.js';
+import app from './api/index.js';
 
 // Resolve directory paths in ES module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load environment variables
-dotenv.config();
+const PORT = process.env.PORT || 7001;
 
-const app = express();
-const PORT = process.env.PORT || 5000;
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// API Routes
-app.use('/api/info', infoRoutes);
-app.use('/api/auth', authRoutes);
-
-// Serve static assets in production
+// Serve static assets in production (Hostinger / Standalone Server)
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, 'dist')));
 
@@ -34,15 +19,14 @@ if (process.env.NODE_ENV === 'production') {
   });
 } else {
   app.get('/', (req, res) => {
-    res.send('React & Express Starter Pack API Server is running. Frontend dev server is active on port 5173.');
+    res.send('My Waschen API Server is running. Frontend dev server is active on port 7000.');
   });
 }
 
 // Start Server
 app.listen(PORT, () => {
   console.log(`=========================================`);
-  console.log(`  React & Express Monorepo Starter Server `);
-  console.log(`  Status: Running                        `);
-  console.log(`  Port:   http://localhost:${PORT}        `);
+  console.log(`  My Waschen Server Status: Running     `);
+  console.log(`  Port: http://localhost:${PORT}        `);
   console.log(`=========================================`);
 });

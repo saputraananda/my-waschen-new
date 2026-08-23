@@ -15,17 +15,17 @@ import {
 import Toast from '../../components/Toast.jsx';
 
 // Import local images from assets/images
-import img1 from '../../assets/images/1.png';
-import img2 from '../../assets/images/2.png';
-import img3 from '../../assets/images/3.png';
-import img4 from '../../assets/images/4.png';
-import img5 from '../../assets/images/5.png';
-import img6 from '../../assets/images/6.png';
-import waschenLogo from '../../assets/images/waschen.png';
-import waschenLogoWhite from '../../assets/images/waschen_white.png';
-import maskotLogo from '../../assets/images/maskot.png';
-import maskotSadLogo from '../../assets/images/maskot_sad.png';
-import maskotHappyLogo from '../../assets/images/maskot_happy.png';
+import img1 from '../../assets/images/1.webp';
+import img2 from '../../assets/images/2.webp';
+import img3 from '../../assets/images/3.webp';
+import img4 from '../../assets/images/4.webp';
+import img5 from '../../assets/images/5.webp';
+import img6 from '../../assets/images/6.webp';
+import waschenLogo from '../../assets/images/waschen.webp';
+import waschenLogoWhite from '../../assets/images/waschen_white.webp';
+import maskotLogo from '../../assets/images/maskot.webp';
+import maskotSadLogo from '../../assets/images/maskot_sad.webp';
+import maskotHappyLogo from '../../assets/images/maskot_happy.webp';
 import ChatbotBubble from './ChatbotBubble.jsx';
 
 const SLIDES = [
@@ -130,12 +130,12 @@ export default function LoginPage() {
                         localStorage.setItem('activeOutletId', outlets[0].id);
                         localStorage.setItem('activeOutletName', outlets[0].full_name || outlets[0].name);
                     } else {
-                        localStorage.setItem('activeOutletId', '');
-                        localStorage.setItem('activeOutletName', 'Outlet Waschen');
+                        localStorage.setItem('activeOutletId', '2');
+                        localStorage.setItem('activeOutletName', 'Waschen Laundry Citra Gran');
                     }
                 } else {
-                    localStorage.setItem('activeOutletId', user.assignedOutletId || '');
-                    localStorage.setItem('activeOutletName', user.assignedOutletName || 'Outlet Waschen');
+                    localStorage.setItem('activeOutletId', user.assignedOutletId || '2');
+                    localStorage.setItem('activeOutletName', user.assignedOutletName || 'Waschen Laundry Citra Gran');
                 }
 
                 setWelcomeName(user.fullName || user.username);

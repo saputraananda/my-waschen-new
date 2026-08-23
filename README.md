@@ -39,7 +39,9 @@ my-waschen-new/
 ├── api/                    # Backend API (Express.js)
 │   ├── controllers/        # Logika bisnis & pengolahan request (auth, info, dll.)
 │   ├── db/                 # Konfigurasi koneksi MySQL pool
-│   └── routes/             # Definisikan endpoint API
+│   ├── middleware/         # Middleware Express (upload, auth, dll.)
+│   ├── routes/             # Definisikan endpoint API
+│   └── index.js            # Entry point Serverless Function (Vercel) & Express App Instance
 ├── public/                 # Asset statis publik
 ├── src/                    # Frontend React
 │   ├── assets/             # Gambar & file statis pendukung
@@ -49,7 +51,8 @@ my-waschen-new/
 │   ├── App.jsx             # Router utama aplikasi
 │   ├── main.jsx            # Entry point React
 │   └── index.css           # Styling global & Tailwind CSS directives
-├── server.js               # Entry point Express API Server
+├── server.js               # Standalone Entry Point Server (Lokal / Hostinger)
+├── vercel.json             # Konfigurasi rewrite rute untuk Vercel Deployment
 ├── vite.config.js          # Konfigurasi Vite & Proxy API
 ├── package.json            # Dependencies & Script npm
 └── README.md               # Dokumentasi proyek
