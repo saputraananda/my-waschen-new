@@ -1,13 +1,18 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { ShiftProvider } from './context/ShiftContext.jsx';
+import { AppDialogProvider } from './context/AppDialogContext.jsx';
 import Dashboard from './pages/Dashboard/index.jsx';
 import Transaction from './pages/Transaction/index.jsx';
+import TransactionComplete from './pages/Transaction/components/Complete.jsx';
 import Customer from './pages/Customer/index.jsx';
 import Services from './pages/Services/index.jsx';
 import PettyCash from './pages/PettyCash/index.jsx';
 import Membership from './pages/Membership/index.jsx';
 import HistoryPage from './pages/History/index.jsx';
+import DetailTransaction from './pages/History/components/DetailTransaction.jsx';
 import LoginPage from './pages/auth/LoginPage.jsx';
+import DailyReport from './pages/DailyReport/index.jsx';
 
 function App() {
   // Global Modal Backdrop Freeze: Prevents background scrolling across all pages whenever any modal is active
@@ -66,18 +71,26 @@ function App() {
 
   return (
     <Router>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/transaction" element={<Transaction />} />
-        <Route path="/customer" element={<Customer />} />
-        <Route path="/membership" element={<Membership />} />
-        <Route path="/riwayat" element={<HistoryPage />} />
-        <Route path="/history" element={<HistoryPage />} />
-        <Route path="/services" element={<Services />} />
-        <Route path="/petty-cash" element={<PettyCash />} />
-        <Route path="/login" element={<LoginPage />} />
-      </Routes>
+      <AppDialogProvider>
+        <ShiftProvider>
+          <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/transaction" element={<Transaction />} />
+          <Route path="/transaction/complete" element={<TransactionComplete />} />
+          <Route path="/customer" element={<Customer />} />
+          <Route path="/membership" element={<Membership />} />
+          <Route path="/riwayat" element={<HistoryPage />} />
+          <Route path="/riwayat/:orderNo" element={<DetailTransaction />} />
+          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/history/:orderNo" element={<DetailTransaction />} />
+          <Route path="/services" element={<Services />} />
+          <Route path="/petty-cash" element={<PettyCash />} />
+          <Route path="/daily-report" element={<DailyReport />} />
+          <Route path="/login" element={<LoginPage />} />
+        </Routes>
+        </ShiftProvider>
+      </AppDialogProvider>
     </Router>
   );
 }

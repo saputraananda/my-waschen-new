@@ -4,17 +4,26 @@ import {
   getTransactions,
   getTransactionDetail,
   updateWorkStatus,
+  updateItemWorkStatus,
   markTransactionAsPaid,
-  requestDeleteTransaction
+  requestDeleteTransaction,
+  settlePaymentBatch,
+  getPaymentBatchByNo
 } from '../controllers/transaction.controller.js';
 
 const router = express.Router();
 
 router.post('/', createTransaction);
 router.get('/', getTransactions);
+router.post('/settle-batch', settlePaymentBatch);
+router.get('/batch/:batchNo', getPaymentBatchByNo);
 router.get('/:orderNo', getTransactionDetail);
+router.patch('/:id/items/:itemId/status', updateItemWorkStatus);
+router.put('/:id/items/:itemId/status', updateItemWorkStatus);
 router.patch('/:id/status', updateWorkStatus);
+router.put('/:id/status', updateWorkStatus);
 router.patch('/:id/pay', markTransactionAsPaid);
+router.put('/:id/pay', markTransactionAsPaid);
 router.patch('/:id/request-delete', requestDeleteTransaction);
 
 export default router;

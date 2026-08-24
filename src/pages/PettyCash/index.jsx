@@ -59,7 +59,7 @@ export default function PettyCash() {
       role: isHq ? 'Management Alora' : (localStorage.getItem('activeRole') || 'Staff Kasir')
     });
 
-    axios.get('/api/outlets')
+    axios.get('/api/masters/outlets')
       .then(res => {
         if (res.data && res.data.success && res.data.data.length > 0) {
           setOutlets(res.data.data);

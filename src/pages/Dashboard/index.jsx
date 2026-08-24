@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav.jsx';
 import Toast from '../../components/Toast.jsx';
+import { getSocket, joinOutletRoom } from '../../utils/socket.js';
 
 // Layout Subcomponents
 import Banner from './components/Banner.jsx';
@@ -12,10 +13,15 @@ import PettyCashCard from './components/PettyCashCard.jsx';
 import CustomerChurn from './components/CustomerChurn.jsx';
 import TrackingService from './components/TrackingService.jsx';
 import ModalLacakNota from '../../components/ModalLacakNota.jsx';
+import BadgeShift from './components/BadgeShift.jsx';
+import { useShift } from '../../context/ShiftContext.jsx';
+import { matchesWorkStatusTab, getWorkPercentage } from '../../utils/workStatusMeta.js';
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { activeShift, openCloseModal, startOrderFlow, requestOpenShift } = useShift();
   const [userProfile, setUserProfile] = useState(null);
+  const refreshTimerRef = useRef(null);
 
   // Modal Lacak Nota State
   const [isLacakNotaModalOpen, setIsLacakNotaModalOpen] = useState(false);
@@ -76,7 +82,7 @@ export default function Dashboard() {
       profilePath: localStorage.getItem('profilePath') || ''
     });
 
-    axios.get('/api/outlets')
+    axios.get('/api/masters/outlets')
       .then(res => {
         if (res.data && res.data.success && res.data.data.length > 0) {
           setOutlets(res.data.data);
@@ -88,7 +94,7 @@ export default function Dashboard() {
     fetchLiveDashboardData();
   }, [navigate]);
 
-  const fetchLiveDashboardData = async () => {
+  const fetchLiveDashboardData = useCallback(async () => {
     try {
       const [trxRes, custRes, pettyRes] = await Promise.all([
         axios.get('/api/transactions'),
@@ -96,8 +102,8 @@ export default function Dashboard() {
         axios.get('/api/petty-cash')
       ]);
 
-      if (trxRes.data && trxRes.data.success && trxRes.data.data.length > 0) {
-        const mappedOrders = trxRes.data.data.map(o => ({
+      if (trxRes.data && trxRes.data.success) {
+        const mappedOrders = (trxRes.data.data || []).map(o => ({
           id: o.order_no,
           dbId: o.id,
           customerName: o.customer_name || 'Pelanggan',
@@ -109,12 +115,16 @@ export default function Dashboard() {
           perfume: o.parfume_name || 'Standar',
           speed: o.speed_name || 'Reguler',
           totalAmount: parseFloat(o.grand_total) || 0,
-          paymentStatus: o.payment_status || 'Belum Lunas',
+          paidAmount: parseFloat(o.paid_amount) || 0,
+          paymentStatus: o.payment_status || 'Outstanding',
           paymentMethod: o.payment_method || '-',
-          workStatus: o.work_status || 'Antrean',
+          paymentProofUrl: o.payment_proof_url || null,
+          workStatus: o.work_status ?? 10,
           isDelivery: o.is_delivery === 1,
           rawDate: o.order_date ? new Date(o.order_date) : new Date(),
-          createdAt: new Date(o.order_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+          createdAt: o.order_date
+            ? new Date(o.order_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+            : '-',
           logs: o.logs || ['Cetak Nota Diterima'],
           items: o.items && o.items.length > 0 ? o.items.map(it => ({
             id: it.id,
@@ -122,25 +132,28 @@ export default function Dashboard() {
             qty: `${it.qty} ${it.unit || 'Pcs'}`,
             unitPrice: parseFloat(it.unit_price) || 0,
             subtotal: parseFloat(it.subtotal) || 0,
-            status: it.item_work_status || o.work_status || 'Antrean',
+            status: it.item_work_status || 'Antrean',
             brand: it.brand,
             color: it.color,
-            conditionNotes: it.condition_notes
+            material: it.material,
+            size: it.size,
+            conditionNotes: it.condition_notes,
+            isCleanox: it.is_cleanox === 1
           })) : [
             {
               id: 1,
               serviceName: o.order_category === 'Kiloan' ? 'Cuci Kiloan Reguler' : 'Pakaian Satuan',
               qty: o.order_category === 'Kiloan' ? `${o.total_weight_kg} Kg` : `${o.total_pcs} Pcs`,
               subtotal: parseFloat(o.grand_total) || 0,
-              status: o.work_status || 'Antrean'
+              status: 'Antrean'
             }
           ]
         }));
         setOrders(mappedOrders);
       }
 
-      if (custRes.data && custRes.data.success && custRes.data.data.length > 0) {
-        const mappedCusts = custRes.data.data.map(c => ({
+      if (custRes.data && custRes.data.success) {
+        const mappedCusts = (custRes.data.data || []).map(c => ({
           id: c.customer_code || `CUST-${String(c.id).padStart(3, '0')}`,
           dbId: c.id,
           name: c.name,
@@ -170,7 +183,42 @@ export default function Dashboard() {
     } catch (err) {
       console.error('Gagal mengambil live data dashboard:', err);
     }
-  };
+  }, []);
+
+  // Realtime: refresh dashboard when backend emits changes
+  useEffect(() => {
+    const socket = getSocket();
+    joinOutletRoom(activeOutletId);
+
+    const scheduleRefresh = (payload = {}) => {
+      if (payload.outletId != null && String(payload.outletId) !== String(activeOutletId)) {
+        // Still refresh — multi-outlet HQ may want all data; outlet filter is client-side soft
+      }
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = setTimeout(() => {
+        fetchLiveDashboardData();
+      }, 250);
+    };
+
+    socket.on('dashboard:refresh', scheduleRefresh);
+    socket.on('transaction:created', scheduleRefresh);
+    socket.on('transaction:updated', scheduleRefresh);
+    socket.on('transaction:paid', scheduleRefresh);
+    socket.on('petty-cash:updated', scheduleRefresh);
+    socket.on('customer:updated', scheduleRefresh);
+    socket.on('shift:updated', scheduleRefresh);
+
+    return () => {
+      socket.off('dashboard:refresh', scheduleRefresh);
+      socket.off('transaction:created', scheduleRefresh);
+      socket.off('transaction:updated', scheduleRefresh);
+      socket.off('transaction:paid', scheduleRefresh);
+      socket.off('petty-cash:updated', scheduleRefresh);
+      socket.off('customer:updated', scheduleRefresh);
+      socket.off('shift:updated', scheduleRefresh);
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    };
+  }, [activeOutletId, fetchLiveDashboardData]);
 
   // Calculate Churn Status for each customer
   const customersWithChurn = customers.map(c => {
@@ -228,7 +276,7 @@ export default function Dashboard() {
   });
 
   const renderChurnBadge = (status, days) => {
-    const daysText = days !== null ? `${days} hr lalu` : 'Belum Trx';
+    const daysText = days !== null ? `${days} hari lalu` : 'Belum Transaksi';
     switch (status) {
       case 'Active':
         return <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[8px] font-black px-1.5 py-0.5 rounded shadow-2xs">Active &bull; {daysText}</span>;
@@ -250,7 +298,7 @@ export default function Dashboard() {
       try {
         const outlet = activeOutletName || localStorage.getItem('activeOutletName') || '';
         const now = new Date();
-        const res = await axios.get('/api/target', {
+        const res = await axios.get('/api/masters/target', {
           params: {
             outlet,
             tahun: now.getFullYear(),
@@ -277,74 +325,6 @@ export default function Dashboard() {
     setToast(prev => ({ ...prev, isOpen: false }));
   };
 
-  // Handle Order Status Life-cycle Transition (Lanjut Status)
-  const handleUpdateStatus = async (orderId, currentStatus) => {
-    const statusFlow = ['Antrean', 'Pencucian', 'Penyetrikaan', 'Pengemasan', 'Siap Diambil', 'Selesai'];
-    const currIdx = statusFlow.indexOf(currentStatus);
-
-    if (currIdx === -1 || currIdx === statusFlow.length - 1) {
-      showToast('Status Maksimal', `Order ${orderId} sudah mencapai status akhir (${currentStatus})`, 'info');
-      return;
-    }
-
-    const nextStatus = statusFlow[currIdx + 1];
-
-    try {
-      const orderObj = orders.find(o => o.id === orderId);
-      if (!orderObj || !orderObj.dbId) {
-        showToast('Gagal Update', 'ID Transaksi tidak ditemukan', 'error');
-        return;
-      }
-
-      const res = await axios.put(`/api/transactions/${orderObj.dbId}/status`, {
-        workStatus: nextStatus,
-        employeeId: parseInt(localStorage.getItem('employeeId')) || 167,
-        notes: `Update otomatis dari Dashboard (${currentStatus} -> ${nextStatus})`
-      });
-
-      if (res.data && res.data.success) {
-        showToast('Status Diperbarui', `Order ${orderId} berpindah ke tahap ${nextStatus}`, 'success');
-        fetchLiveDashboardData();
-      } else {
-        showToast('Gagal Update', res.data?.message || 'Gagal mengubah status', 'error');
-      }
-    } catch (err) {
-      console.error('Gagal update status:', err);
-      showToast('Gagal Update', err.response?.data?.message || 'Koneksi server terganggu', 'error');
-    }
-  };
-
-  // Handle Mark As Paid (Pelunasan Nota)
-  const handlePayOrder = async (orderId) => {
-    const orderObj = orders.find(o => o.id === orderId);
-    if (!orderObj || !orderObj.dbId) {
-      showToast('Gagal Pelunasan', 'Nota tidak ditemukan', 'error');
-      return;
-    }
-
-    if (orderObj.paymentStatus === 'Lunas') {
-      showToast('Sudah Lunas', `Nota ${orderId} sudah berstatus Lunas!`, 'info');
-      return;
-    }
-
-    try {
-      const res = await axios.put(`/api/transactions/${orderObj.dbId}/pay`, {
-        paymentMethod: 'Tunai',
-        paidAmount: orderObj.totalAmount
-      });
-
-      if (res.data && res.data.success) {
-        showToast('Pelunasan Sukses', `Nota ${orderId} ber-nominal Rp ${orderObj.totalAmount.toLocaleString('id-ID')} telah LUNAS!`, 'success');
-        fetchLiveDashboardData();
-      } else {
-        showToast('Gagal Pelunasan', res.data?.message || 'Gagal mengubah status bayar', 'error');
-      }
-    } catch (err) {
-      console.error('Gagal pelunasan:', err);
-      showToast('Gagal Pelunasan', err.response?.data?.message || 'Koneksi server gagal', 'error');
-    }
-  };
-
   // Print Thermal Slip Trigger
   const handlePrintNota = (order) => {
     showToast('Cetak Nota Thermal', `Mengirim perintah cetak nota ${order.id} ke printer bluetooth POS...`, 'info');
@@ -355,9 +335,12 @@ export default function Dashboard() {
     .filter(o => o.paymentStatus === 'Lunas')
     .reduce((acc, curr) => acc + curr.totalAmount, 0);
 
-  const activeOrdersCount = orders.filter(o => o.workStatus === 'Antrean' || o.workStatus === 'Diterima').length;
-  const readyOrdersCount = orders.filter(o => o.workStatus === 'Siap Diambil' || o.workStatus === 'Siap Diantar').length;
-  const unpaidOrdersCount = orders.filter(o => o.paymentStatus === 'Belum Lunas').length;
+  const activeOrdersCount = orders.filter((o) => {
+    const pct = getWorkPercentage(o.workStatus);
+    return pct > 0 && pct < 100;
+  }).length;
+  const readyOrdersCount = orders.filter((o) => matchesWorkStatusTab(o.workStatus, 'Siap Diambil')).length;
+  const unpaidOrdersCount = orders.filter(o => o.paymentStatus !== 'Lunas').length;
 
   // Cash log sum calculations
   const totalCashIn = cashLogs.filter(c => c.type === 'Masuk').reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
@@ -371,13 +354,7 @@ export default function Dashboard() {
       order.serviceType.toLowerCase().includes(searchQuery.toLowerCase());
 
     if (activeFilterTab === 'Semua') return matchesSearch;
-    if (activeFilterTab === 'Antrean') return matchesSearch && (order.workStatus === 'Antrean' || order.workStatus === 'Diterima');
-    if (activeFilterTab === 'Pencucian') return matchesSearch && (order.workStatus === 'Pencucian' || order.workStatus === 'Proses Cuci');
-    if (activeFilterTab === 'Penyetrikaan') return matchesSearch && (order.workStatus === 'Penyetrikaan' || order.workStatus === 'Proses Setrika');
-    if (activeFilterTab === 'Pengemasan') return matchesSearch && (order.workStatus === 'Pengemasan' || order.workStatus === 'Proses Packing');
-    if (activeFilterTab === 'Siap Diambil / Diantar') return matchesSearch && (order.workStatus === 'Siap Diambil' || order.workStatus === 'Siap Diantar');
-    if (activeFilterTab === 'Selesai') return matchesSearch && order.workStatus === 'Selesai';
-    return matchesSearch;
+    return matchesSearch && matchesWorkStatusTab(order.workStatus, activeFilterTab);
   });
 
   return (
@@ -395,6 +372,8 @@ export default function Dashboard() {
         setActiveOutletId={setActiveOutletId}
         outlets={outlets}
         userProfile={userProfile}
+        activeShift={activeShift}
+        onRequestCloseShift={openCloseModal}
       />
 
       {/* Main Workspace Layout */}
@@ -402,15 +381,23 @@ export default function Dashboard() {
 
         {/* Left / Middle Main Column */}
         <div className="xl:col-span-3 flex flex-col gap-5 lg:gap-6">
+          <BadgeShift
+            shift={activeShift}
+            currentEmployeeId={localStorage.getItem('employeeId')}
+            onOpenClose={openCloseModal}
+            onOpenShift={() => requestOpenShift()}
+          />
+
           <Banner
             userProfile={userProfile}
             orders={orders}
             showToast={showToast}
             navigate={navigate}
             onOpenLacakNotaModal={() => setIsLacakNotaModalOpen(true)}
+            onOrderClick={startOrderFlow}
           />
 
-          <Menu navigate={navigate} />
+          <Menu navigate={navigate} onOrderClick={startOrderFlow} />
 
           <StatCard
             todayRevenue={todayRevenue}
@@ -429,9 +416,9 @@ export default function Dashboard() {
             setSearchQuery={setSearchQuery}
             activeFilterTab={activeFilterTab}
             setActiveFilterTab={setActiveFilterTab}
-            handlePayOrder={handlePayOrder}
-            handleUpdateStatus={handleUpdateStatus}
             handlePrintNota={handlePrintNota}
+            showToast={showToast}
+            fetchLiveDashboardData={fetchLiveDashboardData}
           />
         </div>
 

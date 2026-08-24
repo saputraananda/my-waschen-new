@@ -76,7 +76,7 @@ export const loginUser = async (req, res) => {
 
     if (user.employee_id) {
       const [roleRows] = await myWaschenPool.query(
-        'SELECT role, outlet_id FROM mst_role WHERE employee_id = ? LIMIT 1',
+        'SELECT role, outlet_id, code_pin FROM mst_role WHERE employee_id = ? LIMIT 1',
         [user.employee_id]
       );
       if (roleRows.length > 0) {
@@ -84,7 +84,7 @@ export const loginUser = async (req, res) => {
         assignedOutletId = roleRows[0].outlet_id;
 
         if (assignedOutletId) {
-          const [outletRows] = await mainPool.query(
+          const [outletRows] = await myWaschenPool.query(
             'SELECT name, full_name FROM mst_outlet WHERE id = ? LIMIT 1',
             [assignedOutletId]
           );
@@ -98,7 +98,7 @@ export const loginUser = async (req, res) => {
     // Fetch all outlets for company_id = 1
     let outlets = [];
     if (user.company_id === 1) {
-      const [outletRows] = await mainPool.query(
+      const [outletRows] = await myWaschenPool.query(
         'SELECT id, name, full_name FROM mst_outlet ORDER BY name ASC'
       );
       outlets = outletRows;

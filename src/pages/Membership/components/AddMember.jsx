@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
@@ -9,12 +9,13 @@ import {
   UserCheck
 } from 'lucide-react';
 
-const getDefaultForm = (activeOutletName) => ({
+const getDefaultForm = (activeOutletName, pkg = null) => ({
   name: '',
   phone: '',
   address: '',
-  tier: 'VIP',
-  initialDeposit: 200000,
+  packageId: pkg?.id || '',
+  membershipTier: pkg?.tier || 'Gold',
+  initialDeposit: pkg ? Number(pkg.top_up_amount || 0) : 0,
   homeBranch: activeOutletName,
   paymentMethod: 'Tunai'
 });
@@ -27,8 +28,52 @@ export default function AddMember({
   onSwitchToCatalog
 }) {
   const navigate = useNavigate();
+  const [packages, setPackages] = useState([]);
+  const [paymentMethods, setPaymentMethods] = useState([]);
   const [newMemberForm, setNewMemberForm] = useState(() => getDefaultForm(activeOutletName));
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      axios.get('/api/memberships/packages'),
+      axios.get('/api/masters/payment-methods')
+    ])
+      .then(([pkgRes, payRes]) => {
+        if (pkgRes.data?.success && pkgRes.data.data?.length > 0) {
+          const list = pkgRes.data.data;
+          setPackages(list);
+          setNewMemberForm((prev) => ({
+            ...prev,
+            ...getDefaultForm(activeOutletName, list[0]),
+            name: prev.name,
+            phone: prev.phone,
+            address: prev.address,
+            homeBranch: prev.homeBranch || activeOutletName,
+            paymentMethod: prev.paymentMethod || 'Tunai'
+          }));
+        }
+        if (payRes.data?.success) {
+          const methods = (payRes.data.data || []).filter((m) => !m.requires_member_balance);
+          setPaymentMethods(methods);
+          if (methods[0]) {
+            setNewMemberForm((prev) => ({ ...prev, paymentMethod: prev.paymentMethod || methods[0].name }));
+          }
+        }
+      })
+      .catch((err) => console.error('Gagal memuat paket/payment master:', err));
+  }, [activeOutletName]);
+
+  const handlePackageChange = (packageId) => {
+    const pkg = packages.find((p) => String(p.id) === String(packageId));
+    if (!pkg) return;
+    setNewMemberForm((prev) => ({
+      ...prev,
+      packageId: pkg.id,
+      tier: pkg.tier || prev.membershipTier,
+      membershipTier: pkg.tier || prev.membershipTier,
+      initialDeposit: Number(pkg.top_up_amount || 0)
+    }));
+  };
 
   const handleRegisterMember = async (e) => {
     e.preventDefault();
@@ -39,22 +84,35 @@ export default function AddMember({
 
     setIsSubmitting(true);
     try {
-      const res = await axios.post('/api/customers', {
+      const custRes = await axios.post('/api/customers', {
         name: newMemberForm.name.trim(),
         phone: newMemberForm.phone.trim(),
         address: newMemberForm.address || null,
-        tier: newMemberForm.tier || 'VIP',
+        tier: 'One-Time',
         homeBranch: newMemberForm.homeBranch || activeOutletName,
-        depositBalance: newMemberForm.initialDeposit || 0
+        depositBalance: 0
       });
 
-      if (res.data && res.data.success) {
-        showToast('Member Baru Terdaftar', `${newMemberForm.name} berhasil didaftarkan ke database!`);
-        setNewMemberForm(getDefaultForm(activeOutletName));
+      if (!custRes.data?.success) {
+        showToast('Gagal Mendaftar', custRes.data?.message || 'Terjadi kesalahan server', 'error');
+        return;
+      }
+
+      const customerId = custRes.data.data.id;
+      const memRes = await axios.post('/api/memberships', {
+        customerId,
+        packageId: newMemberForm.packageId,
+        outletId: parseInt(localStorage.getItem('activeOutletId')) || 2,
+        paymentMethod: newMemberForm.paymentMethod
+      });
+
+      if (memRes.data?.success) {
+        showToast('Member Baru Terdaftar', `${newMemberForm.name} — paket ${newMemberForm.membershipTier} berhasil diaktifkan!`);
+        setNewMemberForm(getDefaultForm(activeOutletName, packages[0] || null));
         onMemberRegistered();
         setTimeout(() => onSwitchToCatalog(), 1000);
       } else {
-        showToast('Gagal Mendaftar', res.data?.message || 'Terjadi kesalahan server', 'error');
+        showToast('Gagal Aktivasi Paket', memRes.data?.message || 'Pelanggan tersimpan, paket gagal diaktifkan', 'error');
       }
     } catch (err) {
       console.error('Gagal register member:', err);
@@ -134,20 +192,27 @@ export default function AddMember({
         <div className="p-5 border border-[#e0e0e0] rounded-2xl bg-[#f8f8f8]/50 flex flex-col gap-4">
           <div className="flex items-center gap-2 border-b border-[#e0e0e0] pb-2 text-[#5f1340] font-black text-xs uppercase tracking-wider">
             <CreditCard className="h-4 w-4" />
-            <span>2. Tier & Saldo Awal</span>
+            <span>2. Paket & Saldo Awal</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-black text-slate-700">Tier Membership</label>
+              <label className="text-[11px] font-black text-slate-700">Paket Membership</label>
               <select
-                value={newMemberForm.tier}
-                onChange={(e) => setNewMemberForm({ ...newMemberForm, tier: e.target.value })}
+                value={newMemberForm.packageId}
+                onChange={(e) => handlePackageChange(e.target.value)}
                 className="p-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340] cursor-pointer"
+                disabled={packages.length === 0}
               >
-                <option value="VIP">VIP (Prioritas + Diskon Spesial)</option>
-                <option value="Gold">Gold (Diskon Reguler)</option>
-                <option value="Reguler">Reguler</option>
+                {packages.length === 0 ? (
+                  <option value="">Memuat paket...</option>
+                ) : (
+                  packages.map((pkg) => (
+                    <option key={pkg.id} value={pkg.id}>
+                      {pkg.name} ({pkg.tier} — Rp {Number(pkg.top_up_amount).toLocaleString('id-ID')})
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 
@@ -158,21 +223,11 @@ export default function AddMember({
                 onChange={(e) => setNewMemberForm({ ...newMemberForm, homeBranch: e.target.value })}
                 className="p-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340] cursor-pointer"
               >
-                {outlets.length > 0 ? (
-                  outlets.map(o => (
-                    <option key={o.id} value={o.full_name || o.name}>
-                      {o.full_name || o.name}
-                    </option>
-                  ))
-                ) : (
-                  <>
-                    <option value="Waschen Laundry Raffles Hills">Waschen Laundry Raffles Hills</option>
-                    <option value="Waschen Laundry Citra Gran">Waschen Laundry Citra Gran</option>
-                    <option value="Waschen Laundry Legenda">Waschen Laundry Legenda</option>
-                    <option value="Waschen Laundry Canadian">Waschen Laundry Canadian</option>
-                    <option value="Waschen Laundry Sentra Eropa">Waschen Laundry Sentra Eropa</option>
-                  </>
-                )}
+                {outlets.map(o => (
+                  <option key={o.id} value={o.full_name || o.name}>
+                    {o.full_name || o.name}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -188,6 +243,7 @@ export default function AddMember({
                 onChange={(e) => setNewMemberForm({ ...newMemberForm, initialDeposit: e.target.value })}
                 className="p-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340]"
               />
+              <span className="text-[9px] text-slate-400">Paket member: <strong>{newMemberForm.membershipTier || '-'}</strong></span>
             </div>
 
             <div className="flex flex-col gap-1">
@@ -197,9 +253,9 @@ export default function AddMember({
                 onChange={(e) => setNewMemberForm({ ...newMemberForm, paymentMethod: e.target.value })}
                 className="p-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340] cursor-pointer"
               >
-                <option value="Tunai">Tunai Kasir</option>
-                <option value="QRIS Gopay">QRIS / E-Wallet</option>
-                <option value="Transfer BCA">Transfer Bank BCA</option>
+                {paymentMethods.map((m) => (
+                  <option key={m.id} value={m.name}>{m.label}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -216,9 +272,8 @@ export default function AddMember({
 
             <button
               type="button"
-              onClick={() => setNewMemberForm(getDefaultForm(activeOutletName))}
+              onClick={() => setNewMemberForm(getDefaultForm(activeOutletName, packages[0] || null))}
               className="px-4 py-3.5 bg-white border border-[#e0e0e0] hover:bg-slate-50 text-slate-600 font-extrabold rounded-2xl text-xs transition-all cursor-pointer"
-              title="Reset Isian Form"
             >
               <RotateCcw className="h-4 w-4" />
             </button>

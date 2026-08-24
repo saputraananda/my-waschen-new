@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav';
-import { formatName } from '../../utils/FormatName';
+import { formatName, formatEmployeeName } from '../../utils/FormatName.js';
 import {
   ShoppingBag as IconBag,
   Users as IconUsers,
@@ -30,21 +30,35 @@ import {
 
 // Subcomponents
 import SelectCustomer from './components/SelectCustomer.jsx';
+import FillAddressModal from './components/FillAddressModal.jsx';
 import SelectServices from './components/SelectServices.jsx';
 import Cart from './components/Cart.jsx';
 import Payment from './components/Payment.jsx';
-import ThermalNota from './components/ThermalNota.jsx';
+import PinVerifyModal from '../Shift/PinVerifyModal.jsx';
+import { formatRupiah, parseRupiah } from '../../utils/FormatRupiah.js';
+import { hasCustomerAddress } from '../../utils/NormalizePhone.js';
+import { useAppDialog } from '../../context/AppDialogContext.jsx';
+import { useShift } from '../../context/ShiftContext.jsx';
 
 // Promo List (mst_promo)
-const PROMO_LIST = [
-  { id: 'NONE', name: 'Tanpa Promo', code: 'NONE', type: 'nominal', value: 0, desc: 'Harga reguler normal' },
-  { id: 'PRM-01', name: 'Promo Weekend Seru', code: 'WEEKEND10', type: 'percentage', value: 10, desc: 'Diskon 10% seluruh layanan' },
-  { id: 'PRM-02', name: 'Loyalty VIP Member', code: 'VIP15', type: 'percentage', value: 15, desc: 'Diskon 15% khusus member' },
-  { id: 'PRM-03', name: 'Potongan Waschen Hemat', code: 'HEMAT10K', type: 'nominal', value: 10000, desc: 'Potongan langsung Rp 10.000' }
+const PROMO_FALLBACK = [
+  { code: 'NONE', name: 'Tanpa Promo', type: 'none', value: 0, desc: 'Harga reguler normal' }
 ];
+
+const mapPromoFromApi = (p) => ({
+  id: p.code,
+  code: p.code,
+  name: p.name,
+  type: p.discount_type === 'none' ? 'nominal' : p.discount_type,
+  value: Number(p.discount_value) || 0,
+  desc: p.description || ''
+});
 
 export default function TransactionPage() {
   const navigate = useNavigate();
+  const { showAlert } = useAppDialog();
+  const { shiftChecked, ensureShiftForOrder, isShiftReady } = useShift();
+  const [shiftGateOk, setShiftGateOk] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
   const getInitialOutlet = () => {
     const saved = localStorage.getItem('activeOutletName');
@@ -59,6 +73,10 @@ export default function TransactionPage() {
   const [activeOutletName, setActiveOutletName] = useState(getInitialOutlet);
   const [activeOutletId, setActiveOutletId] = useState(localStorage.getItem('activeOutletId') || '2');
   const [outlets, setOutlets] = useState([]);
+  const [parfumes, setParfumes] = useState([]);
+  const [promoList, setPromoList] = useState(PROMO_FALLBACK);
+  const [paymentMethods, setPaymentMethods] = useState([]);
+  const [customerTiers, setCustomerTiers] = useState([]);
 
   // STEP WIZARD STATE: 1: Customer -> 2: Layanan -> 3: Keranjang -> 4: Pembayaran
   const [currentStep, setCurrentStep] = useState(1);
@@ -66,6 +84,7 @@ export default function TransactionPage() {
   // Step 1: Customer State (Pure live from database)
   const [customers, setCustomers] = useState([]);
   const [selectedCustId, setSelectedCustId] = useState('');
+  const [addressModalCustomer, setAddressModalCustomer] = useState(null);
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedTierFilter, setSelectedTierFilter] = useState('Semua');
   const [selectedBranchFilter, setSelectedBranchFilter] = useState('Semua');
@@ -81,15 +100,20 @@ export default function TransactionPage() {
 
   // Step 3: Keranjang State
   const [cartItems, setCartItems] = useState([]);
-  const [selectedPerfume, setSelectedPerfume] = useState('Standar');
+  const [selectedPerfume, setSelectedPerfume] = useState('');
+  const [selectedPerfumeId, setSelectedPerfumeId] = useState(null);
   const [isExpress, setIsExpress] = useState(false);
   const [selectedPromoCode, setSelectedPromoCode] = useState('NONE');
   const [isDelivery, setIsDelivery] = useState(false);
   const [generalOrderNotes, setGeneralOrderNotes] = useState('');
 
   // Step 4: Pembayaran State
-  const [paymentStatus, setPaymentStatus] = useState('Belum Lunas');
+  const [paymentStatus, setPaymentStatus] = useState('Lunas');
+  const [isOutstandingDropOff, setIsOutstandingDropOff] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('Tunai');
+  const [paidAmountInput, setPaidAmountInput] = useState('');
+  const [overpaymentAction, setOverpaymentAction] = useState('change');
+  const [paymentProofFile, setPaymentProofFile] = useState(null);
 
   // Item Config Modal
   const [configuringItem, setConfiguringItem] = useState(null);
@@ -100,11 +124,13 @@ export default function TransactionPage() {
     color: '',
     material: '',
     size: '',
-    note: ''
+    note: '',
+    isCleanox: false
   });
 
-  // Receipt Modal
-  const [createdOrderReceipt, setCreatedOrderReceipt] = useState(null);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pendingOrderPayload, setPendingOrderPayload] = useState(null);
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
 
   // Authenticate session & sync branch
   useEffect(() => {
@@ -138,13 +164,42 @@ export default function TransactionPage() {
       localStorage.removeItem('autoSelectCustId');
     }
 
-    axios.get('/api/outlets')
+    axios.get('/api/masters/outlets')
       .then(res => {
         if (res.data && res.data.success && res.data.data.length > 0) {
           setOutlets(res.data.data);
         }
       })
       .catch(err => console.error('Gagal mengambil data outlet:', err));
+
+    axios.get('/api/services/parfumes')
+      .then(res => {
+        if (res.data?.success && res.data.data?.length > 0) {
+          setParfumes(res.data.data);
+          const first = res.data.data[0];
+          setSelectedPerfume(first.name);
+          setSelectedPerfumeId(first.id);
+        }
+      })
+      .catch(err => console.error('Gagal mengambil data parfum:', err));
+
+    axios.get('/api/masters')
+      .then(res => {
+        if (!res.data?.success || !res.data.data) return;
+        const { promos, paymentMethods: methods, customerTiers: tiers } = res.data.data;
+        if (promos?.length) {
+          const mapped = promos.map(mapPromoFromApi);
+          setPromoList(mapped);
+          setSelectedPromoCode(mapped[0]?.code || 'NONE');
+        }
+        if (methods?.length) {
+          setPaymentMethods(methods);
+          const firstCash = methods.find(m => !m.requires_member_balance) || methods[0];
+          if (firstCash) setPaymentMethod(firstCash.name);
+        }
+        if (tiers?.length) setCustomerTiers(tiers);
+      })
+      .catch(err => console.error('Gagal mengambil data master:', err));
 
     // Fetch live customers from myWaschen
     axios.get('/api/customers')
@@ -155,7 +210,11 @@ export default function TransactionPage() {
             dbId: c.id,
             name: c.name,
             phone: c.phone,
-            address: c.address || '-',
+            address: c.full_address || c.address || '-',
+            fullAddress: c.full_address || '',
+            block: c.block || '',
+            houseNumber: c.house_number || '',
+            notes: c.notes || '',
             city: c.city || 'Bekasi',
             landmark: c.landmark || '-',
             homeBranch: c.home_branch || 'Waschen Laundry Citra Gran',
@@ -183,16 +242,24 @@ export default function TransactionPage() {
             category: s.category_code === 'KILOAN' || s.unit === 'Kg' ? 'Kiloan' : 'Satuan',
             price: parseFloat(s.price) || 0,
             unit: s.unit || 'Kg',
-            duration: '2 Hari (48 Jam)',
+            duration: s.regular_duration_days ? `${s.regular_duration_days} Hari` : '2 Hari (48 Jam)',
             description: s.description || 'Layanan laundry higienis Waschen',
             minWeight: parseFloat(s.min_order_qty) || 4,
-            minPrice: (parseFloat(s.min_order_qty) || 4) * (parseFloat(s.price) || 0)
+            minPrice: (parseFloat(s.min_order_qty) || 4) * (parseFloat(s.price) || 0),
+            isCleanox: s.is_cleanox === 1 || s.is_cleanox === true
           }));
           setServicesList(mapped);
         }
       })
       .catch(err => console.error('Gagal mengambil layanan dari API:', err));
   }, [navigate]);
+
+  // Guard: Order Baru wajib punya shift aktif di sesi ini
+  useEffect(() => {
+    if (!shiftChecked) return;
+    const ok = ensureShiftForOrder();
+    setShiftGateOk(ok);
+  }, [shiftChecked, ensureShiftForOrder, isShiftReady]);
 
   // Auto scroll to top when moving between step wizard steps
   useEffect(() => {
@@ -203,6 +270,15 @@ export default function TransactionPage() {
   const selectedCustomer = useMemo(() => {
     return customers.find(c => c.id === selectedCustId);
   }, [customers, selectedCustId]);
+
+  const handlePickCustomer = (customer) => {
+    setSelectedCustId(customer.id);
+    if (!hasCustomerAddress(customer)) {
+      setAddressModalCustomer(customer);
+      return;
+    }
+    setCurrentStep(2);
+  };
 
   // Filtered and Tier-Prioritized Customer List
   const tierRank = { 'VIP': 1, 'Gold': 2, 'Reguler': 3, 'One-Time': 4 };
@@ -289,7 +365,8 @@ export default function TransactionPage() {
         color: '',
         material: '',
         size: '',
-        note: ''
+        note: '',
+        isCleanox: service.isCleanox === true
       });
     } else {
       setItemSpecs({
@@ -299,12 +376,38 @@ export default function TransactionPage() {
         color: '',
         material: '',
         size: '',
-        note: ''
+        note: '',
+        isCleanox: service.isCleanox === true
       });
     }
   };
 
-  // Add configured item to Cart
+  // Edit existing cart item — buka modal rincian sama seperti Pilih Layanan
+  const handleEditCartItem = (cartItem) => {
+    setConfiguringItem({
+      id: cartItem.serviceId,
+      dbId: cartItem.serviceDbId,
+      name: cartItem.name,
+      category: cartItem.category,
+      unit: cartItem.unit,
+      price: cartItem.unitPrice,
+      duration: cartItem.duration,
+      isCleanox: cartItem.serviceIsCleanox === true,
+      editingCartId: cartItem.cartId
+    });
+    setItemSpecs({
+      qty: cartItem.qty || 1,
+      weight: cartItem.weight || (cartItem.category === 'Kiloan' ? 4 : 1),
+      brand: cartItem.brand === '-' ? '' : (cartItem.brand || ''),
+      color: cartItem.color === '-' ? '' : (cartItem.color || ''),
+      material: cartItem.material === '-' ? '' : (cartItem.material || ''),
+      size: cartItem.size === '-' ? '' : (cartItem.size || ''),
+      note: cartItem.note === '-' ? '' : (cartItem.note || ''),
+      isCleanox: cartItem.isCleanox === true
+    });
+  };
+
+  // Add configured item to Cart (atau update jika sedang edit)
   const handleAddToCart = (e) => {
     e.preventDefault();
     if (!configuringItem) return;
@@ -326,9 +429,37 @@ export default function TransactionPage() {
       qtyDisplay = `${q} ${configuringItem.unit}`;
     }
 
+    const editingCartId = configuringItem.editingCartId;
+
+    if (editingCartId) {
+      setCartItems((prev) => prev.map((item) => (
+        item.cartId === editingCartId
+          ? {
+              ...item,
+              isCleanox: itemSpecs.isCleanox === true,
+              qty: itemSpecs.qty,
+              weight: itemSpecs.weight,
+              qtyDisplay,
+              effectiveSubtotal: effectivePrice,
+              brand: itemSpecs.brand || '-',
+              color: itemSpecs.color || '-',
+              material: itemSpecs.material || '-',
+              size: itemSpecs.size || '-',
+              note: itemSpecs.note || '-',
+              isExpanded: false
+            }
+          : item
+      )));
+      setConfiguringItem(null);
+      return;
+    }
+
     const newCartItem = {
       cartId: `ITEM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       serviceId: configuringItem.id,
+      serviceDbId: configuringItem.dbId,
+      serviceIsCleanox: configuringItem.isCleanox === true,
+      isCleanox: itemSpecs.isCleanox === true,
       name: configuringItem.name,
       category: configuringItem.category,
       unit: configuringItem.unit,
@@ -365,8 +496,14 @@ export default function TransactionPage() {
     }));
   };
 
+  const handleToggleItemCleanox = (cartId) => {
+    setCartItems(cartItems.map(item => (
+      item.cartId === cartId ? { ...item, isCleanox: !item.isCleanox } : item
+    )));
+  };
+
   // Selected promo details
-  const activePromo = PROMO_LIST.find(p => p.code === selectedPromoCode) || PROMO_LIST[0];
+  const activePromo = promoList.find(p => p.code === selectedPromoCode) || promoList[0] || PROMO_FALLBACK[0];
 
   // Financial Calculations
   const calculations = useMemo(() => {
@@ -391,22 +528,90 @@ export default function TransactionPage() {
     };
   }, [cartItems, isExpress, activePromo]);
 
+  const selectedPaymentMeta = useMemo(
+    () => paymentMethods.find((m) => m.name === paymentMethod),
+    [paymentMethods, paymentMethod]
+  );
+  const isMemberBalanceMethod = selectedPaymentMeta?.requires_member_balance === 1;
+
+  useEffect(() => {
+    if (paymentStatus === 'Lunas' && !isMemberBalanceMethod && !isOutstandingDropOff) {
+      setPaidAmountInput(formatRupiah(calculations.grandTotal));
+      setOverpaymentAction('change');
+    } else if (paymentStatus === 'DP' && !paidAmountInput) {
+      setPaidAmountInput(formatRupiah(Math.max(50000, Math.floor(calculations.grandTotal / 2))));
+    }
+  }, [paymentStatus, calculations.grandTotal, isMemberBalanceMethod, isOutstandingDropOff]);
+
   // Check if delivery can be enabled (requires non-empty customer address)
-  const hasValidAddress = Boolean(selectedCustomer && selectedCustomer.address && selectedCustomer.address.trim() !== '' && selectedCustomer.address !== '-');
+  const hasValidAddress = Boolean(selectedCustomer && hasCustomerAddress(selectedCustomer));
 
   // Handle Order Submit & Receipt Generation via Backend API
   const handleCreateOrder = async (e) => {
     e.preventDefault();
     if (!selectedCustomer) {
-      alert('Silakan pilih pelanggan terlebih dahulu!');
+      showAlert({
+        title: 'Pelanggan Belum Dipilih',
+        message: 'Silakan pilih pelanggan terlebih dahulu sebelum melanjutkan ke pembayaran.',
+        type: 'warning'
+      });
       return;
     }
     if (cartItems.length === 0) {
-      alert('Keranjang belanja masih kosong! Silakan pilih minimal 1 layanan.');
+      showAlert({
+        title: 'Keranjang Kosong',
+        message: 'Keranjang belanja masih kosong. Silakan pilih minimal 1 layanan.',
+        type: 'warning'
+      });
       return;
     }
 
-    // Determine category
+    const paidAmountNum = parseRupiah(paidAmountInput);
+    const isOutstanding = paymentStatus === 'Outstanding';
+
+    if (paymentStatus === 'Lunas' && !isMemberBalanceMethod) {
+      if (paidAmountNum <= 0) {
+        showAlert({
+          title: 'Nominal Bayar Kosong',
+          message: 'Nominal bayar wajib diisi untuk transaksi lunas.',
+          type: 'warning'
+        });
+        return;
+      }
+      if (paidAmountNum < calculations.grandTotal) {
+        showAlert({
+          title: 'Nominal Bayar Kurang',
+          message: `Nominal bayar kurang Rp ${(calculations.grandTotal - paidAmountNum).toLocaleString('id-ID')} dari total tagihan.`,
+          type: 'error'
+        });
+        return;
+      }
+    }
+
+    if (paymentStatus === 'DP') {
+      if (paidAmountNum <= 0 || paidAmountNum >= calculations.grandTotal) {
+        showAlert({
+          title: 'Nominal DP Tidak Valid',
+          message: 'Nominal DP harus lebih dari 0 dan kurang dari total tagihan.',
+          type: 'warning'
+        });
+        return;
+      }
+    }
+
+    const excessAmount = paymentStatus === 'Lunas' && !isMemberBalanceMethod
+      ? Math.max(0, paidAmountNum - calculations.grandTotal)
+      : 0;
+    const overpaymentToDeposit = excessAmount > 0 && overpaymentAction === 'deposit';
+    const changeAmount = excessAmount > 0 && !overpaymentToDeposit ? excessAmount : 0;
+
+    const resolvedStatus = isOutstanding ? 'Outstanding' : paymentStatus;
+    const resolvedPaidAmount = isOutstanding
+      ? 0
+      : paymentStatus === 'Lunas'
+        ? (isMemberBalanceMethod ? calculations.grandTotal : paidAmountNum)
+        : paidAmountNum;
+
     const hasKiloan = cartItems.some(i => i.category === 'Kiloan' || i.unit === 'Kg');
     const hasSatuan = cartItems.some(i => i.category === 'Satuan' || i.unit !== 'Kg');
     const orderCategory = hasKiloan && hasSatuan ? 'Campuran' : (hasKiloan ? 'Kiloan' : 'Satuan');
@@ -419,45 +624,90 @@ export default function TransactionPage() {
       .filter(i => i.category !== 'Kiloan' && i.unit !== 'Kg')
       .reduce((sum, i) => sum + (parseInt(i.qty) || 1), 0);
 
+    const payload = {
+      customerId: selectedCustomer.dbId || 1,
+      outletId: parseInt(activeOutletId) || 2,
+      shiftId: localStorage.getItem('activeShiftId')
+        ? parseInt(localStorage.getItem('activeShiftId'))
+        : null,
+      orderCategory,
+      totalWeightKg,
+      totalPcs,
+      speedId: isExpress ? 2 : 1,
+      speedName: isExpress ? 'Express (1x24 Jam)' : 'Reguler (2 Hari)',
+      parfumeId: selectedPerfumeId || parfumes.find(p => p.name === selectedPerfume)?.id || null,
+      parfumeName: selectedPerfume,
+      subtotal: calculations.rawSubtotal,
+      speedSurcharge: calculations.expressSurcharge,
+      discountAmount: calculations.discountAmount,
+      discountNotes: activePromo.name !== 'NONE' ? activePromo.name : null,
+      grandTotal: calculations.grandTotal,
+      paymentStatus: resolvedStatus,
+      paymentMethod: isOutstanding ? '-' : paymentMethod,
+      paidAmount: resolvedPaidAmount,
+      changeAmount: paymentStatus === 'Lunas' ? changeAmount : 0,
+      overpaymentToDeposit: paymentStatus === 'Lunas' ? overpaymentToDeposit : false,
+      isDelivery,
+      deliveryAddress: isDelivery ? (selectedCustomer.address || '-') : null,
+      deliveryNotes: isDelivery ? generalOrderNotes : null,
+      specialNotes: generalOrderNotes,
+      items: cartItems.map(item => ({
+        serviceId: item.serviceDbId || 1,
+        serviceName: item.name,
+        qty: item.category === 'Kiloan' ? item.weight : item.qty,
+        unit: item.unit,
+        unitPrice: item.unitPrice,
+        subtotal: item.effectiveSubtotal,
+        isCleanox: item.isCleanox === true,
+        brand: item.brand,
+        color: item.color,
+        material: item.material,
+        size: item.size,
+        conditionNotes: item.note
+      }))
+    };
+
+    setPendingOrderPayload(payload);
+    setShowPinModal(true);
+  };
+
+  const submitOrderWithCashier = async (cashierEmployeeId, cashierFullName) => {
+    if (!pendingOrderPayload) return;
+    setShowPinModal(false);
+    setIsSavingOrder(true);
+    const proofFile = paymentProofFile;
+
     try {
       const res = await axios.post('/api/transactions', {
-        customerId: selectedCustomer.dbId || 1,
-        outletId: parseInt(activeOutletId) || 2,
-        cashierEmployeeId: 167,
-        orderCategory,
-        totalWeightKg,
-        totalPcs,
-        speedId: isExpress ? 2 : 1,
-        speedName: isExpress ? 'Express (1x24 Jam)' : 'Reguler (2 Hari)',
-        parfumeName: selectedPerfume,
-        subtotal: calculations.rawSubtotal,
-        speedSurcharge: calculations.expressSurcharge,
-        discountAmount: calculations.discountAmount,
-        discountNotes: activePromo.name !== 'NONE' ? activePromo.name : null,
-        grandTotal: calculations.grandTotal,
-        paymentStatus,
-        paymentMethod: paymentStatus === 'Lunas' ? paymentMethod : '-',
-        isDelivery,
-        deliveryAddress: isDelivery ? (selectedCustomer.address || '-') : null,
-        deliveryNotes: isDelivery ? generalOrderNotes : null,
-        specialNotes: generalOrderNotes,
-        items: cartItems.map(item => ({
-          serviceId: item.id?.startsWith('s-') ? 4 : 1,
-          serviceName: item.name,
-          qty: item.qty,
-          unit: item.unit,
-          unitPrice: item.price,
-          subtotal: item.subtotal || (item.qty * item.price),
-          brand: item.brand,
-          color: item.color,
-          material: item.material,
-          size: item.size,
-          conditionNotes: item.note
-        }))
+        ...pendingOrderPayload,
+        cashierEmployeeId
       });
 
       const orderResult = res.data?.data;
+      const txnDbId = orderResult?.id;
       const orderId = orderResult?.order_no || `WS-${Date.now().toString().slice(-6)}`;
+
+      if (proofFile && txnDbId) {
+        const fd = new FormData();
+        fd.append('proof', proofFile);
+        await axios.post(`/api/history/transactions/${txnDbId}/payment-proof`, fd);
+      }
+
+      const depositDelta = orderResult?.deposit_delta ?? 0;
+      const payloadPaid = pendingOrderPayload.paidAmount || 0;
+      const payloadChange = pendingOrderPayload.changeAmount || 0;
+      const payloadDepositAdded = pendingOrderPayload.overpaymentToDeposit
+        ? Math.max(0, payloadPaid - calculations.grandTotal)
+        : 0;
+      const newMemberBalance = Math.max(0, (selectedCustomer.memberBalance || 0) + depositDelta);
+
+      if (depositDelta !== 0) {
+        setCustomers((prev) => prev.map((c) => (
+          c.id === selectedCustId
+            ? { ...c, memberBalance: newMemberBalance }
+            : c
+        )));
+      }
 
       const receiptData = {
         id: orderId,
@@ -465,9 +715,10 @@ export default function TransactionPage() {
         customerPhone: selectedCustomer.phone,
         customerAddress: selectedCustomer.address || '-',
         customerTier: selectedCustomer.tier,
-        customerBalance: selectedCustomer.memberBalance || 0,
+        customerBalance: newMemberBalance,
         branch: activeOutletName,
-        cashierName: userProfile?.fullName || 'Staff Kasir',
+        cashierName: formatEmployeeName(cashierFullName || userProfile?.fullName, 'Staff Kasir'),
+        cashierFullName: cashierFullName || userProfile?.fullName || 'Staff Kasir',
         items: cartItems,
         perfume: selectedPerfume,
         isExpress,
@@ -478,16 +729,30 @@ export default function TransactionPage() {
         subtotal: calculations.rawSubtotal,
         subtotalAfterExpress: calculations.subtotalAfterExpress,
         grandTotal: calculations.grandTotal,
-        paymentStatus,
-        paymentMethod: paymentStatus === 'Lunas' ? paymentMethod : '-',
+        paymentStatus: orderResult?.payment_status || pendingOrderPayload.paymentStatus,
+        paymentMethod: orderResult?.payment_method || pendingOrderPayload.paymentMethod,
+        paidAmount: parseFloat(orderResult?.paid_amount) || payloadPaid,
+        changeAmount: parseFloat(orderResult?.change_amount) || payloadChange,
+        depositAdded: payloadDepositAdded,
         createdAt: new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
         estimatedCompletion: isExpress ? '1x24 Jam (Besok Selesai)' : '2-3 Hari Kerja'
       };
 
-      setCreatedOrderReceipt(receiptData);
+      setPendingOrderPayload(null);
+      setPaymentProofFile(null);
+      setIsOutstandingDropOff(false);
+      setPaymentStatus('Lunas');
+
+      navigate('/transaction/complete', { state: { receipt: receiptData }, replace: true });
     } catch (err) {
       console.error('Gagal menyimpan transaksi ke database:', err);
-      alert('Gagal memproses transaksi ke database: ' + (err.response?.data?.message || err.message));
+      showAlert({
+        title: 'Transaksi Gagal',
+        message: err.response?.data?.message || err.message || 'Gagal memproses transaksi ke database.',
+        type: 'error'
+      });
+    } finally {
+      setIsSavingOrder(false);
     }
   };
 
@@ -510,8 +775,19 @@ export default function TransactionPage() {
     { num: 1, title: 'Customer', desc: 'Pilih Pelanggan', icon: IconUsers },
     { num: 2, title: 'Layanan', desc: 'Pilih Layanan', icon: IconBag },
     { num: 3, title: 'Keranjang', desc: `Rincian Item (${cartItems.length})`, icon: IconReceipt },
-    { num: 4, title: 'Pembayaran', desc: 'Selesai & Struk', icon: IconCreditCard }
+    { num: 4, title: 'Pembayaran', desc: 'Bayar & Simpan', icon: IconCreditCard }
   ];
+
+  if (!shiftGateOk) {
+    return (
+      <div className="min-h-screen bg-[#f8f8f8] flex items-center justify-center p-6">
+        <div className="text-center space-y-2">
+          <p className="text-sm font-black text-[#5f1340]">Menyiapkan sesi kas...</p>
+          <p className="text-xs text-slate-400 font-medium">Buka / lanjutkan shift untuk membuat order baru</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f8f8f8] text-[#313030] flex flex-col font-sans">
@@ -610,11 +886,13 @@ export default function TransactionPage() {
             selectedBranchFilter={selectedBranchFilter}
             setSelectedBranchFilter={setSelectedBranchFilter}
             outlets={outlets}
+            customerTiers={customerTiers}
             selectedTierFilter={selectedTierFilter}
             setSelectedTierFilter={setSelectedTierFilter}
             paginatedCustomers={paginatedCustomers}
             activeOutletName={activeOutletName}
             setSelectedCustId={setSelectedCustId}
+            onPickCustomer={handlePickCustomer}
             setCurrentStep={setCurrentStep}
             formatName={formatName}
             renderTierBadge={renderTierBadge}
@@ -657,7 +935,13 @@ export default function TransactionPage() {
             cartItems={cartItems}
             setCurrentStep={setCurrentStep}
             handleRemoveFromCart={handleRemoveFromCart}
-            handleToggleItemExpand={handleToggleItemExpand}
+            handleEditCartItem={handleEditCartItem}
+            handleToggleItemCleanox={handleToggleItemCleanox}
+            configuringItem={configuringItem}
+            setConfiguringItem={setConfiguringItem}
+            itemSpecs={itemSpecs}
+            setItemSpecs={setItemSpecs}
+            handleAddToCart={handleAddToCart}
             selectedCustomer={selectedCustomer}
             renderTierBadge={renderTierBadge}
             formatName={formatName}
@@ -665,12 +949,17 @@ export default function TransactionPage() {
             setIsExpress={setIsExpress}
             selectedPromoCode={selectedPromoCode}
             setSelectedPromoCode={setSelectedPromoCode}
-            PROMO_LIST={PROMO_LIST}
+            PROMO_LIST={promoList}
             hasValidAddress={hasValidAddress}
             isDelivery={isDelivery}
             setIsDelivery={setIsDelivery}
             selectedPerfume={selectedPerfume}
-            setSelectedPerfume={setSelectedPerfume}
+            setSelectedPerfume={(name) => {
+              setSelectedPerfume(name);
+              const match = parfumes.find(p => p.name === name);
+              setSelectedPerfumeId(match?.id || null);
+            }}
+            parfumes={parfumes}
             generalOrderNotes={generalOrderNotes}
             setGeneralOrderNotes={setGeneralOrderNotes}
             calculations={calculations}
@@ -697,15 +986,58 @@ export default function TransactionPage() {
             setPaymentStatus={setPaymentStatus}
             paymentMethod={paymentMethod}
             setPaymentMethod={setPaymentMethod}
+            paymentMethods={paymentMethods}
+            paidAmountInput={paidAmountInput}
+            setPaidAmountInput={setPaidAmountInput}
+            overpaymentAction={overpaymentAction}
+            setOverpaymentAction={setOverpaymentAction}
+            isOutstandingDropOff={isOutstandingDropOff}
+            setIsOutstandingDropOff={setIsOutstandingDropOff}
+            paymentProofFile={paymentProofFile}
+            setPaymentProofFile={setPaymentProofFile}
             handleCreateOrder={handleCreateOrder}
-            createdOrderReceipt={createdOrderReceipt}
-            setCreatedOrderReceipt={setCreatedOrderReceipt}
-            setSelectedCustId={setSelectedCustId}
-            setCartItems={setCartItems}
+            isSaving={isSavingOrder}
           />
         )}
 
       </main>
+
+      {addressModalCustomer && (
+        <FillAddressModal
+          customer={addressModalCustomer}
+          onClose={() => setAddressModalCustomer(null)}
+          showToast={(title, message) => showAlert({ title, message, type: 'warning' })}
+          onSaved={(updated) => {
+            const nextAddress = updated.full_address || updated.address || '-';
+            setCustomers((prev) => prev.map((c) => (
+              c.dbId === updated.id
+                ? {
+                  ...c,
+                  address: nextAddress,
+                  fullAddress: updated.full_address || '',
+                  block: updated.block || '',
+                  houseNumber: updated.house_number || '',
+                  notes: updated.notes || ''
+                }
+                : c
+            )));
+            setAddressModalCustomer(null);
+            setCurrentStep(2);
+          }}
+        />
+      )}
+
+      {showPinModal && (
+        <PinVerifyModal
+          outletId={activeOutletId}
+          defaultEmployeeId={localStorage.getItem('employeeId')}
+          onCancel={() => {
+            setShowPinModal(false);
+            setPendingOrderPayload(null);
+          }}
+          onVerified={({ employeeId, fullName }) => submitOrderWithCashier(employeeId, fullName)}
+        />
+      )}
 
     </div>
   );

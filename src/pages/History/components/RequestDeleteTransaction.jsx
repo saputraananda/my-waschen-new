@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { formatName } from '../../../utils/FormatName';
+import { formatName, formatEmployeeName } from '../../../utils/FormatName';
 import {
   Trash2,
   Search,
@@ -141,7 +141,7 @@ export default function RequestDeleteTransaction({ transactions, outlets }) {
                       </td>
                       <td className="py-3.5 px-4">
                         <span className="text-slate-600 font-bold block">{t.branch}</span>
-                        <span className="text-[10px] text-slate-400">{t.cashierName}</span>
+                        <span className="text-[10px] text-slate-400">{formatEmployeeName(t.cashierName)}</span>
                       </td>
                       <td className="py-3.5 px-4 max-w-xs">
                         <div className="p-2.5 bg-rose-50/60 border border-rose-100 rounded-xl text-[#313030] text-xs leading-relaxed">

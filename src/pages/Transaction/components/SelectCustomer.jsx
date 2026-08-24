@@ -7,11 +7,13 @@ export default function SelectCustomer({
   selectedBranchFilter,
   setSelectedBranchFilter,
   outlets,
+  customerTiers = [],
   selectedTierFilter,
   setSelectedTierFilter,
   paginatedCustomers,
   activeOutletName,
   setSelectedCustId,
+  onPickCustomer,
   setCurrentStep,
   formatName,
   renderTierBadge,
@@ -36,7 +38,7 @@ export default function SelectCustomer({
 
           <button
             type="button"
-            onClick={() => navigate('/customer')}
+            onClick={() => navigate('/customer', { state: { tab: 'add', from: '/transaction' } })}
             className="px-4 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] text-white font-black text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer self-stretch sm:self-auto justify-center"
           >
             <Plus className="h-4 w-4" />
@@ -64,24 +66,14 @@ export default function SelectCustomer({
               className="w-full h-10 px-3 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl text-xs font-semibold text-[#313030] outline-none focus:bg-white focus:border-[#5f1340] cursor-pointer"
             >
               <option value="Semua">Semua Cabang Outlet</option>
-              {outlets && outlets.length > 0 ? (
-                outlets.map(o => (
-                  <option key={o.id} value={o.full_name || o.name}>{o.full_name || o.name}</option>
-                ))
-              ) : (
-                <>
-                  <option value="Waschen Laundry Raffles Hills">Waschen Laundry Raffles Hills</option>
-                  <option value="Waschen Laundry Citra Gran">Waschen Laundry Citra Gran</option>
-                  <option value="Waschen Laundry Legenda">Waschen Laundry Legenda</option>
-                  <option value="Waschen Laundry Canadian">Waschen Laundry Canadian</option>
-                  <option value="Waschen Laundry Sentra Eropa">Waschen Laundry Sentra Eropa</option>
-                </>
-              )}
+              {(outlets || []).map(o => (
+                <option key={o.id} value={o.full_name || o.name}>{o.full_name || o.name}</option>
+              ))}
             </select>
           </div>
 
           <div className="md:col-span-3 flex items-center gap-1 overflow-x-auto no-scrollbar">
-            {['Semua', 'VIP', 'Gold', 'Reguler', 'One-Time'].map(t => (
+            {['Semua', ...customerTiers.map(t => t.name)].map(t => (
               <button
                 key={t}
                 type="button"
@@ -108,8 +100,12 @@ export default function SelectCustomer({
               <div
                 key={c.id}
                 onClick={() => {
+                  if (typeof onPickCustomer === 'function') {
+                    onPickCustomer(c);
+                    return;
+                  }
                   setSelectedCustId(c.id);
-                  setCurrentStep(2); // Auto proceed to Step 2: Layanan
+                  setCurrentStep(2);
                 }}
                 className="bg-white border border-[#e0e0e0] hover:border-[#5f1340]/50 hover:shadow-md rounded-3xl p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between group relative overflow-hidden"
               >

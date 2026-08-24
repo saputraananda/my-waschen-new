@@ -8,7 +8,7 @@ import {
   Wallet
 } from 'lucide-react';
 
-export default function Menu({ navigate }) {
+export default function Menu({ navigate, onOrderClick }) {
   return (
     <div>
       <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">Menu Cepat POS Laundry</h3>
@@ -16,7 +16,7 @@ export default function Menu({ navigate }) {
         {/* 1. Order Baru */}
         <button
           type="button"
-          onClick={() => navigate('/transaction')}
+          onClick={() => (onOrderClick ? onOrderClick() : navigate('/transaction'))}
           className="bg-white border border-[#e0e0e0]/80 hover:border-[#5f1340]/60 hover:shadow-md p-4 rounded-2xl transition-all duration-300 flex flex-col items-center text-center group transform hover:-translate-y-1 cursor-pointer"
         >
           <div className="p-3 bg-[#5f1340]/5 text-[#5f1340] rounded-2xl mb-2.5 group-hover:scale-110 group-hover:bg-[#5f1340]/10 transition-all duration-200">

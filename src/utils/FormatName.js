@@ -12,3 +12,9 @@ export const formatName = (name) => {
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 };
+
+/** Format nama karyawan untuk tampilan UI */
+export const formatEmployeeName = (name, fallback = 'Kasir') => {
+  const formatted = formatName(name);
+  return formatted || fallback;
+};

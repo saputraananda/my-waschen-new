@@ -1,35 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Search,
   Printer,
   CheckCircle2,
   Clock,
-  ArrowRight,
-  PackageCheck,
   AlertCircle,
   Truck,
   Layers,
-  Shirt,
-  Wind,
   X,
-  RotateCcw
+  RotateCcw,
+  CreditCard,
+  Upload,
+  Coins,
+  History,
+  ExternalLink
 } from 'lucide-react';
+import axios from 'axios';
 import { formatName } from '../../../utils/FormatName.js';
-
-const STATUS_STEPS = {
-  'Antrean': { text: 'text-slate-600', bg: 'bg-slate-100 border-slate-200', icon: Clock },
-  'Diterima': { text: 'text-slate-600', bg: 'bg-slate-100 border-slate-200', icon: Clock },
-  'Pencucian': { text: 'text-sky-700', bg: 'bg-sky-50 border-sky-200', icon: Wind },
-  'Proses Cuci': { text: 'text-sky-700', bg: 'bg-sky-50 border-sky-200', icon: Wind },
-  'Penyetrikaan': { text: 'text-indigo-700', bg: 'bg-indigo-50 border-indigo-200', icon: Shirt },
-  'Proses Setrika': { text: 'text-indigo-700', bg: 'bg-indigo-50 border-indigo-200', icon: Shirt },
-  'Pengemasan': { text: 'text-purple-700', bg: 'bg-purple-50 border-purple-200', icon: Layers },
-  'Proses Packing': { text: 'text-purple-700', bg: 'bg-purple-50 border-purple-200', icon: Layers },
-  'Siap Diambil': { text: 'text-amber-700', bg: 'bg-amber-50 border-amber-200', icon: PackageCheck },
-  'Siap Diantar': { text: 'text-blue-700', bg: 'bg-blue-50 border-blue-200', icon: Truck },
-  'Delivery': { text: 'text-blue-700', bg: 'bg-blue-50 border-blue-200', icon: Truck },
-  'Selesai': { text: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200', icon: CheckCircle2 }
-};
+import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
+import { useAppDialog } from '../../../context/AppDialogContext.jsx';
+import { STATUS_STEPS, DEFAULT_WORK_STATUSES, getWorkPercentage, percentageTone, formatWorkPercentage, matchesWorkStatusTab } from '../../../utils/workStatusMeta.js';
 
 export default function TrackingService({
   filteredOrders,
@@ -38,11 +29,53 @@ export default function TrackingService({
   setSearchQuery,
   activeFilterTab,
   setActiveFilterTab,
-  handlePayOrder,
-  handleUpdateStatus,
-  handlePrintNota
+  handlePrintNota,
+  showToast,
+  fetchLiveDashboardData
 }) {
+  const navigate = useNavigate();
+  const { showAlert } = useAppDialog();
   const [selectedOrderModal, setSelectedOrderModal] = useState(null);
+  const [workStatusTabs, setWorkStatusTabs] = useState([]);
+  const [workStatusOptions, setWorkStatusOptions] = useState(DEFAULT_WORK_STATUSES);
+  const [updatingItemId, setUpdatingItemId] = useState(null);
+
+  // Payment update modal (sama seperti HistoryTransaction)
+  const [paymentModalOrder, setPaymentModalOrder] = useState(null);
+  const [paymentDetail, setPaymentDetail] = useState(null);
+  const [paymentMethods, setPaymentMethods] = useState([]);
+  const [paymentForm, setPaymentForm] = useState({
+    additionalAmount: '',
+    paymentMethod: 'Tunai Kasir',
+    notes: '',
+    overpaymentAction: 'change'
+  });
+  const [proofFile, setProofFile] = useState(null);
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const [isLoadingPayment, setIsLoadingPayment] = useState(false);
+
+  const normalizePaymentStatus = (status) => {
+    if (status === 'Belum Lunas') return 'Outstanding';
+    return status || 'Outstanding';
+  };
+
+  useEffect(() => {
+    axios.get('/api/masters/work-statuses?filter_tabs=1')
+      .then((res) => {
+        if (res.data?.success) {
+          setWorkStatusTabs((res.data.data || []).map((s) => s.label || s.name));
+        }
+      })
+      .catch((err) => console.error('Gagal memuat work status:', err));
+
+    axios.get('/api/masters/work-statuses')
+      .then((res) => {
+        if (res.data?.success && res.data.data?.length) {
+          setWorkStatusOptions(res.data.data.map((s) => s.name || s.label).filter(Boolean));
+        }
+      })
+      .catch(() => setWorkStatusOptions(DEFAULT_WORK_STATUSES));
+  }, []);
 
   // WhatsApp Helper
   const handleOpenWA = (e, order) => {
@@ -52,8 +85,146 @@ export default function TrackingService({
       rawPhone = '62' + rawPhone.slice(1);
     }
     if (!rawPhone) rawPhone = '628123456789';
-    const message = encodeURIComponent(`Halo Kak ${order.customerName || 'Pelanggan'}, update status pengerjaan nota ${order.id} Anda saat ini: ${order.workStatus}. Terima kasih telah mempercayakan Waschen Laundry! 😊`);
+    const message = encodeURIComponent(`Halo Kak ${order.customerName || 'Pelanggan'}, update status pengerjaan nota ${order.id} Anda saat ini: ${formatWorkPercentage(order.workStatus)}. Terima kasih telah mempercayakan Waschen Laundry! 😊`);
     window.open(`https://wa.me/${rawPhone}?text=${message}`, '_blank');
+  };
+
+  const openOrderModal = (order) => {
+    setSelectedOrderModal(order);
+  };
+
+  const handleUpdateItemStatus = async (item, nextStatus) => {
+    if (!selectedOrderModal?.dbId || !item?.id) {
+      showToast?.('Gagal Update', 'ID item tidak valid', 'error');
+      return;
+    }
+    if ((item.status || selectedOrderModal.workStatus) === nextStatus) return;
+
+    setUpdatingItemId(item.id);
+    try {
+      const res = await axios.patch(
+        `/api/transactions/${selectedOrderModal.dbId}/items/${item.id}/status`,
+        {
+          workStatus: nextStatus,
+          employeeId: parseInt(localStorage.getItem('employeeId'), 10) || 167
+        }
+      );
+      if (!res.data?.success) {
+        showToast?.('Gagal Update', res.data?.message || 'Gagal mengubah status item', 'error');
+        return;
+      }
+
+      const accumulated = res.data.data?.workStatus || nextStatus;
+      setSelectedOrderModal((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          workStatus: accumulated,
+          items: (prev.items || []).map((it) => (
+            it.id === item.id ? { ...it, status: nextStatus } : it
+          ))
+        };
+      });
+      showToast?.('Status Item Diperbarui', `${item.serviceName || 'Item'} → ${nextStatus}`, 'success');
+      if (typeof fetchLiveDashboardData === 'function') fetchLiveDashboardData();
+    } catch (err) {
+      console.error('Gagal update status item:', err);
+      showToast?.('Gagal Update', err.response?.data?.message || 'Koneksi server gagal', 'error');
+    } finally {
+      setUpdatingItemId(null);
+    }
+  };
+
+  const openPaymentModal = async (order, e) => {
+    if (e) e.stopPropagation();
+    const modalOrder = {
+      ...order,
+      grandTotal: order.grandTotal ?? order.totalAmount ?? 0,
+      paidAmount: order.paidAmount ?? 0
+    };
+    setPaymentModalOrder(modalOrder);
+    setPaymentForm({
+      additionalAmount: '',
+      paymentMethod: order.paymentMethod && order.paymentMethod !== '-' ? order.paymentMethod : 'Tunai Kasir',
+      notes: '',
+      overpaymentAction: 'change'
+    });
+    setProofFile(null);
+    setIsLoadingPayment(true);
+    try {
+      const [logsRes, methodsRes] = await Promise.all([
+        axios.get(`/api/history/transactions/${order.dbId || order.id}/payments`),
+        axios.get('/api/masters/payment-methods')
+      ]);
+      if (logsRes.data?.success) setPaymentDetail(logsRes.data.data);
+      if (methodsRes.data?.success) {
+        setPaymentMethods((methodsRes.data.data || []).filter((m) => !m.requires_member_balance));
+      }
+    } catch (err) {
+      console.error('Gagal memuat detail pembayaran:', err);
+      showToast?.('Gagal Memuat', err.response?.data?.message || 'Tidak dapat memuat riwayat pembayaran', 'error');
+    } finally {
+      setIsLoadingPayment(false);
+    }
+  };
+
+  const handleSubmitPaymentUpdate = async () => {
+    if (!paymentModalOrder) return;
+    const remaining = paymentDetail?.remaining ?? Math.max(0, (paymentModalOrder.grandTotal || 0) - (paymentModalOrder.paidAmount || 0));
+    const addAmount = parseRupiah(paymentForm.additionalAmount);
+
+    if (normalizePaymentStatus(paymentModalOrder.paymentStatus) === 'Lunas') {
+      showToast?.('Sudah Lunas', 'Nota ini sudah lunas.', 'error');
+      return;
+    }
+    if (addAmount <= 0) {
+      showAlert({
+        title: 'Nominal Kosong',
+        message: 'Nominal bayar wajib diisi sebelum menyimpan pembayaran.',
+        type: 'warning'
+      });
+      return;
+    }
+
+    setIsSubmittingPayment(true);
+    try {
+      const txnId = paymentModalOrder.dbId || paymentModalOrder.id;
+      let proofUrl = paymentDetail?.order?.payment_proof_url || paymentModalOrder.paymentProofUrl || null;
+
+      if (proofFile) {
+        const fd = new FormData();
+        fd.append('proof', proofFile);
+        const up = await axios.post(`/api/history/transactions/${txnId}/payment-proof`, fd);
+        proofUrl = up.data?.data?.paymentProofUrl || proofUrl;
+      }
+
+      const res = await axios.patch(`/api/history/transactions/${txnId}/payment`, {
+        additionalAmount: addAmount,
+        paymentMethod: paymentForm.paymentMethod,
+        paymentProofUrl: proofUrl,
+        notes: paymentForm.notes || `Pelunasan nota ${paymentModalOrder.id}`,
+        overpaymentToDeposit: paymentForm.overpaymentAction === 'deposit',
+        cashierEmployeeId: localStorage.getItem('employeeId') || null
+      });
+
+      const updated = res.data?.data;
+      showToast?.(
+        'Pembayaran Diperbarui',
+        `Nota ${paymentModalOrder.id} — ${updated?.paymentStatus || 'OK'}`,
+        'success'
+      );
+      setPaymentModalOrder(null);
+      setPaymentDetail(null);
+      setSelectedOrderModal(null);
+      if (typeof fetchLiveDashboardData === 'function') {
+        fetchLiveDashboardData();
+      }
+    } catch (err) {
+      console.error('Gagal memperbarui pembayaran:', err);
+      showToast?.('Gagal Bayar', err.response?.data?.message || 'Terjadi kesalahan sistem', 'error');
+    } finally {
+      setIsSubmittingPayment(false);
+    }
   };
 
   // Filter States: Payment Status & Date
@@ -63,7 +234,9 @@ export default function TrackingService({
   // Compute final displayed orders
   const displayOrders = filteredOrders.filter(order => {
     if (paymentFilter === 'Lunas' && order.paymentStatus !== 'Lunas') return false;
-    if (paymentFilter === 'Belum Lunas' && order.paymentStatus !== 'Belum Lunas') return false;
+    if (paymentFilter === 'DP' && order.paymentStatus !== 'DP') return false;
+    if (paymentFilter === 'Outstanding' && order.paymentStatus !== 'Outstanding' && order.paymentStatus !== 'Belum Lunas') return false;
+    if (paymentFilter === 'Sisa Tagihan' && order.paymentStatus === 'Lunas') return false;
 
     if (dateFilter) {
       const orderDateStr = order.rawDate
@@ -79,7 +252,9 @@ export default function TrackingService({
   const getTabCount = (tabName) => {
     const baseList = orders.filter(order => {
       if (paymentFilter === 'Lunas' && order.paymentStatus !== 'Lunas') return false;
-      if (paymentFilter === 'Belum Lunas' && order.paymentStatus !== 'Belum Lunas') return false;
+      if (paymentFilter === 'DP' && order.paymentStatus !== 'DP') return false;
+      if (paymentFilter === 'Outstanding' && order.paymentStatus !== 'Outstanding' && order.paymentStatus !== 'Belum Lunas') return false;
+      if (paymentFilter === 'Sisa Tagihan' && order.paymentStatus === 'Lunas') return false;
       if (dateFilter) {
         const orderDateStr = order.rawDate ? new Date(order.rawDate).toISOString().slice(0, 10) : '';
         if (orderDateStr !== dateFilter) return false;
@@ -88,13 +263,7 @@ export default function TrackingService({
     });
 
     if (tabName === 'Semua') return baseList.length;
-    if (tabName === 'Antrean') return baseList.filter(o => o.workStatus === 'Antrean' || o.workStatus === 'Diterima').length;
-    if (tabName === 'Pencucian') return baseList.filter(o => o.workStatus === 'Pencucian' || o.workStatus === 'Proses Cuci').length;
-    if (tabName === 'Penyetrikaan') return baseList.filter(o => o.workStatus === 'Penyetrikaan' || o.workStatus === 'Proses Setrika').length;
-    if (tabName === 'Pengemasan') return baseList.filter(o => o.workStatus === 'Pengemasan' || o.workStatus === 'Proses Packing').length;
-    if (tabName === 'Siap Diambil / Diantar') return baseList.filter(o => o.workStatus === 'Siap Diambil' || o.workStatus === 'Siap Diantar' || o.workStatus === 'Delivery').length;
-    if (tabName === 'Selesai') return baseList.filter(o => o.workStatus === 'Selesai').length;
-    return 0;
+    return baseList.filter((o) => matchesWorkStatusTab(o.workStatus, tabName)).length;
   };
 
   return (
@@ -146,7 +315,9 @@ export default function TrackingService({
           >
             <option value="Semua">Semua Bayar</option>
             <option value="Lunas">Lunas Only</option>
-            <option value="Belum Lunas">Belum Lunas Only</option>
+            <option value="DP">DP Only</option>
+            <option value="Outstanding">Outstanding Only</option>
+            <option value="Sisa Tagihan">Sisa Tagihan</option>
           </select>
 
           {/* Reset Filters Button */}
@@ -165,7 +336,7 @@ export default function TrackingService({
 
       {/* Filter Tabs with Live Counters */}
       <div className="px-5 border-b border-[#e0e0e0]/60 flex gap-2 overflow-x-auto py-2.5 bg-slate-50/30 no-scrollbar">
-        {['Semua', 'Antrean', 'Pencucian', 'Penyetrikaan', 'Pengemasan', 'Siap Diambil / Diantar', 'Selesai'].map((tab) => {
+        {['Semua', ...(workStatusTabs.length ? workStatusTabs : ['Antrean', 'Pencucian', 'Penyetrikaan', 'Pengemasan', 'Siap Diambil / Diantar', 'Selesai'])].map((tab) => {
           const active = activeFilterTab === tab;
           const count = getTabCount(tab);
 
@@ -213,15 +384,15 @@ export default function TrackingService({
               </tr>
             ) : (
               displayOrders.map((order) => {
-                const statusMeta = STATUS_STEPS[order.workStatus] || { text: 'text-slate-600', bg: 'bg-slate-100 border-slate-200', icon: Clock };
-                const StatusIcon = statusMeta.icon;
+                const workPct = getWorkPercentage(order.workStatus);
+                const pctTone = percentageTone(workPct);
 
                 return (
                   <tr
                     key={order.id}
-                    onClick={() => setSelectedOrderModal(order)}
+                    onClick={() => openOrderModal(order)}
                     className="hover:bg-[#5f1340]/[0.03] cursor-pointer transition-colors group"
-                    title="Klik untuk melihat rincian pengerjaan per item"
+                    title="Klik untuk update status per item (modal cepat)"
                   >
                     {/* No Struk */}
                     <td className="py-3.5 px-6 font-mono font-black text-[#5f1340] whitespace-nowrap">
@@ -250,9 +421,11 @@ export default function TrackingService({
 
                     {/* Status Pengerjaan */}
                     <td className="py-3.5 px-6 text-center whitespace-nowrap">
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-black shadow-2xs ${statusMeta.bg} ${statusMeta.text}`}>
-                        <StatusIcon className="h-3.5 w-3.5" />
-                        <span>{order.workStatus}</span>
+                      <span
+                        title={order.workStatus}
+                        className={`inline-flex items-center justify-center min-w-[52px] px-3 py-1 rounded-full border text-xs font-black shadow-2xs ${pctTone.bg} ${pctTone.text}`}
+                      >
+                        {formatWorkPercentage(order.workStatus)}
                       </span>
                     </td>
 
@@ -268,18 +441,25 @@ export default function TrackingService({
                           <CheckCircle2 className="h-3 w-3 text-emerald-600" />
                           <span>Lunas ({order.paymentMethod})</span>
                         </span>
+                      ) : order.paymentStatus === 'DP' ? (
+                        <button
+                          type="button"
+                          onClick={(e) => openPaymentModal(order, e)}
+                          className="px-3 py-1 rounded-xl bg-amber-50 hover:bg-amber-600 text-amber-800 hover:text-white border border-amber-200 text-[10px] font-black inline-flex items-center gap-1 transition-all shadow-2xs cursor-pointer whitespace-nowrap group/pay"
+                          title="Klik untuk update pembayaran / pelunasan"
+                        >
+                          <AlertCircle className="h-3 w-3" />
+                          <span>DP ({order.paymentMethod})</span>
+                        </button>
                       ) : (
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handlePayOrder(order.id);
-                          }}
+                          onClick={(e) => openPaymentModal(order, e)}
                           className="px-3 py-1 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 text-[10px] font-black inline-flex items-center gap-1 transition-all shadow-2xs cursor-pointer whitespace-nowrap group/pay"
-                          title="Klik untuk proses pelunasan nota"
+                          title="Klik untuk update pembayaran / pelunasan"
                         >
                           <AlertCircle className="h-3 w-3 text-rose-600 group-hover/pay:text-white" />
-                          <span>Belum Lunas</span>
+                          <span>Outstanding</span>
                         </button>
                       )}
                     </td>
@@ -320,10 +500,8 @@ export default function TrackingService({
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-black text-[#313030]">Rincian Status Nota {selectedOrderModal.id}</h3>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
-                    (STATUS_STEPS[selectedOrderModal.workStatus] || {}).bg
-                  } ${(STATUS_STEPS[selectedOrderModal.workStatus] || {}).text}`}>
-                    Akumulasi: {selectedOrderModal.workStatus}
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${percentageTone(getWorkPercentage(selectedOrderModal.workStatus)).bg} ${percentageTone(getWorkPercentage(selectedOrderModal.workStatus)).text}`}>
+                    Akumulasi: {formatWorkPercentage(selectedOrderModal.workStatus)}
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">Detail pengerjaan item cucian & status pelunasan</p>
@@ -356,7 +534,7 @@ export default function TrackingService({
                 <div>
                   <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Kategori & Parfum</span>
                   <span className="font-extrabold text-[#313030] mt-0.5 block">{selectedOrderModal.serviceType}</span>
-                  <span className="text-[10px] text-pink-700 font-bold block">Aroma: {selectedOrderModal.perfume || 'Sakura Fresh'}</span>
+                  <span className="text-[10px] text-pink-700 font-bold block">Aroma: {selectedOrderModal.perfume || 'Standar'}</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Tagihan & Bayar</span>
@@ -374,7 +552,7 @@ export default function TrackingService({
                     <Layers className="h-4 w-4 text-[#5f1340]" />
                     <span>Rincian Pengerjaan Item Cucian ({selectedOrderModal.items?.length || 1} Item)</span>
                   </h4>
-                  <span className="text-[10px] text-slate-400">Rata-Rata Pengerjaan Status</span>
+                  <span className="text-[10px] text-slate-400">Ubah status via dropdown per item</span>
                 </div>
 
                 <div className="border border-[#e0e0e0] rounded-2xl overflow-hidden">
@@ -390,14 +568,17 @@ export default function TrackingService({
                     <tbody className="divide-y divide-[#e0e0e0] text-xs font-semibold">
                       {(selectedOrderModal.items && selectedOrderModal.items.length > 0) ? (
                         selectedOrderModal.items.map((it, idx) => {
-                          const itemMeta = STATUS_STEPS[it.status || selectedOrderModal.workStatus] || { text: 'text-slate-600', bg: 'bg-slate-100 border-slate-200', icon: Clock };
-                          const ItemIcon = itemMeta.icon;
+                          const currentStatus = it.status || selectedOrderModal.workStatus || 'Antrean';
+                          const itemMeta = STATUS_STEPS[currentStatus] || { text: 'text-slate-600', bg: 'bg-slate-100 border-slate-200', icon: Clock };
+                          const options = workStatusOptions.includes(currentStatus)
+                            ? workStatusOptions
+                            : [currentStatus, ...workStatusOptions];
 
                           return (
                             <tr key={it.id || idx} className="hover:bg-slate-50">
                               <td className="py-3 px-4">
                                 <span className="font-extrabold text-[#313030] block">{it.serviceName || selectedOrderModal.serviceType}</span>
-                                {it.conditionNotes && (
+                                {it.conditionNotes && it.conditionNotes !== '-' && (
                                   <span className="text-[10px] text-slate-400 block font-normal mt-0.5">Catatan: {it.conditionNotes}</span>
                                 )}
                               </td>
@@ -405,10 +586,17 @@ export default function TrackingService({
                                 {it.qty}
                               </td>
                               <td className="py-3 px-4">
-                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10px] font-black ${itemMeta.bg} ${itemMeta.text}`}>
-                                  <ItemIcon className="h-3 w-3" />
-                                  <span>{it.status || selectedOrderModal.workStatus}</span>
-                                </span>
+                                <select
+                                  value={currentStatus}
+                                  disabled={updatingItemId === it.id || !it.id}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => handleUpdateItemStatus(it, e.target.value)}
+                                  className={`w-full min-w-[140px] max-w-[180px] px-2.5 py-1.5 rounded-xl border text-[10px] font-black outline-none cursor-pointer disabled:opacity-60 ${itemMeta.bg} ${itemMeta.text}`}
+                                >
+                                  {options.map((s) => (
+                                    <option key={s} value={s}>{getWorkPercentage(s)}% · {s}</option>
+                                  ))}
+                                </select>
                               </td>
                               <td className="py-3 px-4 text-right font-mono font-bold text-[#313030]">
                                 Rp {(it.subtotal || selectedOrderModal.totalAmount).toLocaleString('id-ID')}
@@ -425,9 +613,8 @@ export default function TrackingService({
                             {selectedOrderModal.qty}
                           </td>
                           <td className="py-3 px-4">
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10px] font-black bg-slate-100 border-slate-200 text-slate-700">
-                              <Clock className="h-3 w-3" />
-                              <span>{selectedOrderModal.workStatus}</span>
+                            <span className={`inline-flex items-center justify-center min-w-[52px] px-2.5 py-0.5 rounded-full border text-[10px] font-black ${percentageTone(getWorkPercentage(selectedOrderModal.workStatus)).bg} ${percentageTone(getWorkPercentage(selectedOrderModal.workStatus)).text}`}>
+                              {formatWorkPercentage(selectedOrderModal.workStatus)}
                             </span>
                           </td>
                           <td className="py-3 px-4 text-right font-mono font-bold text-[#313030]">
@@ -442,31 +629,27 @@ export default function TrackingService({
 
               {/* Action Buttons Inside Modal */}
               <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-3 border-t border-[#e0e0e0] mt-2">
-                <div className="flex gap-2 w-full sm:w-auto">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleUpdateStatus(selectedOrderModal.id, selectedOrderModal.workStatus);
-                      setSelectedOrderModal(null);
-                    }}
-                    className="flex-1 sm:flex-initial px-4 py-2 bg-gradient-to-r from-[#5f1340] to-[#7d1956] hover:from-[#4d0f33] hover:to-[#6a1549] text-white text-xs font-black rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <span>Lanjut Status ({selectedOrderModal.workStatus})</span>
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </button>
-
+                <div className="flex gap-2 w-full sm:w-auto flex-wrap">
                   {selectedOrderModal.paymentStatus !== 'Lunas' && (
                     <button
                       type="button"
-                      onClick={() => {
-                        handlePayOrder(selectedOrderModal.id);
-                        setSelectedOrderModal(null);
-                      }}
+                      onClick={() => openPaymentModal(selectedOrderModal)}
                       className="flex-1 sm:flex-initial px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl shadow-xs cursor-pointer"
                     >
                       Bayar Pelunasan
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedOrderModal(null);
+                      navigate(`/riwayat/${selectedOrderModal.id}`, { state: { from: '/dashboard' } });
+                    }}
+                    className="flex-1 sm:flex-initial px-4 py-2 border border-[#5f1340]/30 bg-[#5f1340]/5 hover:bg-[#5f1340] hover:text-white text-[#5f1340] text-xs font-black rounded-xl cursor-pointer inline-flex items-center justify-center gap-1.5"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    <span>Detail Lengkap</span>
+                  </button>
                 </div>
 
                 <div className="flex gap-2 w-full sm:w-auto justify-end">
@@ -490,6 +673,236 @@ export default function TrackingService({
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: UPDATE PEMBAYARAN / PELUNASAN */}
+      {paymentModalOrder && (
+        <div className="fixed inset-0 z-[60] bg-[#313030]/60 backdrop-blur-xs flex justify-center items-center p-4">
+          <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-lg shadow-2xl overflow-hidden animate-fade-in max-h-[90vh] flex flex-col">
+            <div className="p-5 border-b border-[#e0e0e0] flex justify-between items-center bg-[#5f1340]/5 shrink-0">
+              <div className="flex items-center gap-2">
+                <CreditCard className="h-5 w-5 text-[#5f1340]" />
+                <div>
+                  <h3 className="text-sm font-black text-[#313030]">Update Pembayaran — {paymentModalOrder.id}</h3>
+                  <span className="text-[10px] text-slate-400">{formatName(paymentModalOrder.customerName)}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setPaymentModalOrder(null); setPaymentDetail(null); }}
+                className="p-1 text-slate-400 hover:text-[#313030]"
+              >
+                <X className="h-4.5 w-4.5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
+              {isLoadingPayment ? (
+                <div className="py-8 text-center text-slate-400 font-bold">Memuat riwayat pembayaran...</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="p-3 bg-slate-50 border border-[#e0e0e0] rounded-xl text-center">
+                      <span className="text-[10px] font-bold text-slate-400 block uppercase">Total Tagihan</span>
+                      <span className="font-black text-[#5f1340] text-sm">
+                        Rp {(paymentDetail?.grandTotal || paymentModalOrder.grandTotal || 0).toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+                      <span className="text-[10px] font-bold text-emerald-600 block uppercase">Sudah Bayar</span>
+                      <span className="font-black text-emerald-800 text-sm">
+                        Rp {(paymentDetail?.paidAmount ?? paymentModalOrder.paidAmount ?? 0).toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-center">
+                      <span className="text-[10px] font-bold text-rose-600 block uppercase">Sisa</span>
+                      <span className="font-black text-rose-800 text-sm">
+                        Rp {(paymentDetail?.remaining ?? Math.max(0, (paymentModalOrder.grandTotal || 0) - (paymentModalOrder.paidAmount || 0))).toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Status:</span>
+                    <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black ${
+                      normalizePaymentStatus(paymentModalOrder.paymentStatus) === 'DP'
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-rose-100 text-rose-800'
+                    }`}>
+                      {normalizePaymentStatus(paymentModalOrder.paymentStatus)}
+                    </span>
+                  </div>
+
+                  {(paymentDetail?.order?.payment_proof_url || paymentModalOrder.paymentProofUrl) && (
+                    <div className="p-3 bg-slate-50 border border-[#e0e0e0] rounded-xl">
+                      <span className="text-[10px] font-bold text-slate-400 block mb-1">Bukti Pembayaran Terakhir</span>
+                      <a
+                        href={paymentDetail?.order?.payment_proof_url || paymentModalOrder.paymentProofUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] font-bold text-[#5f1340] hover:underline"
+                      >
+                        Lihat bukti pembayaran
+                      </a>
+                    </div>
+                  )}
+
+                  {paymentDetail?.logs?.length > 0 && (
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2 flex items-center gap-1">
+                        <History className="h-3.5 w-3.5" /> Riwayat Pembayaran
+                      </span>
+                      <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                        {paymentDetail.logs.map((log) => (
+                          <div key={log.id} className="p-2.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl flex justify-between items-center">
+                            <div>
+                              <span className="font-black text-[#313030] block">{log.log_type}</span>
+                              <span className="text-[10px] text-slate-500">{log.payment_method} • {new Date(log.created_at).toLocaleString('id-ID')}</span>
+                              {log.notes && <span className="text-[10px] text-slate-400 block">{log.notes}</span>}
+                            </div>
+                            <span className="font-black text-[#5f1340]">Rp {parseFloat(log.amount || 0).toLocaleString('id-ID')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {normalizePaymentStatus(paymentModalOrder.paymentStatus) !== 'Lunas' && (
+                    <>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                          Metode Pembayaran
+                        </label>
+                        <select
+                          value={paymentForm.paymentMethod}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, paymentMethod: e.target.value })}
+                          className="w-full px-4 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340] cursor-pointer"
+                        >
+                          {(paymentMethods.length ? paymentMethods : [{ name: 'Tunai Kasir', label: 'Tunai Kasir' }]).map((m) => (
+                            <option key={m.id || m.name} value={m.name}>{m.label || m.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                          Nominal Bayar / Pelunasan (Rp)
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={paymentForm.additionalAmount}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, additionalAmount: formatRupiah(e.target.value) })}
+                          placeholder={formatRupiah(paymentDetail?.remaining || paymentModalOrder.grandTotal || 0)}
+                          className="w-full px-4 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-sm font-black outline-none focus:border-[#5f1340]"
+                        />
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {[
+                            paymentDetail?.remaining || Math.max(0, (paymentModalOrder.grandTotal || 0) - (paymentModalOrder.paidAmount || 0)),
+                            50000, 100000, 200000
+                          ]
+                            .filter((v, i, arr) => v > 0 && arr.indexOf(v) === i)
+                            .slice(0, 4)
+                            .map((preset) => (
+                              <button
+                                key={preset}
+                                type="button"
+                                onClick={() => setPaymentForm({ ...paymentForm, additionalAmount: formatRupiah(preset) })}
+                                className="px-3 py-1 rounded-lg bg-[#f8f8f8] border border-[#e0e0e0] text-[10px] font-bold text-slate-600 hover:border-[#5f1340] cursor-pointer"
+                              >
+                                {preset === (paymentDetail?.remaining || 0) ? 'Lunas Pas' : formatRupiah(preset, true)}
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                          Catatan Pembayaran
+                        </label>
+                        <input
+                          type="text"
+                          value={paymentForm.notes}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+                          placeholder="Opsional — misal: transfer BCA a/n pelanggan"
+                          className="w-full px-4 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-xs font-medium outline-none focus:border-[#5f1340]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                          Upload Bukti Pembayaran
+                        </label>
+                        <label className="flex flex-col items-center justify-center w-full p-4 border-2 border-dashed border-[#e0e0e0] rounded-xl cursor-pointer hover:border-[#5f1340]/40 transition-all">
+                          <Upload className="h-4 w-4 text-slate-400 mb-1" />
+                          <span className="text-[10px] font-bold text-slate-500">
+                            {proofFile ? proofFile.name : 'Upload foto/PDF bukti bayar'}
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,application/pdf"
+                            className="hidden"
+                            onChange={(e) => setProofFile(e.target.files?.[0] || null)}
+                          />
+                        </label>
+                      </div>
+
+                      {parseRupiah(paymentForm.additionalAmount) > (paymentDetail?.remaining || 0) && (
+                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                            <Coins className="h-4 w-4" />
+                            Kelebihan bayar: Rp {(parseRupiah(paymentForm.additionalAmount) - (paymentDetail?.remaining || 0)).toLocaleString('id-ID')}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setPaymentForm({ ...paymentForm, overpaymentAction: 'change' })}
+                              className={`py-2 rounded-lg text-[10px] font-black cursor-pointer ${
+                                paymentForm.overpaymentAction === 'change' ? 'bg-amber-600 text-white' : 'bg-white border border-amber-300 text-amber-900'
+                              }`}
+                            >
+                              Kembalian Tunai
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPaymentForm({ ...paymentForm, overpaymentAction: 'deposit' })}
+                              className={`py-2 rounded-lg text-[10px] font-black cursor-pointer ${
+                                paymentForm.overpaymentAction === 'deposit' ? 'bg-emerald-600 text-white' : 'bg-white border border-emerald-300 text-emerald-800'
+                              }`}
+                            >
+                              Simpan ke Saldo
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+
+            {normalizePaymentStatus(paymentModalOrder.paymentStatus) !== 'Lunas' && !isLoadingPayment && (
+              <div className="p-4 border-t border-[#e0e0e0] bg-[#f8f8f8] flex gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => { setPaymentModalOrder(null); setPaymentDetail(null); }}
+                  className="px-4 py-2.5 bg-white border border-[#e0e0e0] hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmittingPayment}
+                  onClick={handleSubmitPaymentUpdate}
+                  className="flex-1 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 text-white font-black rounded-xl text-xs cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>{isSubmittingPayment ? 'Menyimpan...' : 'Simpan Pembayaran'}</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

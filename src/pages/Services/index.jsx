@@ -3,11 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav';
 import ListServices from './components/ListServices';
-import DashboardServices from './components/DashboardServices';
-import {
-  Layers,
-  BarChart3
-} from 'lucide-react';
 
 export const mapServiceFromApi = (s) => ({
   id: s.code || `s-${s.id}`,
@@ -30,7 +25,6 @@ export default function Services() {
   const [activeOutletName, setActiveOutletName] = useState(localStorage.getItem('activeOutletName') || 'Waschen Laundry Raffles Hills');
   const [activeOutletId, setActiveOutletId] = useState(localStorage.getItem('activeOutletId') || '');
   const [outlets, setOutlets] = useState([]);
-  const [activeTab, setActiveTab] = useState('list');
   const [servicesList, setServicesList] = useState([]);
   const [categories, setCategories] = useState([]);
 
@@ -47,7 +41,7 @@ export default function Services() {
       role: isHq ? 'Management Alora' : (localStorage.getItem('activeRole') || 'Staff Kasir')
     });
 
-    axios.get('/api/outlets')
+    axios.get('/api/masters/outlets')
       .then(res => {
         if (res.data && res.data.success && res.data.data.length > 0) {
           setOutlets(res.data.data);
@@ -90,50 +84,15 @@ export default function Services() {
       />
 
       <main className="max-w-[1400px] w-full mx-auto p-4 sm:p-6 flex-grow flex flex-col gap-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-xs">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-[#313030] tracking-tight">Katalog Layanan & Daftar Tarif Resmi</h1>
-            <p className="text-xs text-slate-400 mt-0.5">Daftar harga resmi Waschen Laundry — hanya tampilan baca (read-only)</p>
-          </div>
-
-          <div className="flex items-center gap-1.5 bg-[#f8f8f8] border border-[#e0e0e0] p-1 rounded-2xl w-full sm:w-auto">
-            <button
-              type="button"
-              onClick={() => setActiveTab('list')}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                activeTab === 'list'
-                  ? 'bg-[#5f1340] text-white shadow-xs'
-                  : 'text-slate-500 hover:text-[#313030]'
-              }`}
-            >
-              <Layers className="h-4 w-4" />
-              <span>Daftar Tarif Layanan</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('dashboard')}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                activeTab === 'dashboard'
-                  ? 'bg-[#5f1340] text-white shadow-xs'
-                  : 'text-slate-500 hover:text-[#313030]'
-              }`}
-            >
-              <BarChart3 className="h-4 w-4" />
-              <span>Ringkasan Layanan</span>
-            </button>
-          </div>
+        <div className="bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-xs">
+          <h1 className="text-xl sm:text-2xl font-black text-[#313030] tracking-tight">Daftar Layanan Waschen Laundry 2026</h1>
+          <p className="text-xs text-slate-400 mt-0.5">Daftar Harga Resmi Waschen Laundry Seluruh Outlet</p>
         </div>
 
-        {activeTab === 'list' && (
-          <ListServices
-            servicesList={servicesList}
-            categories={categories}
-          />
-        )}
-
-        {activeTab === 'dashboard' && (
-          <DashboardServices servicesList={servicesList} />
-        )}
+        <ListServices
+          servicesList={servicesList}
+          categories={categories}
+        />
       </main>
     </div>
   );

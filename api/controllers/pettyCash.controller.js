@@ -1,4 +1,5 @@
 import { myWaschenPool } from '../db/pool.js';
+import { emitDashboardRefresh } from '../socket.js';
 
 /**
  * GET /api/petty-cash
@@ -59,7 +60,7 @@ export const getPettyCashLogs = async (req, res) => {
  */
 export const addPettyCashEntry = async (req, res) => {
   try {
-    const { outletId, cashierEmployeeId, type, category, amount, description, receiptPhotoUrl } = req.body;
+    const { outletId, cashierEmployeeId, shiftId, type, category, amount, description, receiptPhotoUrl } = req.body;
 
     const numAmount = parseFloat(amount);
     if (!type || !description || isNaN(numAmount) || numAmount <= 0) {
@@ -69,7 +70,15 @@ export const addPettyCashEntry = async (req, res) => {
       });
     }
 
-    // Get active shift initial float
+    // Resolve shift id
+    let resolvedShiftId = shiftId || null;
+    if (!resolvedShiftId) {
+      const [shiftRows] = await myWaschenPool.query(
+        'SELECT id, initial_cash FROM tr_cashier_shift WHERE status = "Open" ORDER BY id DESC LIMIT 1'
+      );
+      if (shiftRows.length > 0) resolvedShiftId = shiftRows[0].id;
+    }
+
     const [shiftRows] = await myWaschenPool.query(
       'SELECT initial_cash FROM tr_cashier_shift WHERE status = "Open" ORDER BY id DESC LIMIT 1'
     );
@@ -84,13 +93,14 @@ export const addPettyCashEntry = async (req, res) => {
 
     const [result] = await myWaschenPool.query(
       `INSERT INTO tr_petty_cash 
-       (outlet_id, cashier_employee_id, type, category, amount, balance_before, balance_after, description, receipt_photo_url, transaction_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+       (outlet_id, shift_id, cashier_employee_id, type, category, amount, balance_before, balance_after, description, receipt_photo_url, transaction_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         outletId || 2,
+        resolvedShiftId,
         cashierEmployeeId || 167,
         type,
-        category || 'Operasional Harian',
+        category || 'Biaya Operasional',
         numAmount,
         balanceBefore,
         balanceAfter,
@@ -100,6 +110,12 @@ export const addPettyCashEntry = async (req, res) => {
     );
 
     const [newRow] = await myWaschenPool.query('SELECT * FROM tr_petty_cash WHERE id = ?', [result.insertId]);
+
+    emitDashboardRefresh('petty-cash:updated', {
+      outletId: outletId || newRow[0]?.outlet_id,
+      type,
+      amount: numAmount
+    });
 
     return res.status(201).json({
       success: true,

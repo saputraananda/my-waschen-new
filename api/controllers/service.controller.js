@@ -12,7 +12,7 @@ export const getServices = async (req, res) => {
       SELECT s.*, 
              c.name as category_name, 
              c.code as category_code,
-             COALESCE(u.symbol, u.code, 'Kg') as unit,
+             COALESCE(s.unit, u.symbol, u.code, 'Kg') as unit,
              u.name as unit_name
       FROM mst_service s
       LEFT JOIN mst_service_category c ON s.category_id = c.id
@@ -147,7 +147,7 @@ export const createService = async (req, res) => {
     );
 
     const [newService] = await myWaschenPool.query(
-      `SELECT s.*, COALESCE(u.symbol, u.code, 'Kg') as unit, u.name as unit_name
+      `SELECT s.*, COALESCE(s.unit, u.symbol, u.code, 'Kg') as unit, u.name as unit_name
        FROM mst_service s
        LEFT JOIN mst_unit u ON s.unit_id = u.id
        WHERE s.id = ?`,

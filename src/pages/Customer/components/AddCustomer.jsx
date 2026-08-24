@@ -1,45 +1,56 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { formatName } from '../../../utils/FormatName';
-import {
-  ArrowLeft,
-  MapPin,
-  Phone,
-  Sparkles,
-  Save,
-  RotateCcw,
-  UserCheck
-} from 'lucide-react';
+import { normalizePhone, composeFullAddress } from '../../../utils/NormalizePhone.js';
+import { ArrowLeft, Save, RotateCcw } from 'lucide-react';
 
-const renderTierBadge = (tier) => {
-  switch (tier) {
-    case 'VIP':
-      return <span className="bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-black text-[10px] px-3 py-1 rounded-full border border-amber-300 shadow-xs uppercase tracking-wider inline-block whitespace-nowrap">VIP</span>;
-    case 'Gold':
-      return <span className="bg-amber-50 text-amber-900 border border-amber-200 font-extrabold text-[10px] px-3 py-1 rounded-full inline-block whitespace-nowrap">Gold</span>;
-    case 'Reguler':
-      return <span className="bg-slate-100 text-slate-700 border border-slate-200 font-bold text-[10px] px-3 py-1 rounded-full inline-block whitespace-nowrap">Reguler</span>;
-    default:
-      return <span className="bg-sky-50 text-sky-800 border border-sky-200 font-bold text-[10px] px-3 py-1 rounded-full inline-block whitespace-nowrap">One-Time</span>;
-  }
-};
+const GREETINGS = ['Pak', 'Bu', 'Mas', 'Mba', 'Kaka', 'Mr.', 'Mrs.'];
 
-const getDefaultForm = (activeOutletName) => ({
+const emptyForm = (activeOutletName, defaults = {}) => ({
   name: '',
   phone: '',
+  gender: '',
+  greeting: '',
   email: '',
+  birthDate: '',
+  occupation: '',
   address: '',
-  city: 'Jakarta Selatan',
+  block: '',
+  houseNumber: '',
+  fullAddress: '',
+  district: '',
+  subDistrict: '',
+  city: '',
   postalCode: '',
-  landmark: '',
-  homeBranch: activeOutletName,
-  source: 'Instagram / Media Sosial',
-  perfumePreference: 'Sakura Premium',
-  workPreference: 'Standard Reguler',
-  specialNotes: '',
-  tier: 'One-Time',
-  sendWaNotification: true
+  notes: '',
+  generalNotes: '',
+  homeBranch: activeOutletName || '',
+  customerSourceId: defaults.customerSourceId || '',
+  customerTierId: defaults.customerTierId || ''
+});
+
+const fromCustomer = (c, activeOutletName) => ({
+  name: c.name || '',
+  phone: c.phone || '',
+  gender: c.gender || '',
+  greeting: c.greeting || '',
+  email: !c.email || c.email === '-' ? '' : c.email,
+  birthDate: c.birth_date ? String(c.birth_date).slice(0, 10) : (c.birthDate || ''),
+  occupation: c.occupation || '',
+  address: !c.address || c.address === '-' ? '' : c.address,
+  block: c.block || '',
+  houseNumber: c.house_number || c.houseNumber || '',
+  fullAddress: c.full_address || c.fullAddress || '',
+  district: c.district || '',
+  subDistrict: c.sub_district || c.subDistrict || '',
+  city: !c.city || c.city === '-' ? '' : c.city,
+  postalCode: c.postal_code || c.postalCode || '',
+  notes: c.notes && c.notes !== 'Pelanggan terdaftar Waschen.' ? c.notes : '',
+  generalNotes: c.general_notes || c.generalNotes || '',
+  homeBranch: c.home_branch || c.homeBranch || activeOutletName || '',
+  customerSourceId: c.customer_source_id || c.sourceId || '',
+  customerTierId: c.spending_tier_id || c.tierId || ''
 });
 
 export default function AddCustomer({
@@ -48,353 +59,440 @@ export default function AddCustomer({
   activeOutletId,
   showToast,
   onCustomerCreated,
-  onSwitchToCatalog
+  onSwitchToCatalog,
+  customerToEdit = null,
+  onCustomerUpdated
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [newCustForm, setNewCustForm] = useState(() => getDefaultForm(activeOutletName));
+  const isEdit = Boolean(customerToEdit?.dbId || customerToEdit?.id);
+  const [customerSources, setCustomerSources] = useState([]);
+  const [customerTiers, setCustomerTiers] = useState([]);
+  const [showDetailAddress, setShowDetailAddress] = useState(false);
+  const [fullAddressTouched, setFullAddressTouched] = useState(Boolean(customerToEdit?.full_address || customerToEdit?.fullAddress));
+  const [form, setForm] = useState(() => (
+    customerToEdit ? fromCustomer(customerToEdit, activeOutletName) : emptyForm(activeOutletName)
+  ));
 
-  const handleRegisterNewCustomer = async (e) => {
+  useEffect(() => {
+    if (customerToEdit) {
+      setForm(fromCustomer(customerToEdit, activeOutletName));
+      setFullAddressTouched(Boolean(customerToEdit.full_address || customerToEdit.fullAddress));
+      if (customerToEdit.district || customerToEdit.sub_district || customerToEdit.subDistrict) {
+        setShowDetailAddress(true);
+      }
+    }
+  }, [customerToEdit, activeOutletName]);
+
+  useEffect(() => {
+    Promise.all([
+      axios.get('/api/masters/customer-sources'),
+      axios.get('/api/masters/customer-tiers')
+    ])
+      .then(([sourceRes, tierRes]) => {
+        const sourceList = sourceRes.data?.success ? (sourceRes.data.data || []) : [];
+        const tierList = tierRes.data?.success ? (tierRes.data.data || []) : [];
+        const defaultTier = tierList.find((t) => t.code === 'ONE_TIME' || t.name === 'One-Time') || tierList[tierList.length - 1];
+        setCustomerSources(sourceList);
+        setCustomerTiers(tierList);
+        setForm((prev) => ({
+          ...prev,
+          customerSourceId: prev.customerSourceId || '',
+          customerTierId: prev.customerTierId || defaultTier?.id || ''
+        }));
+      })
+      .catch((err) => console.error('Gagal memuat master preferensi:', err));
+  }, []);
+
+  const patch = (partial) => {
+    setForm((prev) => {
+      const next = { ...prev, ...partial };
+      if (!fullAddressTouched) {
+        next.fullAddress = composeFullAddress({
+          address: next.address,
+          block: next.block,
+          houseNumber: next.houseNumber
+        });
+      }
+      return next;
+    });
+  };
+
+  const handlePhoneBlur = () => {
+    const clean = normalizePhone(form.phone);
+    if (clean) setForm((prev) => ({ ...prev, phone: clean }));
+  };
+
+  const payloadFromForm = () => ({
+    name: formatName(form.name),
+    phone: normalizePhone(form.phone),
+    gender: form.gender || null,
+    greeting: form.greeting || null,
+    email: form.email || null,
+    birthDate: form.birthDate || null,
+    occupation: form.occupation || null,
+    address: form.address || null,
+    block: form.block || null,
+    houseNumber: form.houseNumber || null,
+    fullAddress: form.fullAddress || null,
+    district: form.district || null,
+    subDistrict: form.subDistrict || null,
+    city: form.city || null,
+    postalCode: form.postalCode || null,
+    notes: form.notes || null,
+    generalNotes: form.generalNotes || null,
+    homeBranch: form.homeBranch || activeOutletName,
+    preferredOutletId: parseInt(activeOutletId, 10) || null,
+    customerTierId: form.customerTierId || null,
+    customerSourceId: form.customerSourceId || null
+  });
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!newCustForm.name || !newCustForm.phone || !newCustForm.address) {
-      showToast('Form Belum Lengkap', 'Nama Pelanggan, Nomor HP/WhatsApp, dan Alamat Domisili wajib diisi', 'error');
+    if (!form.name || !form.phone) {
+      showToast('Form Belum Lengkap', 'Nama pelanggan dan nomor HP wajib diisi', 'error');
+      return;
+    }
+    const cleanPhone = normalizePhone(form.phone);
+    if (!cleanPhone || cleanPhone.length < 10) {
+      showToast('Nomor HP Tidak Valid', 'Masukkan nomor HP yang benar, contoh 087770597000', 'error');
       return;
     }
 
-    const formattedName = formatName(newCustForm.name);
-
+    const payload = payloadFromForm();
     try {
-      const res = await axios.post('/api/customers', {
-        name: formattedName,
-        phone: newCustForm.phone,
-        email: newCustForm.email,
-        address: newCustForm.address,
-        city: newCustForm.city,
-        postalCode: newCustForm.postalCode,
-        landmark: newCustForm.landmark,
-        homeBranch: newCustForm.homeBranch || activeOutletName,
-        preferredOutletId: parseInt(activeOutletId) || 2,
-        tier: newCustForm.tier || 'One-Time',
-        source: newCustForm.source,
-        perfumePreference: newCustForm.perfumePreference,
-        workPreference: newCustForm.workPreference,
-        notes: newCustForm.specialNotes
-      });
+      if (isEdit) {
+        const id = customerToEdit.dbId || customerToEdit.id;
+        const res = await axios.put(`/api/customers/${id}`, payload);
+        if (res.data?.success) {
+          showToast('Data Diperbarui', `Data ${payload.name} berhasil disimpan.`, 'success');
+          onCustomerUpdated?.(res.data.data);
+          onSwitchToCatalog?.();
+        }
+        return;
+      }
 
-      if (res.data && res.data.success) {
+      const res = await axios.post('/api/customers', payload);
+      if (res.data?.success) {
         const created = res.data.data;
-        const newCustFormatted = {
+        const mapped = {
           id: created.customer_code || `CUST-${String(created.id).padStart(3, '0')}`,
           dbId: created.id,
           name: created.name,
           phone: created.phone,
           email: created.email || '-',
-          address: created.address,
+          address: created.full_address || created.address,
           city: created.city,
           landmark: created.landmark || '-',
           homeBranch: created.home_branch || activeOutletName,
           tier: created.tier || 'One-Time',
+          tierId: created.spending_tier_id,
+          membershipTier: created.membership_tier || null,
           totalSpending: 0,
           monthlySpending: 0,
           trxCount: 0,
           depositBalance: 0,
-          points: 0,
           lastTrx: 'Baru Terdaftar',
-          source: created.source,
-          perfumePreference: created.perfume_preference,
-          workPreference: created.work_preference,
-          notes: created.notes || 'Pelanggan baru terdaftar.',
+          source: created.source || created.source_name || '-',
+          sourceId: created.customer_source_id,
+          notes: created.notes || '',
           complaints: [],
           history: []
         };
-
-        onCustomerCreated(newCustFormatted);
-        localStorage.setItem('autoSelectCustId', newCustFormatted.id);
-        showToast('Registrasi Berhasil!', `Pelanggan ${formattedName} berhasil disimpan ke database.`, 'success');
-        setNewCustForm(getDefaultForm(activeOutletName));
-
+        onCustomerCreated?.(mapped);
+        localStorage.setItem('autoSelectCustId', mapped.id);
+        showToast('Registrasi Berhasil', `Pelanggan ${payload.name} tersimpan. Nomor HP: ${created.phone}`, 'success');
+        setForm(emptyForm(activeOutletName, {
+          customerSourceId: '',
+          customerTierId: customerTiers.find((t) => t.code === 'ONE_TIME')?.id || customerTiers[customerTiers.length - 1]?.id || ''
+        }));
+        setFullAddressTouched(false);
         setTimeout(() => {
           if (location.state?.from === '/transaction' || new URLSearchParams(location.search).get('tab') === 'add') {
             navigate('/transaction', { replace: true });
           } else {
-            onSwitchToCatalog();
+            onSwitchToCatalog?.();
           }
-        }, 1000);
+        }, 800);
       }
     } catch (err) {
-      console.error('Gagal mendaftarkan pelanggan:', err);
-      showToast('Gagal Simpan', err.response?.data?.message || 'Terjadi kesalahan saat menyimpan ke database', 'error');
+      console.error('Gagal menyimpan pelanggan:', err);
+      showToast('Gagal Simpan', err.response?.data?.message || 'Terjadi kesalahan saat menyimpan', 'error');
     }
   };
 
+  const fieldCls = 'p-2.5 border border-[#e0e0e0] rounded-xl bg-white text-xs font-semibold text-slate-800 outline-none focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340]/20 transition-all';
+  const labelCls = 'text-[11px] font-extrabold text-slate-700';
+
   return (
-    <form onSubmit={handleRegisterNewCustomer} className="flex flex-col gap-6 bg-white border border-[#e0e0e0] rounded-3xl p-6 shadow-xs">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5 sm:gap-6 bg-white border border-[#e0e0e0] rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xs">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#e0e0e0] pb-4 gap-3">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-[#5f1340]/10 text-[#5f1340] rounded-2xl">
-            <UserCheck className="h-6 w-6" />
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base sm:text-lg font-black text-[#313030]">
+              {isEdit ? 'Ubah Data Customer' : 'Pendaftaran Customer Baru'}
+            </h2>
+            {isEdit && (
+              <span className="px-2.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold rounded-full">
+                Mode Edit
+              </span>
+            )}
           </div>
-          <div>
-            <h2 className="text-lg font-black text-[#313030]">Formulir Pendaftaran Pelanggan Baru</h2>
-            <p className="text-xs text-slate-400">Lengkapi data profil pelanggan untuk mendaftarkan member Waschen Laundry</p>
+          <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">Nama dan nomor HP wajib diisi. Alamat dan data lain bersifat opsional.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => (isEdit ? onSwitchToCatalog?.() : navigate(-1))}
+          className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-xl text-xs cursor-pointer transition-colors w-full sm:w-auto"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span>Kembali</span>
+        </button>
+      </div>
+
+      {/* Main Form Fields in 2 Columns */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 items-start gap-4 sm:gap-6">
+
+        {/* Left Column: Identitas & Preferensi */}
+        <div className="flex flex-col gap-4 sm:gap-5">
+          {/* Identitas Card */}
+          <div className="flex flex-col gap-4 p-4 sm:p-5 border border-[#e0e0e0] rounded-2xl bg-[#fcfcfc]">
+            <h3 className="text-xs font-black text-[#5f1340] uppercase tracking-wider border-b border-[#f0f0f0] pb-2">
+              Identitas Pelanggan
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="flex flex-col gap-1 sm:col-span-1">
+                <label className={labelCls}>Sapaan</label>
+                <select className={`${fieldCls} cursor-pointer`} value={form.greeting} onChange={(e) => patch({ greeting: e.target.value })}>
+                  <option value="">— Pilih —</option>
+                  {GREETINGS.map((g) => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1 sm:col-span-2">
+                <label className={labelCls}>Nama Lengkap *</label>
+                <input className={fieldCls} placeholder="Contoh: Budi Santoso" value={form.name} onChange={(e) => patch({ name: e.target.value })} required />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className={labelCls}>Nomor Handphone (WhatsApp) *</label>
+              <input
+                className={fieldCls}
+                type="tel"
+                placeholder="087770597000"
+                value={form.phone}
+                onChange={(e) => patch({ phone: e.target.value })}
+                onBlur={handlePhoneBlur}
+                required
+              />
+              <span className="text-[10px] text-slate-400">Otomatis diformat ke 08xx meski diisi +62 atau 62.</span>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className={labelCls}>Jenis Kelamin</label>
+              <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+                {['Laki-Laki', 'Perempuan'].map((g) => {
+                  const active = form.gender === g;
+                  return (
+                    <button
+                      type="button"
+                      key={g}
+                      onClick={() => patch({ gender: active ? '' : g })}
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
+                        active
+                          ? 'border-[#5f1340] bg-[#5f1340]/5 text-[#5f1340]'
+                          : 'border-[#e0e0e0] bg-white text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {g}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <label className={labelCls}>Tanggal Lahir</label>
+                <input className={fieldCls} type="date" value={form.birthDate} onChange={(e) => patch({ birthDate: e.target.value })} />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className={labelCls}>Pekerjaan</label>
+                <input className={fieldCls} placeholder="PNS, Swasta, dll" value={form.occupation} onChange={(e) => patch({ occupation: e.target.value })} />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className={labelCls}>Email</label>
+              <input className={fieldCls} type="email" placeholder="pelanggan@email.com" value={form.email} onChange={(e) => patch({ email: e.target.value })} />
+            </div>
+          </div>
+
+          {/* Preferensi & Outlet Card */}
+          <div className="flex flex-col gap-4 p-5 border border-[#e0e0e0] rounded-2xl bg-[#fcfcfc]">
+            <h3 className="text-xs font-black text-[#5f1340] uppercase tracking-wider border-b border-[#f0f0f0] pb-2">
+              Preferensi & Cabang
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <label className={labelCls}>Tahu Waschen Dari Mana?</label>
+                <select
+                  className={`${fieldCls} cursor-pointer`}
+                  value={form.customerSourceId}
+                  onChange={(e) => patch({ customerSourceId: parseInt(e.target.value, 10) || '' })}
+                >
+                  <option value="">— Pilih —</option>
+                  {customerSources.map((s) => (
+                    <option key={s.id} value={s.id}>{s.label || s.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className={labelCls}>Cabang Utama</label>
+                <select
+                  className={`${fieldCls} cursor-pointer`}
+                  value={form.homeBranch}
+                  onChange={(e) => patch({ homeBranch: e.target.value })}
+                >
+                  {(outlets && outlets.length > 0) ? (
+                    outlets.map((o) => (
+                      <option key={o.id} value={o.full_name || o.name}>{o.full_name || o.name}</option>
+                    ))
+                  ) : (
+                    <option value={activeOutletName || ''}>{activeOutletName || 'Utama'}</option>
+                  )}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className={labelCls}>Catatan Umum / Khusus</label>
+              <textarea
+                className={`${fieldCls} resize-none`}
+                rows={2}
+                placeholder="Catatan internal pelanggan, misal: Pakaian branded, perlakuan khusus..."
+                value={form.generalNotes}
+                onChange={(e) => patch({ generalNotes: e.target.value })}
+              />
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-xl text-xs transition-colors cursor-pointer self-start sm:self-auto"
-            title="Kembali ke halaman sebelumnya"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>Kembali</span>
-          </button>
+        {/* Right Column: Alamat & Wilayah */}
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-4 p-5 border border-[#e0e0e0] rounded-2xl bg-[#fcfcfc]">
+            <h3 className="text-xs font-black text-[#5f1340] uppercase tracking-wider border-b border-[#f0f0f0] pb-2">
+              Alamat Lengkap & Pengiriman
+            </h3>
+
+            <div className="flex flex-col gap-1">
+              <label className={labelCls}>Alamat Singkat / Nama Jalan</label>
+              <input className={fieldCls} placeholder="Raffles Hills" value={form.address} onChange={(e) => patch({ address: e.target.value })} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <label className={labelCls}>Blok</label>
+                <input className={fieldCls} placeholder="T11" value={form.block} onChange={(e) => patch({ block: e.target.value })} />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className={labelCls}>Nomor Rumah</label>
+                <input className={fieldCls} placeholder="18" value={form.houseNumber} onChange={(e) => patch({ houseNumber: e.target.value })} />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className={labelCls}>Alamat Lengkap (Ditampilkan di Struk/Nota)</label>
+              <textarea
+                className={`${fieldCls} resize-none`}
+                rows={3}
+                placeholder="Raffles Hills Blok T11 No 18"
+                value={form.fullAddress}
+                onChange={(e) => {
+                  setFullAddressTouched(true);
+                  setForm((prev) => ({ ...prev, fullAddress: e.target.value }));
+                }}
+              />
+              <span className="text-[10px] text-slate-400">Otomatis terisi dari alamat singkat, blok & nomor rumah.</span>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className={labelCls}>Catatan / Patokan Lokasi Rumah</label>
+              <input className={fieldCls} placeholder="Pagar hitam depan masjid" value={form.notes} onChange={(e) => patch({ notes: e.target.value })} />
+            </div>
+
+            <div className="pt-2 border-t border-[#f0f0f0]">
+              <button
+                type="button"
+                onClick={() => setShowDetailAddress((v) => !v)}
+                className="text-xs font-bold text-[#5f1340] hover:underline cursor-pointer flex items-center gap-1"
+              >
+                {showDetailAddress ? '▲ Sembunyikan Detail Wilayah' : '▼ Tampilkan Detail Wilayah (Kecamatan, Kelurahan, Kota, Kode POS)'}
+              </button>
+
+              {showDetailAddress && (
+                <div className="grid grid-cols-2 gap-3 mt-3 p-3 bg-white border border-[#e0e0e0] rounded-xl">
+                  <div className="flex flex-col gap-1">
+                    <label className={labelCls}>Kecamatan</label>
+                    <input className={fieldCls} placeholder="Duren Sawit" value={form.district} onChange={(e) => patch({ district: e.target.value })} />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className={labelCls}>Kelurahan</label>
+                    <input className={fieldCls} placeholder="Pondok Bambu" value={form.subDistrict} onChange={(e) => patch({ subDistrict: e.target.value })} />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className={labelCls}>Kota</label>
+                    <input className={fieldCls} value={form.city} onChange={(e) => patch({ city: e.target.value })} />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className={labelCls}>Kode POS</label>
+                    <input className={fieldCls} placeholder="13430" value={form.postalCode} onChange={(e) => patch({ postalCode: e.target.value })} />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* BAGIAN 1: INFORMASI KONTAK & IDENTITAS */}
-        <div className="p-5 border border-[#e0e0e0] rounded-2xl bg-[#f8f8f8]/50 flex flex-col gap-4">
-          <div className="flex items-center gap-2 border-b border-[#e0e0e0] pb-2 text-[#5f1340] font-black text-xs uppercase tracking-wider">
-            <Phone className="h-4 w-4" />
-            <span>1. Identitas & Kontak Utama</span>
-          </div>
+      {/* Full-width Footer Action Bar */}
+      <div className="flex flex-col sm:flex-row items-center justify-between border-t border-[#e0e0e0] pt-5 gap-3 mt-1">
+        <span className="text-xs text-slate-400 font-medium text-center sm:text-left">
+          * Tanda bintang wajib diisi. Data langsung terhubung ke POS Kasir.
+        </span>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-black text-slate-700">Nama Lengkap Pelanggan *</label>
-            <input
-              type="text"
-              placeholder="Contoh: An'nisa Puspa Khairani Rangkuti"
-              value={newCustForm.name}
-              onChange={(e) => setNewCustForm({ ...newCustForm, name: e.target.value })}
-              className="p-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340]"
-              required
-            />
-            <span className="text-[9px] text-slate-400">Format nama akan otomatis dikonversi ke Title Case (Kapital Setiap Kata).</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-black text-slate-700">Nomor WhatsApp / HP *</label>
-              <input
-                type="tel"
-                placeholder="Contoh: 08123456789"
-                value={newCustForm.phone}
-                onChange={(e) => setNewCustForm({ ...newCustForm, phone: e.target.value })}
-                className="p-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340]"
-                required
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-black text-slate-700">Alamat Email (Opsional)</label>
-              <input
-                type="email"
-                placeholder="annisa@example.com"
-                value={newCustForm.email}
-                onChange={(e) => setNewCustForm({ ...newCustForm, email: e.target.value })}
-                className="p-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340]"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-black text-slate-700">Cabang Tempat Mendaftar (Home Branch)</label>
-            <select
-              value={newCustForm.homeBranch}
-              onChange={(e) => setNewCustForm({ ...newCustForm, homeBranch: e.target.value })}
-              className="p-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340] cursor-pointer"
-            >
-              {outlets.length > 0 ? (
-                outlets.map(o => (
-                  <option key={o.id} value={o.full_name || o.name}>
-                    {o.full_name || o.name}
-                  </option>
-                ))
-              ) : (
-                <>
-                  <option value="Waschen Laundry Raffles Hills">Waschen Laundry Raffles Hills</option>
-                  <option value="Waschen Laundry Citra Gran">Waschen Laundry Citra Gran</option>
-                  <option value="Waschen Laundry Legenda">Waschen Laundry Legenda</option>
-                  <option value="Waschen Laundry Canadian">Waschen Laundry Canadian</option>
-                  <option value="Waschen Laundry Sentra Eropa">Waschen Laundry Sentra Eropa</option>
-                </>
-              )}
-            </select>
-          </div>
-        </div>
-
-        {/* BAGIAN 2: DOMISILI & PATOKAN LOKASI */}
-        <div className="p-5 border border-[#e0e0e0] rounded-2xl bg-[#f8f8f8]/50 flex flex-col gap-4">
-          <div className="flex items-center gap-2 border-b border-[#e0e0e0] pb-2 text-[#5f1340] font-black text-xs uppercase tracking-wider">
-            <MapPin className="h-4 w-4" />
-            <span>2. Alamat Domisili & Pengiriman</span>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-black text-slate-700">Alamat Lengkap Domisili *</label>
-            <textarea
-              rows={3}
-              placeholder="Nama jalan, nomor rumah, RT/RW, kelurahan, kecamatan..."
-              value={newCustForm.address}
-              onChange={(e) => setNewCustForm({ ...newCustForm, address: e.target.value })}
-              className="p-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340] resize-none"
-              required
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-black text-slate-700">Kota / Kabupaten</label>
-              <input
-                type="text"
-                placeholder="Jakarta Selatan"
-                value={newCustForm.city}
-                onChange={(e) => setNewCustForm({ ...newCustForm, city: e.target.value })}
-                className="p-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340]"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-black text-slate-700">Kode Pos</label>
-              <input
-                type="text"
-                placeholder="12810"
-                value={newCustForm.postalCode}
-                onChange={(e) => setNewCustForm({ ...newCustForm, postalCode: e.target.value })}
-                className="p-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340]"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-black text-slate-700">Patokan Alamat / Landmark (Antar-Jemput)</label>
-            <input
-              type="text"
-              placeholder="Contoh: Depan Masjid Al-Ikhlas / Samping Alfamart"
-              value={newCustForm.landmark}
-              onChange={(e) => setNewCustForm({ ...newCustForm, landmark: e.target.value })}
-              className="p-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340]"
-            />
-          </div>
-        </div>
-
-        {/* BAGIAN 3: PREFERENSI & PERILAKU PELANGGAN */}
-        <div className="p-5 border border-[#e0e0e0] rounded-2xl bg-[#f8f8f8]/50 flex flex-col gap-4">
-          <div className="flex items-center gap-2 border-b border-[#e0e0e0] pb-2 text-[#5f1340] font-black text-xs uppercase tracking-wider">
-            <Sparkles className="h-4 w-4" />
-            <span>3. Preferensi Layanan & Sumber Info</span>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-black text-slate-700">Tahu Waschen Laundry Dari Mana? *</label>
-            <select
-              value={newCustForm.source}
-              onChange={(e) => setNewCustForm({ ...newCustForm, source: e.target.value })}
-              className="p-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340] cursor-pointer"
-              required
-            >
-              <option value="Instagram / Media Sosial">📸 Instagram / Media Sosial</option>
-              <option value="Google Maps / Pencarian">📍 Google Maps / Pencarian Google</option>
-              <option value="Spanduk / Banner Outlet">🚩 Spanduk / Banner Outlet</option>
-              <option value="Rekomendasi Teman / Keluarga">👥 Rekomendasi Teman / Keluarga</option>
-              <option value="Brosur / Leaflet">📄 Brosur / Leaflet</option>
-              <option value="Walk-in Spontan">🏬 Walk-in / Langsung Datang</option>
-            </select>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-black text-slate-700">Aroma Parfum Favorit</label>
-              <select
-                value={newCustForm.perfumePreference}
-                onChange={(e) => setNewCustForm({ ...newCustForm, perfumePreference: e.target.value })}
-                className="p-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340] cursor-pointer"
-              >
-                <option value="Sakura Premium">🌸 Sakura Premium</option>
-                <option value="Lavender Calm">🌿 Lavender Calm</option>
-                <option value="Lily Sweet">🌺 Lily Sweet</option>
-                <option value="Ocean Breeze">🍃 Ocean Breeze</option>
-                <option value="Tanpa Parfum">🚫 Tanpa Parfum (Alergi / Sensitive)</option>
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-black text-slate-700">Preferensi Pengerjaan</label>
-              <select
-                value={newCustForm.workPreference}
-                onChange={(e) => setNewCustForm({ ...newCustForm, workPreference: e.target.value })}
-                className="p-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340] cursor-pointer"
-              >
-                <option value="Standard Reguler">Lipat Rapi Standard</option>
-                <option value="Express 6 Jam">Prioritas Express</option>
-                <option value="Hanger / Gantung">Gantung Hanger</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-black text-slate-700">Catatan Khusus / Instruksi Pakaian</label>
-            <textarea
-              rows={2}
-              placeholder="Contoh: Pisahkan kemeja putih, jangan gunakan pemutih pada jas..."
-              value={newCustForm.specialNotes}
-              onChange={(e) => setNewCustForm({ ...newCustForm, specialNotes: e.target.value })}
-              className="p-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340] resize-none"
-            />
-          </div>
-        </div>
-
-        {/* BAGIAN 4: SYARAT & SUBMIT */}
-        <div className="p-5 border border-[#e0e0e0] rounded-2xl bg-[#f8f8f8]/50 flex flex-col justify-between gap-4">
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-2 border-b border-[#e0e0e0] pb-2 text-[#5f1340] font-black text-xs uppercase tracking-wider">
-              <UserCheck className="h-4 w-4" />
-              <span>4. Status Member & Konfirmasi</span>
-            </div>
-
-            <div className="bg-white p-4 rounded-xl border border-[#e0e0e0] flex items-center justify-between">
-              <div>
-                <span className="text-xs font-black text-[#313030] block">Status Tier Pendaftaran:</span>
-                <span className="text-[10px] text-slate-400">Otomatis terdaftar sebagai One-Time member</span>
-              </div>
-              {renderTierBadge('One-Time')}
-            </div>
-
-            <label className="flex items-start gap-3 p-3 bg-white border border-[#e0e0e0] rounded-xl cursor-pointer">
-              <input
-                type="checkbox"
-                checked={newCustForm.sendWaNotification}
-                onChange={(e) => setNewCustForm({ ...newCustForm, sendWaNotification: e.target.checked })}
-                className="mt-0.5 accent-[#5f1340] h-4 w-4 cursor-pointer"
-              />
-              <span className="text-xs font-bold text-slate-700 leading-snug">
-                Kirim pesan notifikasi ucapan selamat datang via WhatsApp otomatis ke nomor pelanggan.
-              </span>
-            </label>
-          </div>
-
-          <div className="flex items-center gap-3 pt-4 border-t border-[#e0e0e0]">
-            <button
-              type="submit"
-              className="flex-1 py-3.5 bg-gradient-to-r from-[#5f1340] to-[#7d1b55] hover:opacity-95 text-white font-black rounded-2xl text-xs shadow-lg shadow-[#5f1340]/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Save className="h-4 w-4" />
-              <span>Simpan & Registrasi Pelanggan</span>
-            </button>
-
+        <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+          {!isEdit && (
             <button
               type="button"
-              onClick={() => setNewCustForm(getDefaultForm(activeOutletName))}
-              className="px-4 py-3.5 bg-white border border-[#e0e0e0] hover:bg-slate-50 text-slate-600 font-extrabold rounded-2xl text-xs transition-all cursor-pointer"
-              title="Reset Isian Form"
+              onClick={() => {
+                setFullAddressTouched(false);
+                setForm(emptyForm(activeOutletName, {
+                  customerSourceId: '',
+                  customerTierId: customerTiers.find((t) => t.code === 'ONE_TIME')?.id || ''
+                }));
+              }}
+              className="flex-1 sm:flex-none px-4 py-3 bg-white border border-[#e0e0e0] hover:bg-slate-50 text-slate-700 font-bold rounded-xl text-xs cursor-pointer flex items-center justify-center gap-2 transition-colors"
             >
               <RotateCcw className="h-4 w-4" />
+              <span>Reset Form</span>
             </button>
-          </div>
+          )}
+
+          <button
+            type="submit"
+            className="flex-1 sm:flex-none px-6 py-3 bg-[#5f1340] hover:bg-[#4d0f33] text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-colors"
+          >
+            <Save className="h-4 w-4" />
+            <span>{isEdit ? 'Simpan Perubahan' : 'Simpan Pelanggan'}</span>
+          </button>
         </div>
       </div>
     </form>
   );
 }
+

@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { formatName } from '../utils/FormatName';
+import { formatWorkPercentage, getWorkPercentage } from '../utils/workStatusMeta.js';
 import {
   Search,
   QrCode,
@@ -19,10 +21,20 @@ import {
   ArrowRight,
   User,
   Phone,
-  Calendar
+  Calendar,
+  Camera
 } from 'lucide-react';
 
-const WORKFLOW_STAGES = [
+const SCANNER_ELEMENT_ID = 'waschen-nota-scanner';
+
+const extractOrderNo = (raw) => {
+  const text = String(raw || '').trim();
+  const wsMatch = text.match(/WS-\d+/i);
+  if (wsMatch) return wsMatch[0].toUpperCase();
+  return text;
+};
+
+const DEFAULT_WORKFLOW = [
   { id: 'Antrean', label: 'Antrean', icon: Clock, desc: 'Nota Diterima' },
   { id: 'Pencucian', label: 'Pencucian', icon: Wind, desc: 'Proses Cuci' },
   { id: 'Penyetrikaan', label: 'Penyetrikaan', icon: Shirt, desc: 'Proses Setrika' },
@@ -31,12 +43,43 @@ const WORKFLOW_STAGES = [
   { id: 'Selesai', label: 'Selesai', icon: CheckCircle2, desc: 'Diserahkan' }
 ];
 
+const STATUS_ICONS = {
+  Antrean: Clock,
+  Pencucian: Wind,
+  Penyetrikaan: Shirt,
+  Pengemasan: Layers,
+  'Siap Diambil': PackageCheck,
+  'Siap Diantar': Truck,
+  Selesai: CheckCircle2,
+  Dibatalkan: AlertCircle
+};
+
 export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' }) {
   const [searchKey, setSearchKey] = useState(initialOrderNo || '');
   const [trackedOrder, setTrackedOrder] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [recentOrders, setRecentOrders] = useState([]);
+  const [workflowStages, setWorkflowStages] = useState(DEFAULT_WORKFLOW);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannerError, setScannerError] = useState('');
+  const scannerRef = useRef(null);
+  const searchHandlerRef = useRef(null);
+
+  useEffect(() => {
+    axios.get('/api/masters/work-statuses?filter_tabs=1')
+      .then((res) => {
+        if (res.data?.success && res.data.data?.length) {
+          setWorkflowStages(res.data.data.map((s) => ({
+            id: s.name,
+            label: s.label || s.name,
+            icon: STATUS_ICONS[s.name] || Clock,
+            desc: s.description || s.name
+          })));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Fetch recent orders for 1-click suggestion pills
   useEffect(() => {
@@ -60,7 +103,7 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
     }
   }, [isOpen, initialOrderNo]);
 
-  const handleSearchOrder = async (queryKey) => {
+  const handleSearchOrder = useCallback(async (queryKey) => {
     const targetKey = queryKey || searchKey;
     if (!targetKey || !targetKey.trim()) {
       setErrorMessage('Harap masukkan nomor nota!');
@@ -79,7 +122,6 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
       }
     } catch (err) {
       console.error('Error fetching transaction detail:', err);
-      // Fallback: search in recent orders array
       const foundInRecent = recentOrders.find(o => o.order_no?.toLowerCase() === targetKey.trim().toLowerCase());
       if (foundInRecent) {
         setTrackedOrder(foundInRecent);
@@ -90,13 +132,97 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [recentOrders, searchKey]);
+
+  searchHandlerRef.current = handleSearchOrder;
+
+  const stopScanner = useCallback(async () => {
+    const scanner = scannerRef.current;
+    scannerRef.current = null;
+    if (!scanner) {
+      setIsScannerOpen(false);
+      return;
+    }
+    try {
+      if (scanner.isScanning) {
+        await scanner.stop();
+      }
+      scanner.clear();
+    } catch (_) {
+      /* ignore cleanup errors */
+    }
+    setIsScannerOpen(false);
+    setScannerError('');
+  }, []);
+
+  useEffect(() => {
+    if (!isScannerOpen) return undefined;
+
+    let cancelled = false;
+
+    const startScanner = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      if (cancelled) return;
+
+      const scanner = new Html5Qrcode(SCANNER_ELEMENT_ID, {
+        verbose: false,
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.QR_CODE,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.EAN_13
+        ]
+      });
+      scannerRef.current = scanner;
+
+      try {
+        await scanner.start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: { width: 260, height: 260 }, aspectRatio: 1.0 },
+          (decodedText) => {
+            const orderNo = extractOrderNo(decodedText);
+            stopScanner().then(() => {
+              setSearchKey(orderNo);
+              searchHandlerRef.current?.(orderNo);
+            });
+          },
+          () => {}
+        );
+        setScannerError('');
+      } catch (err) {
+        console.error('Scanner error:', err);
+        scannerRef.current = null;
+        setScannerError(
+          err?.message?.includes('NotAllowed')
+            ? 'Akses kamera ditolak. Izinkan kamera di browser lalu coba lagi.'
+            : (err?.message || 'Tidak dapat membuka kamera. Pastikan perangkat memiliki kamera dan browser mendukung HTTPS/localhost.')
+        );
+      }
+    };
+
+    startScanner();
+
+    return () => {
+      cancelled = true;
+      const scanner = scannerRef.current;
+      scannerRef.current = null;
+      if (scanner?.isScanning) {
+        scanner.stop().catch(() => {}).finally(() => scanner.clear());
+      }
+    };
+  }, [isScannerOpen, stopScanner]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      stopScanner();
+    }
+  }, [isOpen, stopScanner]);
 
   const handleOpenWA = (phone, name, orderNo, status) => {
     let rawPhone = (phone || '').replace(/[^0-9]/g, '');
     if (rawPhone.startsWith('0')) rawPhone = '62' + rawPhone.slice(1);
     if (!rawPhone) rawPhone = '628123456789';
-    const message = encodeURIComponent(`Halo Kak ${name || 'Pelanggan'}, update status pengerjaan nota ${orderNo} Anda saat ini adalah: ${status}. Terima kasih! 😊`);
+    const message = encodeURIComponent(`Halo Kak ${name || 'Pelanggan'}, update status pengerjaan nota ${orderNo} Anda saat ini adalah: ${formatWorkPercentage(status)}. Terima kasih! 😊`);
     window.open(`https://wa.me/${rawPhone}?text=${message}`, '_blank');
   };
 
@@ -104,14 +230,14 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
 
   // Determine stage progress index
   const getStageIndex = (status) => {
-    if (!status) return 0;
-    if (status === 'Antrean' || status === 'Diterima') return 0;
-    if (status === 'Pencucian' || status === 'Proses Cuci') return 1;
-    if (status === 'Penyetrikaan' || status === 'Proses Setrika') return 2;
-    if (status === 'Pengemasan' || status === 'Proses Packing') return 3;
-    if (status === 'Siap Diambil' || status === 'Siap Diantar' || status === 'Delivery') return 4;
-    if (status === 'Selesai') return 5;
-    return 0;
+    if (!workflowStages.length) return 0;
+    const pct = getWorkPercentage(status);
+    let idx = 0;
+    workflowStages.forEach((stage, i) => {
+      const stagePct = getWorkPercentage(stage.id || stage.label);
+      if (pct + 0.001 >= stagePct) idx = i;
+    });
+    return idx;
   };
 
   const currentStageIndex = trackedOrder ? getStageIndex(trackedOrder.work_status || trackedOrder.workStatus) : 0;
@@ -167,10 +293,12 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
               <span>{isLoading ? 'Melacak...' : 'Lacak Nota'}</span>
             </button>
 
-            {/* Placeholder Scan Barcode / QR */}
             <button
               type="button"
-              onClick={() => alert('Fitur Scanner Camera Barcode / QR Code Nota Waschen siap diaktifkan saat terhubung ke perangkat kamera fisik!')}
+              onClick={() => {
+                setScannerError('');
+                setIsScannerOpen(true);
+              }}
               className="px-4 py-2.5 bg-white border border-[#e0e0e0] hover:border-[#5f1340] text-slate-700 hover:text-[#5f1340] font-bold rounded-2xl text-xs transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap"
               title="Pindai QR / Barcode Struk Nota via Kamera"
             >
@@ -263,13 +391,13 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
                     <span>Progress Pengerjaan Nota Utama</span>
                   </h4>
                   <span className="px-2.5 py-0.5 rounded-full bg-[#5f1340]/10 text-[#5f1340] text-[10px] font-black border border-[#5f1340]/20">
-                    Status: {trackedOrder.work_status || trackedOrder.workStatus}
+                    Status: {formatWorkPercentage(trackedOrder.work_status ?? trackedOrder.workStatus)}
                   </span>
                 </div>
 
                 {/* Horizontal Stepper Timeline */}
                 <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 relative">
-                  {WORKFLOW_STAGES.map((stage, idx) => {
+                  {workflowStages.map((stage, idx) => {
                     const isDone = idx <= currentStageIndex;
                     const isCurrent = idx === currentStageIndex;
                     const IconComp = stage.icon;
@@ -328,7 +456,7 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
                     <tbody className="divide-y divide-[#e0e0e0] text-xs font-semibold">
                       {(trackedOrder.items && trackedOrder.items.length > 0) ? (
                         trackedOrder.items.map((item, idx) => {
-                          const itemStatus = item.item_work_status || item.status || trackedOrder.work_status || trackedOrder.workStatus || 'Antrean';
+                          const itemStatus = item.item_work_status || item.status || 'Antrean';
                           const itemStageIdx = getStageIndex(itemStatus);
 
                           return (
@@ -411,7 +539,7 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
                           <td className="py-3.5 px-4 text-center">
                             <span className="px-3 py-1 rounded-full border text-[10px] font-black bg-purple-50 text-purple-800 border-purple-200 inline-flex items-center gap-1">
                               <Clock className="h-3 w-3" />
-                              <span>{trackedOrder.work_status || trackedOrder.workStatus}</span>
+                              <span>{formatWorkPercentage(trackedOrder.work_status ?? trackedOrder.workStatus)}</span>
                             </span>
                           </td>
                           <td className="py-3.5 px-4 text-right font-mono font-black text-[#313030]">
@@ -439,6 +567,54 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
           </button>
         </div>
       </div>
+
+      {isScannerOpen && (
+        <div className="fixed inset-0 z-[70] bg-[#313030]/80 backdrop-blur-sm flex justify-center items-center p-4">
+          <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-md shadow-2xl overflow-hidden">
+            <div className="p-4 border-b border-[#e0e0e0] flex justify-between items-center bg-[#f8f8f8]">
+              <div className="flex items-center gap-2">
+                <Camera className="h-4 w-4 text-[#5f1340]" />
+                <div>
+                  <h4 className="text-sm font-black text-[#313030]">Scan Barcode / QR Nota</h4>
+                  <p className="text-[10px] text-slate-400">Arahkan kamera ke struk nota (WS-...)</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={stopScanner}
+                className="p-1.5 hover:bg-slate-200 rounded-xl text-slate-500 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-4 flex flex-col gap-3">
+              {scannerError ? (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-bold">
+                  {scannerError}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500 font-medium text-center">
+                  Mendeteksi otomatis — nota akan dilacak setelah terbaca
+                </p>
+              )}
+
+              <div
+                id={SCANNER_ELEMENT_ID}
+                className="w-full overflow-hidden rounded-2xl border border-[#e0e0e0] bg-black min-h-[280px]"
+              />
+
+              <button
+                type="button"
+                onClick={stopScanner}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-xl text-xs cursor-pointer"
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

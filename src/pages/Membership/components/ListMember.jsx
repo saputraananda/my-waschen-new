@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { formatName } from '../../../utils/FormatName';
+import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 import {
   CreditCard,
   Users,
@@ -12,18 +13,40 @@ import {
   X,
   Sparkles,
   Wallet,
-  History
+  History,
+  Gem,
+  Crown
 } from 'lucide-react';
 
-const renderTierBadge = (tier) => {
-  switch (tier) {
-    case 'VIP':
-      return <span className="bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-black text-[10px] px-3 py-1 rounded-full border border-amber-300 shadow-xs uppercase tracking-wider inline-block">VIP</span>;
-    case 'Gold':
-      return <span className="bg-amber-50 text-amber-900 border border-amber-200 font-extrabold text-[10px] px-3 py-1 rounded-full inline-block">Gold</span>;
-    default:
-      return <span className="bg-slate-100 text-slate-700 border border-slate-200 font-bold text-[10px] px-3 py-1 rounded-full inline-block">Reguler</span>;
+const renderMembershipBadge = (tier) => {
+  if (!tier || tier === '-' || tier === 'Tidak' || tier === 'None') {
+    return <span className="text-slate-400 font-bold">-</span>;
   }
+  const clean = String(tier).replace(/^member\s*/i, '').trim();
+
+  if (/diamond/i.test(clean)) {
+    return (
+      <span className="inline-flex items-center gap-1.5 bg-cyan-50 text-cyan-900 border border-cyan-200 font-extrabold text-[10px] px-3 py-1 rounded-full shadow-2xs uppercase tracking-wider whitespace-nowrap">
+        <Gem className="h-3.5 w-3.5 text-cyan-600 shrink-0" />
+        <span>Diamond</span>
+      </span>
+    );
+  }
+
+  if (/gold/i.test(clean)) {
+    return (
+      <span className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-900 border border-amber-200 font-extrabold text-[10px] px-3 py-1 rounded-full shadow-2xs uppercase tracking-wider whitespace-nowrap">
+        <Crown className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+        <span>Gold</span>
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 bg-purple-50 text-purple-900 border border-purple-200 font-extrabold text-[10px] px-3 py-1 rounded-full shadow-2xs uppercase tracking-wider whitespace-nowrap">
+      <span>{clean}</span>
+    </span>
+  );
 };
 
 export default function ListMember({
@@ -33,9 +56,12 @@ export default function ListMember({
   activeOutletName,
   showToast
 }) {
+  const { showPrompt } = useAppDialog();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTierFilter, setSelectedTierFilter] = useState('Semua');
   const [selectedBranchFilter, setSelectedBranchFilter] = useState(activeOutletName || 'Semua');
+  const [membershipPackages, setMembershipPackages] = useState([]);
+  const [paymentMethods, setPaymentMethods] = useState([]);
 
   const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
   const [isMutationModalOpen, setIsMutationModalOpen] = useState(false);
@@ -50,6 +76,22 @@ export default function ListMember({
       setSelectedBranchFilter(activeOutletName);
     }
   }, [activeOutletName]);
+
+  useEffect(() => {
+    Promise.all([
+      axios.get('/api/memberships/packages'),
+      axios.get('/api/masters/payment-methods')
+    ])
+      .then(([pkgRes, payRes]) => {
+        if (pkgRes.data?.success) setMembershipPackages(pkgRes.data.data || []);
+        if (payRes.data?.success) {
+          const methods = (payRes.data.data || []).filter((m) => !m.requires_member_balance);
+          setPaymentMethods(methods);
+          if (methods[0]) setTopUpMethod(methods[0].name);
+        }
+      })
+      .catch((err) => console.error('Gagal memuat master membership:', err));
+  }, []);
 
   useEffect(() => {
     if (topUpAmount >= 1000000) {
@@ -114,7 +156,7 @@ export default function ListMember({
     const matchesSearch = m.name.toLowerCase().includes(q) ||
       m.phone.includes(q) ||
       (m.cardNumber && m.cardNumber.toLowerCase().includes(q));
-    const matchesTier = selectedTierFilter === 'Semua' || m.tier === selectedTierFilter;
+    const matchesTier = selectedTierFilter === 'Semua' || m.membershipTier === selectedTierFilter || m.tier === selectedTierFilter;
     const matchesBranch = selectedBranchFilter === 'Semua' ||
       m.homeBranch === selectedBranchFilter ||
       (m.homeBranch && selectedBranchFilter && (
@@ -126,7 +168,8 @@ export default function ListMember({
 
   const totalMemberCount = members.length;
   const totalBalanceFloating = members.reduce((sum, m) => sum + m.balance, 0);
-  const vipCount = members.filter(m => m.tier === 'VIP').length;
+  const diamondCount = members.filter(m => m.membershipTier === 'Diamond' || m.tier === 'Diamond').length;
+  const goldCount = members.filter(m => m.membershipTier === 'Gold' || m.tier === 'Gold').length;
   const totalTopUpAll = members.reduce((sum, m) => sum + m.totalTopUp, 0);
 
   return (
@@ -155,9 +198,9 @@ export default function ListMember({
             <Award className="h-6 w-6" />
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Member VIP / Gold</span>
-            <span className="text-lg font-black text-amber-800 block mt-0.5">{vipCount} Orang</span>
-            <span className="text-[10px] text-amber-600 font-bold">Tier Prioritas</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Member Diamond / Gold</span>
+            <span className="text-lg font-black text-amber-800 block mt-0.5">{diamondCount + goldCount} Orang</span>
+            <span className="text-[10px] text-amber-600 font-bold">{diamondCount} Diamond · {goldCount} Gold</span>
           </div>
         </div>
 
@@ -194,24 +237,14 @@ export default function ListMember({
               className="w-full h-10 px-3 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl text-xs font-semibold text-[#313030] outline-none focus:bg-white focus:border-[#5f1340] cursor-pointer"
             >
               <option value="Semua">Semua Cabang Outlet</option>
-              {outlets.length > 0 ? (
-                outlets.map(o => (
-                  <option key={o.id} value={o.full_name || o.name}>{o.full_name || o.name}</option>
-                ))
-              ) : (
-                <>
-                  <option value="Waschen Laundry Raffles Hills">Waschen Laundry Raffles Hills</option>
-                  <option value="Waschen Laundry Citra Gran">Waschen Laundry Citra Gran</option>
-                  <option value="Waschen Laundry Legenda">Waschen Laundry Legenda</option>
-                  <option value="Waschen Laundry Canadian">Waschen Laundry Canadian</option>
-                  <option value="Waschen Laundry Sentra Eropa">Waschen Laundry Sentra Eropa</option>
-                </>
-              )}
+              {outlets.map(o => (
+                <option key={o.id} value={o.full_name || o.name}>{o.full_name || o.name}</option>
+              ))}
             </select>
           </div>
 
           <div className="md:col-span-3 flex items-center gap-1 overflow-x-auto no-scrollbar">
-            {['Semua', 'VIP', 'Gold', 'Reguler'].map(t => (
+            {['Semua', ...membershipPackages.map(p => p.tier)].filter((v, i, a) => a.indexOf(v) === i).map(t => (
               <button
                 key={t}
                 type="button"
@@ -234,7 +267,7 @@ export default function ListMember({
               <tr className="bg-[#f8f8f8] text-slate-400 font-extrabold uppercase text-[10px] border-b border-[#e0e0e0]">
                 <th className="py-3 px-4">Kartu & Pelanggan</th>
                 <th className="py-3 px-4">Cabang Outlet</th>
-                <th className="py-3 px-4 text-center">Tier Member</th>
+                <th className="py-3 px-4 text-center">Paket Member</th>
                 <th className="py-3 px-4 text-right">Saldo Kartu Aktif</th>
                 <th className="py-3 px-4 text-right">Total Top-Up</th>
                 <th className="py-3 px-4 text-center">Masa Berlaku</th>
@@ -264,7 +297,7 @@ export default function ListMember({
                       <span className="text-[10px] text-slate-400">Terdaftar: {m.registeredAt}</span>
                     </td>
                     <td className="py-3.5 px-4 text-center">
-                      {renderTierBadge(m.tier)}
+                      {renderMembershipBadge(m.membershipTier || m.tier)}
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       <span className="font-black text-sm text-emerald-700 block">
@@ -370,9 +403,17 @@ export default function ListMember({
                   ))}
                   <button
                     type="button"
-                    onClick={() => {
-                      const custom = prompt('Masukkan nominal top-up (Rp):', '300000');
-                      if (custom) setTopUpAmount(Number(custom) || 100000);
+                    onClick={async () => {
+                      const custom = await showPrompt({
+                        title: 'Nominal Top-Up Custom',
+                        message: 'Masukkan nominal top-up saldo member (Rp).',
+                        defaultValue: '300000',
+                        placeholder: '300000',
+                        inputLabel: 'Nominal (Rp)',
+                        submitLabel: 'Gunakan',
+                        inputMode: 'numeric'
+                      });
+                      if (custom) setTopUpAmount(Number(custom.replace(/\D/g, '')) || 100000);
                     }}
                     className="py-2 px-2 bg-[#f8f8f8] hover:bg-slate-100 border border-[#e0e0e0] text-slate-700 font-bold rounded-xl text-xs"
                   >
@@ -398,10 +439,9 @@ export default function ListMember({
                   onChange={(e) => setTopUpMethod(e.target.value)}
                   className="w-full px-3 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-xs font-bold text-[#313030] outline-none focus:border-[#5f1340]"
                 >
-                  <option value="Tunai Kasir">Tunai Kasir</option>
-                  <option value="QRIS Gopay">QRIS / E-Wallet</option>
-                  <option value="Transfer BCA">Transfer Bank BCA</option>
-                  <option value="Debit Card EDC">Debit Card EDC</option>
+                  {paymentMethods.map((m) => (
+                    <option key={m.id} value={m.name}>{m.label}</option>
+                  ))}
                 </select>
               </div>
 
@@ -446,7 +486,7 @@ export default function ListMember({
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Saldo Aktif Saat Ini</span>
                   <span className="text-base font-black text-[#5f1340]">Rp {selectedMember.balance.toLocaleString('id-ID')}</span>
                 </div>
-                {renderTierBadge(selectedMember.tier)}
+                {renderMembershipBadge(selectedMember.membershipTier || selectedMember.tier)}
               </div>
 
               <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">

@@ -13,6 +13,7 @@ import {
     X
 } from 'lucide-react';
 import Toast from '../../components/Toast.jsx';
+import { formatEmployeeName } from '../../utils/FormatName.js';
 
 // Import local images from assets/images
 import img1 from '../../assets/images/1.webp';
@@ -138,7 +139,7 @@ export default function LoginPage() {
                     localStorage.setItem('activeOutletName', user.assignedOutletName || 'Waschen Laundry Citra Gran');
                 }
 
-                setWelcomeName(user.fullName || user.username);
+                setWelcomeName(formatEmployeeName(user.fullName || user.username));
                 setIsSuccessModalOpen(true);
 
                 setTimeout(() => {
@@ -156,11 +157,6 @@ export default function LoginPage() {
             setIsLoading(false);
         }
     };
-
-    const toTitleCase = (text = "") =>
-        text
-            .toLowerCase()
-            .replace(/\b\w/g, (char) => char.toUpperCase());
 
     return (
         <div className="relative min-h-screen bg-white flex overflow-hidden font-sans">
@@ -214,7 +210,7 @@ export default function LoginPage() {
                         <div className="text-sm text-slate-600 mb-5 font-sans text-center px-4 w-full">
                             <span className="text-slate-500 block text-xs">Welcome back,</span>
                             <span className="font-extrabold text-base text-[#5f1340] mt-1 block break-words leading-snug">
-                                {toTitleCase(welcomeName)}!
+                                {welcomeName}!
                             </span>
                         </div>
 

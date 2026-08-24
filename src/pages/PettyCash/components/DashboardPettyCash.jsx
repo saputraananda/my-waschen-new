@@ -1,12 +1,6 @@
 import React, { useState } from 'react';
-import {
-  Wallet,
-  ArrowDownLeft,
-  ArrowUpRight,
-  Search,
-  TrendingDown,
-  TrendingUp
-} from 'lucide-react';
+import { formatEmployeeName } from '../../../utils/FormatName.js';
+import { Search } from 'lucide-react';
 
 export default function DashboardPettyCash({
   cashLogs,
@@ -30,43 +24,27 @@ export default function DashboardPettyCash({
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-gradient-to-tr from-[#420a2c] to-[#5f1340] text-white rounded-2xl p-5 shadow-md relative overflow-hidden flex flex-col justify-between">
+        <div className="bg-gradient-to-tr from-[#420a2c] to-[#5f1340] text-white rounded-2xl p-5 shadow-md flex flex-col justify-between">
           <span className="text-[10px] uppercase font-bold tracking-widest text-rose-200 block">Uang Tunai Di Laci</span>
           <span className="text-2xl font-black block mt-2 text-amber-300">Rp {netCashInDrawer.toLocaleString('id-ID')}</span>
-          <span className="text-[10px] text-rose-100/80 block mt-2 font-medium">Laci Shift Pagi ({activeOutletName})</span>
+          <span className="text-[10px] text-rose-100/80 block mt-2 font-medium">Laci Shift ({activeOutletName})</span>
         </div>
 
-        <div className="bg-white border border-[#e0e0e0] rounded-2xl p-5 shadow-xs flex items-center gap-4">
-          <div className="p-3 bg-[#5f1340]/5 text-[#5f1340] rounded-xl">
-            <Wallet className="h-6 w-6" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Modal Awal Floating</span>
-            <span className="text-lg font-black text-[#313030] block mt-0.5">Rp {initialCashFloat.toLocaleString('id-ID')}</span>
-            <span className="text-[10px] text-slate-400">Patokan Modal Dasar</span>
-          </div>
+        <div className="bg-white border border-[#e0e0e0] rounded-2xl p-5 shadow-xs">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Modal Awal Floating</span>
+          <span className="text-lg font-black text-[#313030] block mt-1">Rp {initialCashFloat.toLocaleString('id-ID')}</span>
         </div>
 
-        <div className="bg-white border border-[#e0e0e0] rounded-2xl p-5 shadow-xs flex items-center gap-4">
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
-            <TrendingUp className="h-6 w-6" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Kas Masuk</span>
-            <span className="text-lg font-black text-emerald-700 block mt-0.5">+ Rp {totalCashIn.toLocaleString('id-ID')}</span>
-            <span className="text-[10px] text-emerald-600 font-extrabold">{cashLogs.filter(c => c.type === 'Masuk').length} Transaksi</span>
-          </div>
+        <div className="bg-white border border-[#e0e0e0] rounded-2xl p-5 shadow-xs">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Kas Masuk</span>
+          <span className="text-lg font-black text-emerald-700 block mt-1">+ Rp {totalCashIn.toLocaleString('id-ID')}</span>
+          <span className="text-[10px] text-emerald-600 font-bold">{cashLogs.filter(c => c.type === 'Masuk').length} transaksi</span>
         </div>
 
-        <div className="bg-white border border-[#e0e0e0] rounded-2xl p-5 shadow-xs flex items-center gap-4">
-          <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
-            <TrendingDown className="h-6 w-6" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Kas Keluar</span>
-            <span className="text-lg font-black text-rose-700 block mt-0.5">- Rp {totalCashOut.toLocaleString('id-ID')}</span>
-            <span className="text-[10px] text-rose-600 font-extrabold">{cashLogs.filter(c => c.type === 'Keluar').length} Transaksi</span>
-          </div>
+        <div className="bg-white border border-[#e0e0e0] rounded-2xl p-5 shadow-xs">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Kas Keluar</span>
+          <span className="text-lg font-black text-rose-700 block mt-1">- Rp {totalCashOut.toLocaleString('id-ID')}</span>
+          <span className="text-[10px] text-rose-600 font-bold">{cashLogs.filter(c => c.type === 'Keluar').length} transaksi</span>
         </div>
       </div>
 
@@ -95,7 +73,7 @@ export default function DashboardPettyCash({
                     : 'bg-[#f8f8f8] text-slate-600 hover:bg-[#e0e0e0]'
                 }`}
               >
-                {type === 'Semua' ? 'Semua Kas' : type === 'Masuk' ? '📥 Kas Masuk' : '📤 Kas Keluar'}
+                {type === 'Semua' ? 'Semua Kas' : `Kas ${type}`}
               </button>
             ))}
           </div>
@@ -117,21 +95,10 @@ export default function DashboardPettyCash({
                 filteredLogs.map(log => (
                   <tr key={log.id} className="hover:bg-[#f8f8f8] transition-colors">
                     <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-2">
-                        {log.type === 'Keluar' ? (
-                          <span className="p-1 bg-rose-50 text-rose-600 rounded-md border border-rose-200">
-                            <ArrowUpRight className="h-3.5 w-3.5" />
-                          </span>
-                        ) : (
-                          <span className="p-1 bg-emerald-50 text-emerald-600 rounded-md border border-emerald-200">
-                            <ArrowDownLeft className="h-3.5 w-3.5" />
-                          </span>
-                        )}
-                        <div>
-                          <span className="font-bold text-[#313030] block">{log.type}</span>
-                          <span className="text-[10px] text-slate-400 block">{log.date}</span>
-                        </div>
-                      </div>
+                      <span className={`font-bold block ${log.type === 'Keluar' ? 'text-rose-700' : 'text-emerald-700'}`}>
+                        {log.type}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block">{log.date}</span>
                     </td>
                     <td className="py-3.5 px-4">
                       <span className="px-2.5 py-0.5 bg-slate-100 text-slate-700 rounded-md font-bold text-[10px]">
@@ -142,7 +109,7 @@ export default function DashboardPettyCash({
                       {log.desc}
                     </td>
                     <td className="py-3.5 px-4 text-slate-500 font-medium">
-                      {log.createdBy}
+                      {formatEmployeeName(log.createdBy)}
                     </td>
                     <td className={`py-3.5 px-4 text-right font-black text-sm ${
                       log.type === 'Keluar' ? 'text-rose-600' : 'text-emerald-600'

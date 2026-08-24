@@ -28,7 +28,7 @@ export const getDashboardStats = async (req, res) => {
     const [activeRows] = await myWaschenPool.query(
       `SELECT COUNT(*) as activeCount 
        FROM tr_transaction 
-       WHERE work_status != 'Selesai' ${outletFilter}`,
+       WHERE work_status > 0 AND work_status < 100 ${outletFilter}`,
       params
     );
     const activeOrdersCount = parseInt(activeRows[0]?.activeCount || 0);
@@ -37,7 +37,7 @@ export const getDashboardStats = async (req, res) => {
     const [readyRows] = await myWaschenPool.query(
       `SELECT COUNT(*) as readyCount 
        FROM tr_transaction 
-       WHERE work_status IN ('Siap Diambil', 'Siap Diantar', 'Delivery') ${outletFilter}`,
+       WHERE work_status > 82.5 AND work_status < 100 ${outletFilter}`,
       params
     );
     const readyOrdersCount = parseInt(readyRows[0]?.readyCount || 0);
@@ -61,19 +61,26 @@ export const getDashboardStats = async (req, res) => {
     );
     const kiloWeightSum = parseFloat(weightRows[0]?.kiloWeight || 0);
 
-    // 6. Monthly Target from mst_target_waschen (in mainPool)
+    // 6. Monthly Target from mst_target_waschen (by outlet_id)
     let monthlyTarget = 50000000;
     try {
       const now = new Date();
       const currentYear = now.getFullYear();
       const currentMonth = now.getMonth() + 1;
-      const [targetRows] = await mainPool.query(
-        `SELECT nominal FROM mst_target_waschen 
-         WHERE tahun = ? AND bulan = ? 
-         ORDER BY id DESC LIMIT 1`,
-        [currentYear, currentMonth]
-      );
-      if (targetRows.length > 0 && targetRows[0].nominal > 0) {
+
+      let targetSql = '';
+      let targetParams = [];
+
+      if (outlet_id && outlet_id !== 'Semua') {
+        targetSql = `SELECT nominal FROM mst_target_waschen WHERE outlet_id = ? AND tahun = ? AND bulan = ? LIMIT 1`;
+        targetParams = [outlet_id, currentYear, currentMonth];
+      } else {
+        targetSql = `SELECT COALESCE(SUM(nominal), 0) AS nominal FROM mst_target_waschen WHERE tahun = ? AND bulan = ?`;
+        targetParams = [currentYear, currentMonth];
+      }
+
+      const [targetRows] = await myWaschenPool.query(targetSql, targetParams);
+      if (targetRows.length > 0 && parseFloat(targetRows[0].nominal) > 0) {
         monthlyTarget = parseFloat(targetRows[0].nominal);
       }
     } catch (e) {

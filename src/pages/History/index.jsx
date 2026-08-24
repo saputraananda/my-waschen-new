@@ -4,6 +4,7 @@ import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav';
 import HistoryTransaction from './components/HistoryTransaction';
 import RequestDeleteTransaction from './components/RequestDeleteTransaction';
+import { useShift } from '../../context/ShiftContext.jsx';
 import {
   History as HistoryIcon,
   Trash2,
@@ -13,6 +14,7 @@ import {
 
 export default function History() {
   const navigate = useNavigate();
+  const { startOrderFlow } = useShift();
   const [userProfile, setUserProfile] = useState(null);
   const [activeOutletName, setActiveOutletName] = useState(localStorage.getItem('activeOutletName') || 'Waschen Laundry Raffles Hills');
   const [activeOutletId, setActiveOutletId] = useState(localStorage.getItem('activeOutletId') || '');
@@ -49,7 +51,7 @@ export default function History() {
       setActiveOutletName(savedOutlet);
     }
 
-    axios.get('/api/outlets')
+    axios.get('/api/masters/outlets')
       .then(res => {
         if (res.data && res.data.success && res.data.data.length > 0) {
           setOutlets(res.data.data);
@@ -78,10 +80,12 @@ export default function History() {
           speed: t.speed_name || 'Reguler',
           subtotal: parseFloat(t.subtotal) || 0,
           grandTotal: parseFloat(t.grand_total) || 0,
-          paymentStatus: t.payment_status || 'Belum Lunas',
+          paymentStatus: t.payment_status || 'Outstanding',
           paymentMethod: t.payment_method || '-',
-          progressStatus: t.work_status || 'Antrean',
-          cashierName: t.cashier_employee_id ? `Kasir #${t.cashier_employee_id}` : 'Kasir Waschen',
+          paidAmount: parseFloat(t.paid_amount) || 0,
+          paymentProofUrl: t.payment_proof_url || null,
+          progressStatus: t.work_status ?? 10,
+          cashierName: t.cashier_name || t.cashier_employee_name || (t.cashier_employee_id ? `Kasir #${t.cashier_employee_id}` : 'Kasir Waschen'),
           createdAt: new Date(t.order_date).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
           notes: t.special_notes || '-',
           // Delete Request Fields
@@ -137,7 +141,7 @@ export default function History() {
           </div>
 
           <button
-            onClick={() => navigate('/transaction')}
+            onClick={startOrderFlow}
             className="flex items-center gap-2 px-5 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] text-white font-black rounded-xl text-xs transition-all shadow-2xs cursor-pointer"
           >
             <ShoppingBag className="h-4 w-4" />

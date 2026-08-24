@@ -13,9 +13,13 @@ import {
 } from 'lucide-react';
 
 export const mapMemberFromApi = (c) => {
-  const regDate = new Date(c.created_at || Date.now());
-  const expiry = new Date(regDate);
-  expiry.setFullYear(expiry.getFullYear() + 1);
+  const expiry = c.membership_end_date
+    ? new Date(c.membership_end_date)
+    : (() => {
+        const d = new Date(c.created_at || Date.now());
+        d.setDate(d.getDate() + 180);
+        return d;
+      })();
 
   return {
     id: c.customer_code || `MBR-${String(c.id).padStart(3, '0')}`,
@@ -24,13 +28,17 @@ export const mapMemberFromApi = (c) => {
     name: c.name,
     phone: c.phone,
     homeBranch: c.home_branch || 'Waschen Laundry Citra Gran',
-    tier: c.tier || 'Reguler',
+    spendingTier: c.tier || 'Reguler',
+    tier: c.membership_tier || 'Gold',
+    membershipTier: c.membership_tier || null,
     balance: parseFloat(c.deposit_balance) || 0,
-    totalTopUp: parseFloat(c.total_spent) || parseFloat(c.deposit_balance) || 0,
-    totalUsage: (parseFloat(c.total_spent) || 0) * 0.7,
-    registeredAt: regDate.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
+    totalTopUp: parseFloat(c.membership_top_up_amount) || parseFloat(c.deposit_balance) || 0,
+    totalUsage: Math.max(0, (parseFloat(c.membership_top_up_amount) || parseFloat(c.deposit_balance) || 0) - (parseFloat(c.deposit_balance) || 0)),
+    registeredAt: c.membership_start_date
+      ? new Date(c.membership_start_date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+      : new Date(c.created_at || Date.now()).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
     expiryDate: expiry.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
-    status: 'Aktif',
+    status: c.membership_status === 'Active' ? 'Aktif' : (c.membership_status || 'Aktif'),
     mutations: []
   };
 };
@@ -76,7 +84,7 @@ export default function Membership() {
       setActiveOutletName(savedOutlet);
     }
 
-    axios.get('/api/outlets')
+    axios.get('/api/masters/outlets')
       .then(res => {
         if (res.data && res.data.success && res.data.data.length > 0) {
           setOutlets(res.data.data);
@@ -89,9 +97,9 @@ export default function Membership() {
 
   const fetchMembers = async () => {
     try {
-      const res = await axios.get('/api/customers');
-      if (res.data && res.data.success && res.data.data.length > 0) {
-        setMembers(res.data.data.map(mapMemberFromApi));
+      const res = await axios.get('/api/customers', { params: { has_membership: '1' } });
+      if (res.data && res.data.success) {
+        setMembers((res.data.data || []).map(mapMemberFromApi));
       }
     } catch (err) {
       console.error('Gagal mengambil data member:', err);
@@ -134,7 +142,7 @@ export default function Membership() {
               <CreditCard className="h-6 w-6 text-[#5f1340]" />
               <span>Kelola Membership & Saldo Kartu</span>
             </h1>
-            <p className="text-xs text-slate-400 mt-0.5">Database kartu member pelanggan, saldo deposit e-wallet laundry, dan mutasi transaksi kartu</p>
+            <p className="text-xs text-slate-400 mt-0.5">Paket member Diamond/Gold terpisah dari tier spending organik pelanggan</p>
           </div>
 
           <div className="flex items-center gap-2 bg-[#f8f8f8] border border-[#e0e0e0] p-1.5 rounded-2xl w-full sm:w-auto">

@@ -28,7 +28,7 @@ function ServiceCard({ service }) {
         )}
       </div>
       <div className="pt-3 border-t border-[#e0e0e0]">
-        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Harga Resmi</span>
+        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Harga</span>
         <span className="text-lg font-black text-[#5f1340]">
           Rp {service.price.toLocaleString('id-ID')} <span className="text-xs font-bold text-slate-500">/ {service.unit}</span>
         </span>
