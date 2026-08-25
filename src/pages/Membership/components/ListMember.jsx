@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { formatName } from '../../../utils/FormatName';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
+import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
+import WaschenMemberCard from '../../../components/WaschenMemberCard.jsx';
 import {
   CreditCard,
   Users,
@@ -15,7 +17,9 @@ import {
   Wallet,
   History,
   Gem,
-  Crown
+  Crown,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 
 const renderMembershipBadge = (tier) => {
@@ -67,9 +71,12 @@ export default function ListMember({
   const [isMutationModalOpen, setIsMutationModalOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState(null);
 
-  const [topUpAmount, setTopUpAmount] = useState(100000);
-  const [topUpMethod, setTopUpMethod] = useState('QRIS Gopay');
-  const [topUpBonus, setTopUpBonus] = useState(10000);
+  const [selectedPackageId, setSelectedPackageId] = useState('');
+  const [mainCategory, setMainCategory] = useState('Tunai');
+  const [edcCardType, setEdcCardType] = useState('Debit Card');
+  const [isCrossTransfer, setIsCrossTransfer] = useState(false);
+  const [crossBankOutletId, setCrossBankOutletId] = useState(1);
+  const [isSubmittingTopUp, setIsSubmittingTopUp] = useState(false);
 
   useEffect(() => {
     if (activeOutletName) {
@@ -83,71 +90,86 @@ export default function ListMember({
       axios.get('/api/masters/payment-methods')
     ])
       .then(([pkgRes, payRes]) => {
-        if (pkgRes.data?.success) setMembershipPackages(pkgRes.data.data || []);
+        if (pkgRes.data?.success && Array.isArray(pkgRes.data.data)) {
+          const pkgs = pkgRes.data.data;
+          setMembershipPackages(pkgs);
+          if (pkgs[0]) setSelectedPackageId(pkgs[0].id);
+        }
         if (payRes.data?.success) {
-          const methods = (payRes.data.data || []).filter((m) => !m.requires_member_balance);
-          setPaymentMethods(methods);
-          if (methods[0]) setTopUpMethod(methods[0].name);
+          setPaymentMethods(payRes.data.data || []);
         }
       })
       .catch((err) => console.error('Gagal memuat master membership:', err));
   }, []);
 
-  useEffect(() => {
-    if (topUpAmount >= 1000000) {
-      setTopUpBonus(120000);
-    } else if (topUpAmount >= 500000) {
-      setTopUpBonus(50000);
-    } else if (topUpAmount >= 200000) {
-      setTopUpBonus(15000);
-    } else if (topUpAmount >= 100000) {
-      setTopUpBonus(5000);
-    } else {
-      setTopUpBonus(0);
+  const selectedPackage = useMemo(() => {
+    return membershipPackages.find((p) => String(p.id) === String(selectedPackageId)) || membershipPackages[0];
+  }, [membershipPackages, selectedPackageId]);
+
+  const openTopUpModal = (member) => {
+    setSelectedMember(member);
+    if (membershipPackages[0]) {
+      setSelectedPackageId(membershipPackages[0].id);
     }
-  }, [topUpAmount]);
+    setMainCategory('Tunai');
+    setEdcCardType('Debit Card');
+    setIsCrossTransfer(false);
+    setCrossBankOutletId(1);
+    setIsTopUpModalOpen(true);
+  };
 
   const handleTopUpSubmit = async (e) => {
     e.preventDefault();
-    if (!selectedMember) return;
+    if (!selectedMember || !selectedPackage) return;
 
-    const totalAdded = Number(topUpAmount) + Number(topUpBonus);
+    const resolvedMethod = resolvePaymentMethodString({
+      mainCategory,
+      edcCardType,
+      isCrossTransfer,
+      crossBankOutletId,
+      activeOutletId: localStorage.getItem('activeOutletId') || 2,
+      activeOutletName: localStorage.getItem('activeOutletName') || 'Waschen Laundry Citra Gran',
+      outlets
+    });
 
+    setIsSubmittingTopUp(true);
     try {
-      if (selectedMember.dbId) {
-        await axios.post(`/api/customers/${selectedMember.dbId}/deposit`, {
-          amount: totalAdded,
-          paymentMethod: topUpMethod,
-          notes: `Top-Up Saldo via ${topUpMethod}`
-        });
+      const res = await axios.post('/api/memberships', {
+        customerId: selectedMember.dbId,
+        packageId: selectedPackage.id,
+        outletId: parseInt(localStorage.getItem('activeOutletId')) || 2,
+        paymentMethod: resolvedMethod,
+        cashierEmployeeId: localStorage.getItem('employeeId') || null
+      });
+
+      if (res.data?.success) {
+        const topUpAmt = Number(selectedPackage.top_up_amount || 0);
+        showToast('Top-Up Berhasil', res.data.message || `Saldo kartu ${selectedMember.name} bertambah Rp ${topUpAmt.toLocaleString('id-ID')}`);
+        
+        // Update local state
+        setMembers(members.map(m => {
+          if (m.id === selectedMember.id) {
+            const updatedTier = res.data.data?.membershipTier || m.tier;
+            return {
+              ...m,
+              tier: updatedTier,
+              membershipTier: updatedTier,
+              balance: (m.balance || 0) + topUpAmt,
+              totalTopUp: (m.totalTopUp || 0) + topUpAmt
+            };
+          }
+          return m;
+        }));
+
+        setIsTopUpModalOpen(false);
+      } else {
+        showToast('Gagal Top-Up', res.data?.message || 'Terjadi kesalahan sistem', 'error');
       }
-
-      const newMutation = {
-        id: `MUT-${Date.now().toString().slice(-4)}`,
-        type: 'Top-Up',
-        amount: Number(topUpAmount),
-        bonus: Number(topUpBonus),
-        date: new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
-        desc: `Top-Up Saldo via ${topUpMethod}`
-      };
-
-      setMembers(members.map(m => {
-        if (m.id === selectedMember.id) {
-          return {
-            ...m,
-            balance: m.balance + totalAdded,
-            totalTopUp: m.totalTopUp + Number(topUpAmount),
-            mutations: [newMutation, ...m.mutations]
-          };
-        }
-        return m;
-      }));
-
-      showToast('Top-Up Berhasil', `Saldo kartu ${selectedMember.name} bertambah Rp ${totalAdded.toLocaleString('id-ID')}`);
-      setIsTopUpModalOpen(false);
     } catch (err) {
       console.error('Gagal topup deposit:', err);
       showToast('Gagal Top-Up', err.response?.data?.message || 'Terjadi kesalahan sistem', 'error');
+    } finally {
+      setIsSubmittingTopUp(false);
     }
   };
 
@@ -316,10 +338,7 @@ export default function ListMember({
                       <div className="flex items-center justify-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => {
-                            setSelectedMember(m);
-                            setIsTopUpModalOpen(true);
-                          }}
+                          onClick={() => openTopUpModal(m)}
                           className="px-3 py-1.5 bg-[#5f1340] hover:bg-[#4d0f33] text-white font-bold rounded-xl text-[11px] transition-all flex items-center gap-1 cursor-pointer shadow-xs"
                           title="Isi Saldo Kartu Member"
                         >
@@ -344,8 +363,8 @@ export default function ListMember({
                 ))
               ) : (
                 <tr>
-                  <td colSpan="7" className="py-12 text-center text-slate-400">
-                    <CreditCard className="h-10 w-10 mx-auto text-slate-300 mb-2" />
+                  <td colSpan={6} className="py-12 text-center text-slate-400">
+                    <Users className="h-10 w-10 mx-auto text-slate-300 mb-2" />
                     <p className="font-bold text-xs text-[#313030]">Tidak ada data member yang sesuai</p>
                     <p className="text-[11px] mt-0.5">Silakan sesuaikan filter cabang atau kata kunci pencarian</p>
                   </td>
@@ -356,11 +375,11 @@ export default function ListMember({
         </div>
       </div>
 
-      {/* MODAL: TOP-UP SALDO KARTU */}
+      {/* MODAL: TOP-UP SALDO KARTU MEMBER */}
       {isTopUpModalOpen && selectedMember && (
-        <div className="fixed inset-0 z-50 bg-[#313030]/60 backdrop-blur-xs flex justify-center items-center p-4">
-          <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-md shadow-2xl overflow-hidden animate-fade-in">
-            <div className="p-5 border-b border-[#e0e0e0] flex justify-between items-center bg-[#f8f8f8]">
+        <div className="fixed inset-0 z-50 bg-[#313030]/75 backdrop-blur-xs flex justify-center items-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[calc(100vh-4rem)] sm:max-h-[85vh] my-auto animate-fade-in">
+            <div className="p-4 sm:p-5 border-b border-[#e0e0e0] flex justify-between items-center bg-[#f8f8f8] shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-[#5f1340]/10 text-[#5f1340] rounded-xl">
                   <Wallet className="h-5 w-5" />
@@ -375,87 +394,89 @@ export default function ListMember({
               </button>
             </div>
 
-            <form onSubmit={handleTopUpSubmit} className="p-6 flex flex-col gap-4">
+            <form onSubmit={handleTopUpSubmit} className="p-5 flex flex-col gap-4 text-xs overflow-y-auto flex-1 custom-scrollbar">
               <div className="p-4 bg-gradient-to-r from-[#5f1340]/10 via-[#5f1340]/5 to-transparent border border-[#5f1340]/20 rounded-2xl flex justify-between items-center">
                 <div>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Saldo Saat Ini</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Saldo Saat Ini & Tier</span>
                   <span className="text-xs font-extrabold text-[#313030]">{selectedMember.name}</span>
                 </div>
-                <span className="text-lg font-black text-[#5f1340]">Rp {selectedMember.balance.toLocaleString('id-ID')}</span>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">Pilih Nominal Top-Up</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[100000, 200000, 500000, 1000000, 2000000].map(amt => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => setTopUpAmount(amt)}
-                      className={`py-2 px-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                        topUpAmount === amt
-                          ? 'bg-[#5f1340] text-white shadow-xs'
-                          : 'bg-[#f8f8f8] text-slate-700 border border-[#e0e0e0] hover:bg-slate-100'
-                      }`}
-                    >
-                      Rp {(amt / 1000).toLocaleString('id-ID')}k
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const custom = await showPrompt({
-                        title: 'Nominal Top-Up Custom',
-                        message: 'Masukkan nominal top-up saldo member (Rp).',
-                        defaultValue: '300000',
-                        placeholder: '300000',
-                        inputLabel: 'Nominal (Rp)',
-                        submitLabel: 'Gunakan',
-                        inputMode: 'numeric'
-                      });
-                      if (custom) setTopUpAmount(Number(custom.replace(/\D/g, '')) || 100000);
-                    }}
-                    className="py-2 px-2 bg-[#f8f8f8] hover:bg-slate-100 border border-[#e0e0e0] text-slate-700 font-bold rounded-xl text-xs"
-                  >
-                    Custom
-                  </button>
+                <div className="text-right">
+                  <span className="text-lg font-black text-[#5f1340] block">Rp {selectedMember.balance.toLocaleString('id-ID')}</span>
+                  {renderMembershipBadge(selectedMember.membershipTier || selectedMember.tier)}
                 </div>
               </div>
 
-              {topUpBonus > 0 && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-1.5 text-amber-900 font-bold">
-                    <Sparkles className="h-4 w-4 text-amber-600" />
-                    <span>Bonus Deposit:</span>
-                  </div>
-                  <span className="font-black text-amber-900">+ Rp {topUpBonus.toLocaleString('id-ID')}</span>
-                </div>
-              )}
-
               <div>
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Metode Pembayaran</label>
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Pilih Paket Top-Up Membership</label>
                 <select
-                  value={topUpMethod}
-                  onChange={(e) => setTopUpMethod(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-xs font-bold text-[#313030] outline-none focus:border-[#5f1340]"
+                  value={selectedPackageId}
+                  onChange={(e) => setSelectedPackageId(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-xs font-bold text-[#313030] outline-none focus:border-[#5f1340] cursor-pointer"
                 >
-                  {paymentMethods.map((m) => (
-                    <option key={m.id} value={m.name}>{m.label}</option>
+                  {membershipPackages.map((pkg) => (
+                    <option key={pkg.id} value={pkg.id}>
+                      {pkg.name} ({pkg.tier} — Rp {Number(pkg.top_up_amount).toLocaleString('id-ID')})
+                    </option>
                   ))}
                 </select>
               </div>
 
-              <div className="pt-3 border-t border-[#e0e0e0] flex justify-between items-center text-sm font-black">
-                <span>Total Masuk ke Saldo:</span>
-                <span className="text-[#5f1340] text-base">Rp {(Number(topUpAmount) + Number(topUpBonus)).toLocaleString('id-ID')}</span>
+              {selectedPackage && (
+                <div className="my-1">
+                  <WaschenMemberCard
+                    tier={selectedPackage.tier || 'Gold'}
+                    memberName={selectedMember?.name ? formatName(selectedMember.name) : 'NAMA PELANGGAN'}
+                    customerCode={selectedMember?.cardNumber || selectedMember?.customerCode || '2600604'}
+                    topUpAmount={Number(selectedPackage.top_up_amount || 500000)}
+                    validityDays={selectedPackage.validity_days || 180}
+                  />
+                </div>
+              )}
+
+              {selectedMember?.tier === 'Diamond' && selectedPackage?.tier === 'Gold' && (
+                <div className="p-3 bg-cyan-50 border border-cyan-200 rounded-xl text-[11px] text-cyan-900 font-bold flex items-start gap-2">
+                  <Gem className="h-4 w-4 text-cyan-600 shrink-0 mt-0.5" />
+                  <span>Top-up Paket Gold Rp 500.000 akan menambah saldo deposit +Rp 500.000 & memperpanjang masa aktif. Status Tier pelanggan dipertahankan <strong>DIAMOND</strong> (Retensi Tier Tertinggi).</span>
+                </div>
+              )}
+
+              {/* Cascading Payment Selector */}
+              <div>
+                <CascadingPaymentSelector
+                  mainCategory={mainCategory}
+                  setMainCategory={setMainCategory}
+                  edcCardType={edcCardType}
+                  setEdcCardType={setEdcCardType}
+                  isCrossTransfer={isCrossTransfer}
+                  setIsCrossTransfer={setIsCrossTransfer}
+                  crossBankOutletId={crossBankOutletId}
+                  setCrossBankOutletId={setCrossBankOutletId}
+                  activeOutletId={localStorage.getItem('activeOutletId') || 2}
+                  activeOutletName={activeOutletName}
+                  outlets={outlets}
+                  paymentMethods={paymentMethods}
+                  selectedCustomer={selectedMember}
+                  grandTotal={selectedPackage ? Number(selectedPackage.top_up_amount) : 500000}
+                />
               </div>
 
-              <button
-                type="submit"
-                className="w-full py-3.5 mt-2 bg-gradient-to-r from-[#5f1340] to-[#7d1956] hover:from-[#4d0f33] hover:to-[#6a1549] text-white font-black text-xs rounded-2xl shadow-md shadow-[#5f1340]/20 transition-all cursor-pointer"
-              >
-                Konfirmasi & Simpan Top-Up
-              </button>
+              <div className="p-4 border-t border-[#e0e0e0] bg-[#f8f8f8] flex gap-2 shrink-0 -mx-5 -mb-5 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsTopUpModalOpen(false)}
+                  className="px-4 py-2.5 bg-white border border-[#e0e0e0] text-slate-700 font-bold rounded-xl text-xs cursor-pointer hover:bg-slate-100"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingTopUp}
+                  className="flex-1 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 text-white font-black rounded-xl text-xs cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-[#5f1340]/20"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>{isSubmittingTopUp ? 'Memproses...' : 'Simpan & Tambah Saldo Member'}</span>
+                </button>
+              </div>
             </form>
           </div>
         </div>
