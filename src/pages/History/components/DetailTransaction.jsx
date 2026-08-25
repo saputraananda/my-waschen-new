@@ -763,6 +763,7 @@ export default function DetailTransaction() {
                         activeOutletId={activeOutletId}
                         activeOutletName={activeOutletName}
                         outlets={outlets}
+                        paymentMethods={paymentMethods}
                         selectedCustomer={order}
                         grandTotal={paymentDetail?.remaining || remaining || order.grandTotal}
                       />
@@ -856,6 +857,7 @@ export default function DetailTransaction() {
         outstandingOrders={customerOutstandingOrders}
         activeOutletId={activeOutletId}
         activeOutletName={activeOutletName}
+        paymentMethods={paymentMethods}
         initialBatchData={batchPrintData}
         onSuccess={() => {
           fetchDetail();
