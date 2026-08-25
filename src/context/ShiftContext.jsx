@@ -65,10 +65,16 @@ export function ShiftProvider({ children }) {
       if (res.data?.success && res.data.data) {
         const shift = res.data.data;
         setActiveShift(shift);
-        const confirmed = isShiftSessionConfirmed(shift.id);
+
+        const currentEmpId = getLoggedInEmployeeId();
+        const isSameOpener = Number(shift.cashier_employee_id) === Number(currentEmpId);
+        const alreadyConfirmed = isShiftSessionConfirmed(shift.id);
+
+        const confirmed = alreadyConfirmed || isSameOpener;
         setSessionReady(confirmed);
         if (confirmed) {
           syncShiftToStorage(shift);
+          markShiftSessionConfirmed(shift.id);
         }
       } else {
         setActiveShift(null);

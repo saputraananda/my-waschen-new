@@ -75,6 +75,10 @@ export default function AddCustomer({
   ));
 
   useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+
     if (customerToEdit) {
       setForm(fromCustomer(customerToEdit, activeOutletName));
       setFullAddressTouched(Boolean(customerToEdit.full_address || customerToEdit.fullAddress));

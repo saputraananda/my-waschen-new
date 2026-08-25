@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Receipt, ArrowLeft, CreditCard, Save, Wallet, Coins, Upload, X, Loader2 } from 'lucide-react';
 import { formatEmployeeName } from '../../../utils/FormatName.js';
 import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
+import CascadingPaymentSelector from '../../../components/CascadingPaymentSelector.jsx';
 
 export default function Payment({
   setCurrentStep,
@@ -9,6 +10,8 @@ export default function Payment({
   formatName,
   renderTierBadge,
   activeOutletName,
+  activeOutletId,
+  outlets = [],
   userProfile,
   cartItems,
   selectedPerfume,
@@ -19,8 +22,10 @@ export default function Payment({
   activePromo,
   paymentStatus,
   setPaymentStatus,
-  paymentMethod,
-  setPaymentMethod,
+  mainCategory = 'Tunai',
+  setMainCategory,
+  edcCardType = 'Debit Card',
+  setEdcCardType,
   paymentMethods = [],
   paidAmountInput,
   setPaidAmountInput,
@@ -31,13 +36,13 @@ export default function Payment({
   paymentProofFile,
   setPaymentProofFile,
   handleCreateOrder,
-  isSaving = false
+  isSaving = false,
+  isCrossTransfer = false,
+  setIsCrossTransfer,
+  crossBankOutletId = 1,
+  setCrossBankOutletId
 }) {
-  const selectedPaymentMeta = useMemo(
-    () => paymentMethods.find((m) => m.name === paymentMethod),
-    [paymentMethods, paymentMethod]
-  );
-  const isMemberBalanceMethod = selectedPaymentMeta?.requires_member_balance === 1;
+  const isMemberBalanceMethod = mainCategory === 'Potong Saldo Member';
 
   const paidAmountNum = parseRupiah(paidAmountInput);
   const isOutstanding = paymentStatus === 'Outstanding';
@@ -286,44 +291,24 @@ export default function Payment({
 
             {showPaymentFields && (
               <>
-                <div>
-                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                    Metode Pembayaran
-                  </label>
-                  <select
-                    value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full px-4 py-3 bg-white border border-[#e0e0e0] rounded-2xl text-xs font-bold text-[#313030] outline-none focus:border-[#5f1340] cursor-pointer"
-                  >
-                    {paymentMethods
-                      .filter((m) => {
-                        if (m.requires_member_balance) {
-                          return selectedCustomer?.memberBalance >= calculations.grandTotal;
-                        }
-                        return true;
-                      })
-                      .map((m) => (
-                        <option key={m.id} value={m.name}>
-                          {m.requires_member_balance
-                            ? `${m.label} (Rp ${(selectedCustomer?.memberBalance || 0).toLocaleString('id-ID')})`
-                            : m.label}
-                        </option>
-                      ))}
-                  </select>
-                </div>
+                <CascadingPaymentSelector
+                  mainCategory={mainCategory}
+                  setMainCategory={setMainCategory}
+                  edcCardType={edcCardType}
+                  setEdcCardType={setEdcCardType}
+                  isCrossTransfer={isCrossTransfer}
+                  setIsCrossTransfer={setIsCrossTransfer}
+                  crossBankOutletId={crossBankOutletId}
+                  setCrossBankOutletId={setCrossBankOutletId}
+                  activeOutletId={activeOutletId}
+                  activeOutletName={activeOutletName}
+                  outlets={outlets}
+                  paymentMethods={paymentMethods}
+                  selectedCustomer={selectedCustomer}
+                  grandTotal={calculations.grandTotal}
+                />
 
-                {isLunas && isMemberBalanceMethod ? (
-                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-900">
-                    <div className="flex items-center gap-2 font-black mb-1">
-                      <Wallet className="h-4 w-4" />
-                      Potong Saldo Member
-                    </div>
-                    <p>
-                      Rp {calculations.grandTotal.toLocaleString('id-ID')} akan dipotong dari saldo member.
-                      Sisa saldo: Rp {Math.max(0, (selectedCustomer?.memberBalance || 0) - calculations.grandTotal).toLocaleString('id-ID')}
-                    </p>
-                  </div>
-                ) : (
+                {!isMemberBalanceMethod && (
                   <>
                     <div>
                       <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">

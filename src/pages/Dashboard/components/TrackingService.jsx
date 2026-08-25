@@ -21,6 +21,7 @@ import { formatName } from '../../../utils/FormatName.js';
 import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 import { STATUS_STEPS, DEFAULT_WORK_STATUSES, getWorkPercentage, percentageTone, formatWorkPercentage, matchesWorkStatusTab } from '../../../utils/workStatusMeta.js';
+import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 
 export default function TrackingService({
   filteredOrders,
@@ -39,14 +40,18 @@ export default function TrackingService({
   const [workStatusTabs, setWorkStatusTabs] = useState([]);
   const [workStatusOptions, setWorkStatusOptions] = useState(DEFAULT_WORK_STATUSES);
   const [updatingItemId, setUpdatingItemId] = useState(null);
+  const [outlets, setOutlets] = useState([]);
 
-  // Payment update modal (sama seperti HistoryTransaction)
+  // Payment update modal (sama seperti HistoryTransaction & Payment.jsx)
   const [paymentModalOrder, setPaymentModalOrder] = useState(null);
   const [paymentDetail, setPaymentDetail] = useState(null);
   const [paymentMethods, setPaymentMethods] = useState([]);
+  const [mainCategory, setMainCategory] = useState('Tunai');
+  const [edcCardType, setEdcCardType] = useState('Debit Card');
+  const [isCrossTransfer, setIsCrossTransfer] = useState(false);
+  const [crossBankOutletId, setCrossBankOutletId] = useState(1);
   const [paymentForm, setPaymentForm] = useState({
     additionalAmount: '',
-    paymentMethod: 'Tunai Kasir',
     notes: '',
     overpaymentAction: 'change'
   });
@@ -143,9 +148,12 @@ export default function TrackingService({
       paidAmount: order.paidAmount ?? 0
     };
     setPaymentModalOrder(modalOrder);
+    setMainCategory('Tunai');
+    setEdcCardType('Debit Card');
+    setIsCrossTransfer(false);
+    setCrossBankOutletId(1);
     setPaymentForm({
       additionalAmount: '',
-      paymentMethod: order.paymentMethod && order.paymentMethod !== '-' ? order.paymentMethod : 'Tunai Kasir',
       notes: '',
       overpaymentAction: 'change'
     });
@@ -158,7 +166,7 @@ export default function TrackingService({
       ]);
       if (logsRes.data?.success) setPaymentDetail(logsRes.data.data);
       if (methodsRes.data?.success) {
-        setPaymentMethods((methodsRes.data.data || []).filter((m) => !m.requires_member_balance));
+        setPaymentMethods(methodsRes.data.data || []);
       }
     } catch (err) {
       console.error('Gagal memuat detail pembayaran:', err);
@@ -186,6 +194,16 @@ export default function TrackingService({
       return;
     }
 
+    const resolvedMethod = resolvePaymentMethodString({
+      mainCategory,
+      edcCardType,
+      isCrossTransfer,
+      crossBankOutletId,
+      activeOutletId: localStorage.getItem('activeOutletId') || 2,
+      activeOutletName: localStorage.getItem('activeOutletName') || 'Waschen Laundry Citra Gran',
+      outlets
+    });
+
     setIsSubmittingPayment(true);
     try {
       const txnId = paymentModalOrder.dbId || paymentModalOrder.id;
@@ -200,7 +218,7 @@ export default function TrackingService({
 
       const res = await axios.patch(`/api/history/transactions/${txnId}/payment`, {
         additionalAmount: addAmount,
-        paymentMethod: paymentForm.paymentMethod,
+        paymentMethod: resolvedMethod,
         paymentProofUrl: proofUrl,
         notes: paymentForm.notes || `Pelunasan nota ${paymentModalOrder.id}`,
         overpaymentToDeposit: paymentForm.overpaymentAction === 'deposit',
@@ -679,9 +697,9 @@ export default function TrackingService({
 
       {/* MODAL: UPDATE PEMBAYARAN / PELUNASAN */}
       {paymentModalOrder && (
-        <div className="fixed inset-0 z-[60] bg-[#313030]/60 backdrop-blur-xs flex justify-center items-center p-4">
-          <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-lg shadow-2xl overflow-hidden animate-fade-in max-h-[90vh] flex flex-col">
-            <div className="p-5 border-b border-[#e0e0e0] flex justify-between items-center bg-[#5f1340]/5 shrink-0">
+        <div className="fixed inset-0 z-[60] bg-[#313030]/75 backdrop-blur-xs flex justify-center items-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-lg shadow-2xl overflow-hidden animate-fade-in flex flex-col max-h-[calc(100vh-4rem)] sm:max-h-[85vh] my-auto">
+            <div className="p-4 sm:p-5 border-b border-[#e0e0e0] flex justify-between items-center bg-[#5f1340]/5 shrink-0">
               <div className="flex items-center gap-2">
                 <CreditCard className="h-5 w-5 text-[#5f1340]" />
                 <div>
@@ -771,20 +789,22 @@ export default function TrackingService({
 
                   {normalizePaymentStatus(paymentModalOrder.paymentStatus) !== 'Lunas' && (
                     <>
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                          Metode Pembayaran
-                        </label>
-                        <select
-                          value={paymentForm.paymentMethod}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, paymentMethod: e.target.value })}
-                          className="w-full px-4 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340] cursor-pointer"
-                        >
-                          {(paymentMethods.length ? paymentMethods : [{ name: 'Tunai Kasir', label: 'Tunai Kasir' }]).map((m) => (
-                            <option key={m.id || m.name} value={m.name}>{m.label || m.name}</option>
-                          ))}
-                        </select>
-                      </div>
+                      <CascadingPaymentSelector
+                        mainCategory={mainCategory}
+                        setMainCategory={setMainCategory}
+                        edcCardType={edcCardType}
+                        setEdcCardType={setEdcCardType}
+                        isCrossTransfer={isCrossTransfer}
+                        setIsCrossTransfer={setIsCrossTransfer}
+                        crossBankOutletId={crossBankOutletId}
+                        setCrossBankOutletId={setCrossBankOutletId}
+                        activeOutletId={localStorage.getItem('activeOutletId') || 2}
+                        activeOutletName={localStorage.getItem('activeOutletName') || 'Waschen Laundry Citra Gran'}
+                        outlets={outlets}
+                        paymentMethods={paymentMethods}
+                        selectedCustomer={paymentModalOrder}
+                        grandTotal={paymentDetail?.remaining || Math.max(0, (paymentModalOrder.grandTotal || 0) - (paymentModalOrder.paidAmount || 0))}
+                      />
 
                       <div>
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">

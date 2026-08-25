@@ -14,10 +14,13 @@ import {
   Wallet,
   CreditCard,
   Building2,
-  Coins
+  Coins,
+  ArrowRightLeft
 } from 'lucide-react';
 import { formatEmployeeName } from '../utils/FormatName.js';
 import { formatRupiah, parseRupiah } from '../utils/FormatRupiah.js';
+import { getBankAccountForOutlet, getAllBankAccounts, OUTLET_BANK_ACCOUNTS } from '../utils/bankAccounts.js';
+import CascadingPaymentSelector, { resolvePaymentMethodString } from './CascadingPaymentSelector.jsx';
 
 export default function CombinedReceiptModal({
   isOpen,
@@ -32,7 +35,10 @@ export default function CombinedReceiptModal({
   onSuccess
 }) {
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
-  const [paymentMethod, setPaymentMethod] = useState('');
+  const [mainCategory, setMainCategory] = useState('Tunai');
+  const [edcCardType, setEdcCardType] = useState('Debit Card');
+  const [isCrossTransfer, setIsCrossTransfer] = useState(false);
+  const [crossBankOutletId, setCrossBankOutletId] = useState(1);
   const [paidAmountInput, setPaidAmountInput] = useState('');
   const [overpaymentAction, setOverpaymentAction] = useState('change');
   const [paymentProofFile, setPaymentProofFile] = useState(null);
@@ -43,6 +49,21 @@ export default function CombinedReceiptModal({
   const [errorMessage, setErrorMessage] = useState('');
   const [settledBatchData, setSettledBatchData] = useState(initialBatchData);
 
+  const isTransferBank = useMemo(() => {
+    return String(mainCategory || '').toLowerCase().includes('transfer');
+  }, [mainCategory]);
+
+  const defaultBankAccount = useMemo(() => {
+    return getBankAccountForOutlet(activeOutletId, activeOutletName);
+  }, [activeOutletId, activeOutletName]);
+
+  const selectedBankAccount = useMemo(() => {
+    if (isCrossTransfer && OUTLET_BANK_ACCOUNTS[crossBankOutletId]) {
+      return OUTLET_BANK_ACCOUNTS[crossBankOutletId];
+    }
+    return defaultBankAccount;
+  }, [isCrossTransfer, crossBankOutletId, defaultBankAccount]);
+
   // Filter only unpaid or DP orders for this customer
   const unpaidOrders = useMemo(() => {
     return outstandingOrders.filter((o) => {
@@ -51,14 +72,13 @@ export default function CombinedReceiptModal({
     });
   }, [outstandingOrders]);
 
-  const [methodsList, setMethodsList] = useState(paymentMethods || []);
+  const [methodsList, setMethodsList] = useState(paymentMethods);
 
   // Fetch payment methods once on open if not loaded
   useEffect(() => {
     if (isOpen) {
       if (paymentMethods && paymentMethods.length > 0) {
         setMethodsList(paymentMethods);
-        setPaymentMethod((prev) => prev || paymentMethods[0]?.name || paymentMethods[0]?.label || 'Tunai Kasir');
       } else {
         axios
           .get('/api/masters/payment-methods')
@@ -66,7 +86,6 @@ export default function CombinedReceiptModal({
             if (res.data && res.data.success && res.data.data?.length > 0) {
               const filtered = res.data.data.filter((m) => !m.requires_member_balance);
               setMethodsList(filtered);
-              setPaymentMethod((prev) => prev || filtered[0]?.name || filtered[0]?.label || 'Tunai Kasir');
             }
           })
           .catch((err) => console.error('Error fetching payment methods:', err));
@@ -178,11 +197,20 @@ export default function CombinedReceiptModal({
     setErrorMessage('');
 
     try {
+      const resolvedPaymentMethod = resolvePaymentMethodString({
+        mainCategory,
+        edcCardType,
+        isCrossTransfer,
+        crossBankOutletId,
+        activeOutletId,
+        activeOutletName
+      });
+
       const payload = {
         customerId: customer?.id || customer?.dbId,
         outletId: activeOutletId || parseInt(localStorage.getItem('activeOutletId'), 10) || 2,
         cashierEmployeeId: cashierEmployeeId || parseInt(localStorage.getItem('employeeId'), 10) || 167,
-        paymentMethod: paymentMethod || 'Tunai Kasir',
+        paymentMethod: resolvedPaymentMethod,
         paymentProofUrl,
         notes,
         paidAmount: paidAmountNum,
@@ -219,8 +247,8 @@ export default function CombinedReceiptModal({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[120] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
-      <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-fade-in">
+    <div className="fixed inset-0 z-[120] bg-slate-900/75 backdrop-blur-xs flex justify-center items-center p-3 sm:p-6 overflow-y-auto">
+      <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(100vh-4rem)] sm:max-h-[85vh] my-auto animate-fade-in">
         
         {/* Header */}
         <div className="px-5 py-4 bg-gradient-to-r from-[#420a2c] via-[#5f1340] to-[#340722] text-white flex justify-between items-center shrink-0">
@@ -470,20 +498,22 @@ export default function CombinedReceiptModal({
 
             {/* Step 2: Payment Details */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Payment Method */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 block">Metode Pembayaran</label>
-                <select
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-hidden focus:border-[#5f1340] cursor-pointer"
-                >
-                  {(methodsList.length ? methodsList : [{ name: 'Tunai Kasir', label: 'Tunai Kasir' }]).map((m) => (
-                    <option key={m.id || m.name} value={m.name}>
-                      {m.label || m.name}
-                    </option>
-                  ))}
-                </select>
+              {/* Cascading Payment Selector */}
+              <div className="sm:col-span-2">
+                <CascadingPaymentSelector
+                  mainCategory={mainCategory}
+                  setMainCategory={setMainCategory}
+                  edcCardType={edcCardType}
+                  setEdcCardType={setEdcCardType}
+                  isCrossTransfer={isCrossTransfer}
+                  setIsCrossTransfer={setIsCrossTransfer}
+                  crossBankOutletId={crossBankOutletId}
+                  setCrossBankOutletId={setCrossBankOutletId}
+                  activeOutletId={activeOutletId}
+                  activeOutletName={activeOutletName}
+                  selectedCustomer={customer}
+                  grandTotal={totalSelectedAmount}
+                />
               </div>
 
               {/* Nominal Bayar Input & Quick Presets */}

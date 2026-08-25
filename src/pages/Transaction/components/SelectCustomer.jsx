@@ -159,8 +159,20 @@ export default function SelectCustomer({
         ) : (
           <div className="col-span-full py-16 bg-white border border-[#e0e0e0] rounded-3xl text-center text-slate-400">
             <Users className="h-10 w-10 mx-auto text-slate-300 mb-2" />
-            <p className="font-bold text-xs text-[#313030]">Tidak ada pelanggan yang sesuai dengan pencarian</p>
-            <p className="text-[11px] mt-0.5">Silakan reset filter atau tambahkan pelanggan baru</p>
+            <p className="font-bold text-xs text-[#313030]">Tidak ada pelanggan yang sesuai dengan pencarian atau filter cabang</p>
+            <p className="text-[11px] mt-0.5 mb-3">Silakan reset filter untuk menampilkan seluruh pelanggan</p>
+            <button
+              type="button"
+              onClick={() => {
+                setCustomerSearch('');
+                setSelectedTierFilter('Semua');
+                setSelectedBranchFilter('Semua');
+                setCustCurrentPage(1);
+              }}
+              className="px-4 py-2 bg-[#5f1340] hover:bg-[#4d0f33] text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <span>Reset Semua Filter</span>
+            </button>
           </div>
         )}
       </div>

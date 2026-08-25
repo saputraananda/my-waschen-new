@@ -4,11 +4,13 @@ import waschenLogo from '../assets/images/waschen.webp';
 import { formatEmployeeName } from '../utils/FormatName.js';
 import { logoutSession } from '../utils/authSession.js';
 import { useShiftOptional } from '../context/ShiftContext.jsx';
+import { usePWA } from '../context/PWAContext.jsx';
 import {
   ChevronDown,
   LogOut,
   ArrowLeft,
-  FileText
+  FileText,
+  Download
 } from 'lucide-react';
 
 export default function HeaderNav({
@@ -27,6 +29,7 @@ export default function HeaderNav({
   const shiftCtx = useShiftOptional();
   const activeShift = activeShiftProp ?? shiftCtx?.activeShift;
   const onRequestCloseShift = onCloseProp ?? shiftCtx?.openCloseModal;
+  const { promptInstall, isInstalled } = usePWA();
 
   const handleLogout = () => {
     logoutSession();
@@ -197,6 +200,23 @@ export default function HeaderNav({
                     >
                       <FileText className="h-4 w-4 text-[#5f1340]" />
                       <span>Daily Report</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsProfileDropdownOpen(false);
+                        promptInstall();
+                      }}
+                      className="w-full text-left px-4 py-2 hover:bg-[#5f1340]/5 text-[#313030] flex items-center justify-between font-bold cursor-pointer transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Download className="h-4 w-4 text-[#5f1340]" />
+                        <span>{isInstalled ? 'Aplikasi Terinstall' : 'Download Aplikasi'}</span>
+                      </div>
+                      {isInstalled && (
+                        <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-black">
+                          Aktif
+                        </span>
+                      )}
                     </button>
                     <button
                       onClick={handleLogout}

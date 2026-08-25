@@ -1,7 +1,9 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import ScrollToTop from './components/ScrollToTop.jsx';
 import { ShiftProvider } from './context/ShiftContext.jsx';
 import { AppDialogProvider } from './context/AppDialogContext.jsx';
+import { PWAProvider } from './context/PWAContext.jsx';
 import Dashboard from './pages/Dashboard/index.jsx';
 import Transaction from './pages/Transaction/index.jsx';
 import TransactionComplete from './pages/Transaction/components/Complete.jsx';
@@ -71,25 +73,28 @@ function App() {
 
   return (
     <Router>
+      <ScrollToTop />
       <AppDialogProvider>
-        <ShiftProvider>
-          <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/transaction" element={<Transaction />} />
-          <Route path="/transaction/complete" element={<TransactionComplete />} />
-          <Route path="/customer" element={<Customer />} />
-          <Route path="/membership" element={<Membership />} />
-          <Route path="/riwayat" element={<HistoryPage />} />
-          <Route path="/riwayat/:orderNo" element={<DetailTransaction />} />
-          <Route path="/history" element={<HistoryPage />} />
-          <Route path="/history/:orderNo" element={<DetailTransaction />} />
-          <Route path="/services" element={<Services />} />
-          <Route path="/petty-cash" element={<PettyCash />} />
-          <Route path="/daily-report" element={<DailyReport />} />
-          <Route path="/login" element={<LoginPage />} />
-        </Routes>
-        </ShiftProvider>
+        <PWAProvider>
+          <ShiftProvider>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/transaction" element={<Transaction />} />
+              <Route path="/transaction/complete" element={<TransactionComplete />} />
+              <Route path="/customer" element={<Customer />} />
+              <Route path="/membership" element={<Membership />} />
+              <Route path="/riwayat" element={<HistoryPage />} />
+              <Route path="/riwayat/:orderNo" element={<DetailTransaction />} />
+              <Route path="/history" element={<HistoryPage />} />
+              <Route path="/history/:orderNo" element={<DetailTransaction />} />
+              <Route path="/services" element={<Services />} />
+              <Route path="/petty-cash" element={<PettyCash />} />
+              <Route path="/daily-report" element={<DailyReport />} />
+              <Route path="/login" element={<LoginPage />} />
+            </Routes>
+          </ShiftProvider>
+        </PWAProvider>
       </AppDialogProvider>
     </Router>
   );

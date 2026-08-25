@@ -672,6 +672,9 @@ export const verifyPin = async (req, res) => {
     if (!codePin) {
       return res.status(400).json({ success: false, message: 'codePin wajib diisi' });
     }
+    if (String(codePin).trim().length !== 8) {
+      return res.status(400).json({ success: false, message: 'PIN harus 8 digit angka' });
+    }
 
     let rows;
     if (employeeId) {

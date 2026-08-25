@@ -9,6 +9,8 @@ import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
 import { formatDateId } from '../../../utils/FilterDate.js';
 import { STATUS_STEPS, DEFAULT_WORK_STATUSES, getWorkPercentage, percentageTone, formatWorkPercentage } from '../../../utils/workStatusMeta.js';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
+import { getBankAccountForOutlet, getAllBankAccounts, OUTLET_BANK_ACCOUNTS } from '../../../utils/bankAccounts.js';
+import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import {
   CheckCircle2,
   ChevronDown,
@@ -21,7 +23,10 @@ import {
   Receipt,
   Upload,
   Wallet,
-  X
+  X,
+  UserCheck,
+  Building2,
+  ArrowRightLeft
 } from 'lucide-react';
 
 const normalizePaymentStatus = (status) => {
@@ -61,9 +66,13 @@ export default function DetailTransaction() {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentDetail, setPaymentDetail] = useState(null);
   const [paymentMethods, setPaymentMethods] = useState([]);
+  const [mainCategory, setMainCategory] = useState('Tunai');
+  const [edcCardType, setEdcCardType] = useState('Debit Card');
+  const [isCrossTransfer, setIsCrossTransfer] = useState(false);
+  const [crossBankOutletId, setCrossBankOutletId] = useState(1);
   const [paymentForm, setPaymentForm] = useState({
     additionalAmount: '',
-    paymentMethod: 'Tunai Kasir',
+    paymentMethod: 'Tunai',
     notes: '',
     overpaymentAction: 'change'
   });
@@ -333,9 +342,18 @@ export default function DetailTransaction() {
         proofUrl = up.data?.data?.paymentProofUrl || proofUrl;
       }
 
+      const resolvedPaymentMethod = resolvePaymentMethodString({
+        mainCategory,
+        edcCardType,
+        isCrossTransfer,
+        crossBankOutletId,
+        activeOutletId,
+        activeOutletName
+      });
+
       const res = await axios.patch(`/api/history/transactions/${order.dbId}/payment`, {
         additionalAmount: addAmount,
-        paymentMethod: paymentForm.paymentMethod,
+        paymentMethod: resolvedPaymentMethod,
         paymentProofUrl: proofUrl,
         notes: paymentForm.notes || `Pelunasan nota ${order.id}`,
         overpaymentToDeposit: paymentForm.overpaymentAction === 'deposit',
@@ -669,9 +687,9 @@ export default function DetailTransaction() {
 
       {/* Payment modal */}
       {paymentModalOpen && order && (
-        <div className="fixed inset-0 z-50 bg-[#313030]/60 backdrop-blur-xs flex justify-center items-center p-4">
-          <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-lg shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="p-5 border-b border-[#e0e0e0] flex justify-between items-center bg-[#5f1340]/5 shrink-0">
+        <div className="fixed inset-0 z-50 bg-[#313030]/75 backdrop-blur-xs flex justify-center items-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[calc(100vh-4rem)] sm:max-h-[85vh] my-auto">
+            <div className="p-4 sm:p-5 border-b border-[#e0e0e0] flex justify-between items-center bg-[#5f1340]/5 shrink-0">
               <div className="flex items-center gap-2">
                 <CreditCard className="h-5 w-5 text-[#5f1340]" />
                 <div>
@@ -733,18 +751,21 @@ export default function DetailTransaction() {
                         </div>
                       )}
 
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Metode Pembayaran</label>
-                        <select
-                          value={paymentForm.paymentMethod}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, paymentMethod: e.target.value })}
-                          className="w-full px-4 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340] cursor-pointer"
-                        >
-                          {(paymentMethods.length ? paymentMethods : [{ name: 'Tunai Kasir' }]).map((m) => (
-                            <option key={m.id || m.name} value={m.name}>{m.label || m.name}</option>
-                          ))}
-                        </select>
-                      </div>
+                      <CascadingPaymentSelector
+                        mainCategory={mainCategory}
+                        setMainCategory={setMainCategory}
+                        edcCardType={edcCardType}
+                        setEdcCardType={setEdcCardType}
+                        isCrossTransfer={isCrossTransfer}
+                        setIsCrossTransfer={setIsCrossTransfer}
+                        crossBankOutletId={crossBankOutletId}
+                        setCrossBankOutletId={setCrossBankOutletId}
+                        activeOutletId={activeOutletId}
+                        activeOutletName={activeOutletName}
+                        outlets={outlets}
+                        selectedCustomer={order}
+                        grandTotal={paymentDetail?.remaining || remaining || order.grandTotal}
+                      />
                       <div>
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Nominal Bayar (Rp)</label>
                         <input

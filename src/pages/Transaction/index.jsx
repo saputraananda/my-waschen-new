@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav';
 import { formatName, formatEmployeeName } from '../../utils/FormatName.js';
+import { getBankAccountForOutlet, OUTLET_BANK_ACCOUNTS } from '../../utils/bankAccounts.js';
+import { resolvePaymentMethodString } from '../../components/CascadingPaymentSelector.jsx';
 import {
   ShoppingBag as IconBag,
   Users as IconUsers,
@@ -91,6 +93,44 @@ export default function TransactionPage() {
   const [custCurrentPage, setCustCurrentPage] = useState(1);
   const custItemsPerPage = 9;
 
+  const loadCustomers = () => {
+    axios.get('/api/customers')
+      .then(res => {
+        if (res.data && res.data.success && Array.isArray(res.data.data)) {
+          const mapped = res.data.data.map(c => ({
+            id: c.customer_code || `CUST-${String(c.id).padStart(3, '0')}`,
+            dbId: c.id,
+            name: c.name || '',
+            phone: c.phone || '',
+            address: c.full_address || c.address || '-',
+            fullAddress: c.full_address || '',
+            block: c.block || '',
+            houseNumber: c.house_number || '',
+            notes: c.notes || '',
+            city: c.city || 'Bekasi',
+            landmark: c.landmark || '-',
+            homeBranch: c.home_branch || 'Waschen Laundry Citra Gran',
+            branch: c.home_branch || 'Waschen Laundry Citra Gran',
+            tier: c.tier || 'Reguler',
+            totalSpending: parseFloat(c.total_spent) || 0,
+            totalTrx: parseInt(c.total_orders) || 0,
+            memberBalance: parseFloat(c.deposit_balance) || 0,
+            lastOrder: c.updated_at ? new Date(c.updated_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }) : 'Hari ini',
+            frequentServices: ['k1', 's1', 's2']
+          }));
+          setCustomers(mapped);
+        }
+      })
+      .catch(err => console.error('Gagal mengambil data pelanggan dari API:', err));
+  };
+
+  // Re-fetch customers whenever returning to Step 1 (Select Customer)
+  useEffect(() => {
+    if (currentStep === 1) {
+      loadCustomers();
+    }
+  }, [currentStep]);
+
   // Step 2: Layanan State (Pure live from database)
   const [servicesList, setServicesList] = useState([]);
   const [serviceSearch, setServiceSearch] = useState('');
@@ -110,7 +150,10 @@ export default function TransactionPage() {
   // Step 4: Pembayaran State
   const [paymentStatus, setPaymentStatus] = useState('Lunas');
   const [isOutstandingDropOff, setIsOutstandingDropOff] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState('Tunai');
+  const [mainCategory, setMainCategory] = useState('Tunai');
+  const [edcCardType, setEdcCardType] = useState('Debit Card');
+  const [isCrossTransfer, setIsCrossTransfer] = useState(false);
+  const [crossBankOutletId, setCrossBankOutletId] = useState(1);
   const [paidAmountInput, setPaidAmountInput] = useState('');
   const [overpaymentAction, setOverpaymentAction] = useState('change');
   const [paymentProofFile, setPaymentProofFile] = useState(null);
@@ -149,13 +192,13 @@ export default function TransactionPage() {
     const savedOutlet = localStorage.getItem('activeOutletName');
     if (savedOutlet && savedOutlet !== 'Outlet Waschen') {
       setActiveOutletName(savedOutlet);
-      setSelectedBranchFilter(savedOutlet);
     } else {
       setActiveOutletName('Waschen Laundry Citra Gran');
-      setSelectedBranchFilter('Waschen Laundry Citra Gran');
       localStorage.setItem('activeOutletName', 'Waschen Laundry Citra Gran');
       localStorage.setItem('activeOutletId', '2');
     }
+    // Default branch filter in POS to 'Semua' so all customers are immediately visible
+    setSelectedBranchFilter('Semua');
 
     const autoId = localStorage.getItem('autoSelectCustId');
     if (autoId) {
@@ -194,42 +237,13 @@ export default function TransactionPage() {
         }
         if (methods?.length) {
           setPaymentMethods(methods);
-          const firstCash = methods.find(m => !m.requires_member_balance) || methods[0];
-          if (firstCash) setPaymentMethod(firstCash.name);
         }
         if (tiers?.length) setCustomerTiers(tiers);
       })
       .catch(err => console.error('Gagal mengambil data master:', err));
 
-    // Fetch live customers from myWaschen
-    axios.get('/api/customers')
-      .then(res => {
-        if (res.data && res.data.success && res.data.data.length > 0) {
-          const mapped = res.data.data.map(c => ({
-            id: c.customer_code || `CUST-${String(c.id).padStart(3, '0')}`,
-            dbId: c.id,
-            name: c.name,
-            phone: c.phone,
-            address: c.full_address || c.address || '-',
-            fullAddress: c.full_address || '',
-            block: c.block || '',
-            houseNumber: c.house_number || '',
-            notes: c.notes || '',
-            city: c.city || 'Bekasi',
-            landmark: c.landmark || '-',
-            homeBranch: c.home_branch || 'Waschen Laundry Citra Gran',
-            branch: c.home_branch || 'Waschen Laundry Citra Gran',
-            tier: c.tier || 'Reguler',
-            totalSpending: parseFloat(c.total_spent) || 0,
-            totalTrx: parseInt(c.total_orders) || 0,
-            memberBalance: parseFloat(c.deposit_balance) || 0,
-            lastOrder: c.updated_at ? new Date(c.updated_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }) : 'Hari ini',
-            frequentServices: ['k1', 's1', 's2']
-          }));
-          setCustomers(mapped);
-        }
-      })
-      .catch(err => console.error('Gagal mengambil data pelanggan dari API:', err));
+    // Initial customer load
+    loadCustomers();
 
     // Fetch live catalog services from myWaschen
     axios.get('/api/services')
@@ -283,12 +297,20 @@ export default function TransactionPage() {
   // Filtered and Tier-Prioritized Customer List
   const tierRank = { 'VIP': 1, 'Gold': 2, 'Reguler': 3, 'One-Time': 4 };
   const filteredCustomers = useMemo(() => {
+    if (!customers || !Array.isArray(customers)) return [];
+    const searchLower = (customerSearch || '').toLowerCase().trim();
+
     return customers
       .filter(c => {
-        const matchesSearch = c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-          c.phone.includes(customerSearch) ||
-          c.address.toLowerCase().includes(customerSearch.toLowerCase());
-        const matchesTier = selectedTierFilter === 'Semua' || c.tier === selectedTierFilter;
+        const cName = (c.name || '').toLowerCase();
+        const cPhone = String(c.phone || '');
+        const cAddress = (c.address || '').toLowerCase();
+        const matchesSearch = !searchLower ||
+          cName.includes(searchLower) ||
+          cPhone.includes(searchLower) ||
+          cAddress.includes(searchLower);
+
+        const matchesTier = !selectedTierFilter || selectedTierFilter === 'Semua' || c.tier === selectedTierFilter;
         
         let matchesBranch = true;
         if (selectedBranchFilter && selectedBranchFilter !== 'Semua') {
@@ -311,8 +333,15 @@ export default function TransactionPage() {
       });
   }, [customers, customerSearch, selectedTierFilter, selectedBranchFilter]);
 
-  // Customer Pagination calculation
+  // Customer Pagination calculation & Auto Page Clamp
   const totalCustPages = Math.ceil(filteredCustomers.length / custItemsPerPage) || 1;
+
+  useEffect(() => {
+    if (custCurrentPage > totalCustPages) {
+      setCustCurrentPage(1);
+    }
+  }, [custCurrentPage, totalCustPages]);
+
   const paginatedCustomers = useMemo(() => {
     const start = (custCurrentPage - 1) * custItemsPerPage;
     return filteredCustomers.slice(start, start + custItemsPerPage);
@@ -528,11 +557,7 @@ export default function TransactionPage() {
     };
   }, [cartItems, isExpress, activePromo]);
 
-  const selectedPaymentMeta = useMemo(
-    () => paymentMethods.find((m) => m.name === paymentMethod),
-    [paymentMethods, paymentMethod]
-  );
-  const isMemberBalanceMethod = selectedPaymentMeta?.requires_member_balance === 1;
+  const isMemberBalanceMethod = mainCategory === 'Potong Saldo Member';
 
   useEffect(() => {
     if (paymentStatus === 'Lunas' && !isMemberBalanceMethod && !isOutstandingDropOff) {
@@ -624,6 +649,16 @@ export default function TransactionPage() {
       .filter(i => i.category !== 'Kiloan' && i.unit !== 'Kg')
       .reduce((sum, i) => sum + (parseInt(i.qty) || 1), 0);
 
+    const resolvedPaymentMethod = resolvePaymentMethodString({
+      mainCategory,
+      edcCardType,
+      isCrossTransfer,
+      crossBankOutletId,
+      activeOutletId,
+      activeOutletName,
+      outlets
+    });
+
     const payload = {
       customerId: selectedCustomer.dbId || 1,
       outletId: parseInt(activeOutletId) || 2,
@@ -643,7 +678,7 @@ export default function TransactionPage() {
       discountNotes: activePromo.name !== 'NONE' ? activePromo.name : null,
       grandTotal: calculations.grandTotal,
       paymentStatus: resolvedStatus,
-      paymentMethod: isOutstanding ? '-' : paymentMethod,
+      paymentMethod: isOutstanding ? '-' : resolvedPaymentMethod,
       paidAmount: resolvedPaidAmount,
       changeAmount: paymentStatus === 'Lunas' ? changeAmount : 0,
       overpaymentToDeposit: paymentStatus === 'Lunas' ? overpaymentToDeposit : false,
@@ -974,6 +1009,8 @@ export default function TransactionPage() {
             formatName={formatName}
             renderTierBadge={renderTierBadge}
             activeOutletName={activeOutletName}
+            activeOutletId={activeOutletId}
+            outlets={outlets}
             userProfile={userProfile}
             cartItems={cartItems}
             selectedPerfume={selectedPerfume}
@@ -984,8 +1021,10 @@ export default function TransactionPage() {
             activePromo={activePromo}
             paymentStatus={paymentStatus}
             setPaymentStatus={setPaymentStatus}
-            paymentMethod={paymentMethod}
-            setPaymentMethod={setPaymentMethod}
+            mainCategory={mainCategory}
+            setMainCategory={setMainCategory}
+            edcCardType={edcCardType}
+            setEdcCardType={setEdcCardType}
             paymentMethods={paymentMethods}
             paidAmountInput={paidAmountInput}
             setPaidAmountInput={setPaidAmountInput}
@@ -997,6 +1036,10 @@ export default function TransactionPage() {
             setPaymentProofFile={setPaymentProofFile}
             handleCreateOrder={handleCreateOrder}
             isSaving={isSavingOrder}
+            isCrossTransfer={isCrossTransfer}
+            setIsCrossTransfer={setIsCrossTransfer}
+            crossBankOutletId={crossBankOutletId}
+            setCrossBankOutletId={setCrossBankOutletId}
           />
         )}
 

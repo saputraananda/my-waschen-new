@@ -243,31 +243,31 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
   const currentStageIndex = trackedOrder ? getStageIndex(trackedOrder.work_status || trackedOrder.workStatus) : 0;
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#313030]/60 backdrop-blur-sm flex justify-center items-center p-4">
-      <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-3xl shadow-2xl overflow-hidden animate-fade-in flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 bg-[#313030]/60 backdrop-blur-sm flex justify-center items-center p-3 sm:p-5 md:p-6 overflow-y-auto">
+      <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-3xl shadow-2xl overflow-hidden animate-fade-in flex flex-col max-h-[84dvh] sm:max-h-[86dvh] md:max-h-[88dvh] my-auto">
         
         {/* Modal Header Bar */}
-        <div className="p-5 border-b border-[#e0e0e0] flex justify-between items-center bg-gradient-to-r from-slate-50 via-white to-pink-50/30">
+        <div className="p-3.5 sm:p-5 border-b border-[#e0e0e0] flex justify-between items-center bg-gradient-to-r from-slate-50 via-white to-pink-50/30 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="p-2.5 bg-[#5f1340]/10 text-[#5f1340] rounded-2xl border border-[#5f1340]/15">
-              <Search className="h-5 w-5" />
+            <div className="p-2 sm:p-2.5 bg-[#5f1340]/10 text-[#5f1340] rounded-2xl border border-[#5f1340]/15">
+              <Search className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
             </div>
             <div>
-              <h3 className="text-base font-black text-[#313030]">Lacak Status Progress Nota</h3>
-              <p className="text-xs text-slate-400 font-medium mt-0.5">Pantau alur pengerjaan cucian nota & rincian progress per item real-time</p>
+              <h3 className="text-sm sm:text-base font-black text-[#313030]">Lacak Status Progress Nota</h3>
+              <p className="text-[11px] sm:text-xs text-slate-400 font-medium mt-0.5">Pantau alur pengerjaan cucian nota & rincian progress per item real-time</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+            className="p-1.5 sm:p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Modal Search Toolbar Section */}
-        <div className="p-5 bg-slate-50/70 border-b border-[#e0e0e0] flex flex-col gap-3">
+        <div className="p-3.5 sm:p-4 md:p-5 bg-slate-50/70 border-b border-[#e0e0e0] flex flex-col gap-2.5 sm:gap-3 shrink-0">
           <div className="flex flex-col sm:flex-row gap-2">
             {/* Search Input */}
             <div className="relative flex-1">
@@ -333,7 +333,7 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
         </div>
 
         {/* Modal Body: Tracking Results */}
-        <div className="p-6 overflow-y-auto flex flex-col gap-6 text-xs bg-white">
+        <div className="p-4 sm:p-6 overflow-y-auto flex flex-col gap-4 sm:gap-6 text-xs bg-white flex-1 min-h-0">
           {errorMessage && (
             <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 flex items-center gap-3">
               <AlertCircle className="h-5 w-5 text-rose-600 flex-shrink-0" />
@@ -384,7 +384,7 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
               </div>
 
               {/* 2. Visual Overall Stepper Timeline (Nota Progress) */}
-              <div className="bg-slate-50 border border-[#e0e0e0] rounded-2xl p-5">
+              <div className="bg-slate-50 border border-[#e0e0e0] rounded-2xl p-4 sm:p-5">
                 <div className="flex justify-between items-center mb-4">
                   <h4 className="font-black text-[#313030] text-xs uppercase tracking-wider flex items-center gap-1.5">
                     <Clock className="h-4 w-4 text-[#5f1340]" />
@@ -396,7 +396,7 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
                 </div>
 
                 {/* Horizontal Stepper Timeline */}
-                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 relative">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 relative">
                   {workflowStages.map((stage, idx) => {
                     const isDone = idx <= currentStageIndex;
                     const isCurrent = idx === currentStageIndex;
@@ -405,7 +405,7 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
                     return (
                       <div
                         key={stage.id}
-                        className={`flex flex-col items-center text-center p-3 rounded-2xl border transition-all duration-300 ${
+                        className={`flex flex-col items-center text-center p-2.5 sm:p-3 rounded-2xl border transition-all duration-300 ${
                           isCurrent
                             ? 'bg-[#5f1340] text-white border-[#5f1340] shadow-md scale-105 z-10'
                             : isDone
@@ -442,8 +442,8 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
                   <span className="text-[10px] text-slate-400 font-medium">Status Fisik Pakaian Rincian</span>
                 </div>
 
-                <div className="border border-[#e0e0e0] rounded-2xl overflow-hidden shadow-2xs">
-                  <table className="w-full text-left border-collapse">
+                <div className="border border-[#e0e0e0] rounded-2xl overflow-x-auto shadow-2xs">
+                  <table className="w-full text-left border-collapse min-w-[500px]">
                     <thead>
                       <tr className="bg-slate-100/80 border-b border-[#e0e0e0] text-[10px] uppercase font-extrabold text-slate-500 tracking-wider">
                         <th className="py-3 px-4">Detail Item & Layanan</th>
@@ -556,8 +556,9 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
         </div>
 
         {/* Modal Footer */}
-        <div className="p-4 bg-slate-50 border-t border-[#e0e0e0] flex justify-between items-center text-xs">
-          <span className="text-[10px] text-slate-400 font-bold">Waschen Laundry POS Enterprise v2.0 &bull; Live Tracking</span>
+        <div className="p-3.5 sm:p-4 bg-slate-50 border-t border-[#e0e0e0] flex justify-between items-center text-xs shrink-0">
+          <span className="text-[10px] text-slate-400 font-bold hidden sm:inline">Waschen Laundry POS Enterprise v2.0 &bull; Live Tracking</span>
+          <span className="text-[10px] text-slate-400 font-bold sm:hidden">Waschen POS v2.0</span>
           <button
             type="button"
             onClick={onClose}
@@ -569,9 +570,9 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
       </div>
 
       {isScannerOpen && (
-        <div className="fixed inset-0 z-[70] bg-[#313030]/80 backdrop-blur-sm flex justify-center items-center p-4">
-          <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-md shadow-2xl overflow-hidden">
-            <div className="p-4 border-b border-[#e0e0e0] flex justify-between items-center bg-[#f8f8f8]">
+        <div className="fixed inset-0 z-[70] bg-[#313030]/80 backdrop-blur-sm flex justify-center items-center p-3 sm:p-4">
+          <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-md shadow-2xl overflow-hidden max-h-[85dvh] flex flex-col my-auto">
+            <div className="p-4 border-b border-[#e0e0e0] flex justify-between items-center bg-[#f8f8f8] shrink-0">
               <div className="flex items-center gap-2">
                 <Camera className="h-4 w-4 text-[#5f1340]" />
                 <div>

@@ -12,7 +12,7 @@ export default function PinVerifyModal({
   onCancel,
   onVerified,
   title = 'Konfirmasi PIN Kasir',
-  description = 'Masukkan PIN frontliner yang membuat nota ini (untuk atribusi kasir).',
+  description = 'Masukkan 8 digit PIN frontliner yang membuat nota ini (untuk atribusi kasir).',
   submitLabel = 'Lanjut Simpan Nota'
 }) {
   const [pin, setPin] = useState('');
@@ -23,6 +23,10 @@ export default function PinVerifyModal({
     e.preventDefault();
     if (!pin.trim()) {
       setError('PIN wajib diisi');
+      return;
+    }
+    if (pin.trim().length !== 8) {
+      setError('PIN harus 8 digit angka');
       return;
     }
     setLoading(true);
@@ -85,10 +89,10 @@ export default function PinVerifyModal({
             type="password"
             inputMode="numeric"
             autoFocus
-            maxLength={10}
+            maxLength={8}
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-            placeholder="••••"
+            placeholder="••••••••"
             className="w-full px-4 py-3 border border-[#e0e0e0] rounded-xl text-center text-lg font-black tracking-[0.4em] outline-none focus:border-[#5f1340]"
           />
           <button

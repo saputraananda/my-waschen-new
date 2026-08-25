@@ -1,4 +1,4 @@
-import { myWaschenPool } from '../db/pool.js';
+import { myWaschenPool, mainPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 import { applyTransactionSpendingUpdate } from '../utils/spendingTier.js';
 import { applyDepositOnPayment } from '../utils/customerDeposit.js';
@@ -6,13 +6,40 @@ import { insertPaymentLog, resolvePaymentStatus } from '../utils/paymentLog.js';
 import { computeAccumulatedWorkPercentage, refreshHeaderWorkPercentage, nextLifecycleStatus, workStatusTabSql } from '../utils/workStatus.js';
 
 /**
- * Helper to generate order number: WS-MMYYXXX (e.g. WS-0826001)
+ * Helper to generate order number (nota):
+ * Format: WL{outlet_code}{YYYYMMDD}{sequence 4 digit} (Tanpa Strip)
+ * Example: WLRH202608250001, WLCG202608250001
  */
-const generateOrderNo = async () => {
+const generateOrderNo = async (outletId = 2) => {
   const now = new Date();
+  const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const yy = String(now.getFullYear()).slice(-2);
-  const prefix = `WS-${mm}${yy}`;
+  const dd = String(now.getDate()).padStart(2, '0');
+  const dateStr = `${yyyy}${mm}${dd}`;
+
+  // 1. Get outlet_code from DB
+  let outletCode = 'CG';
+  try {
+    const [outlets] = await myWaschenPool.query(
+      'SELECT outlet_code, name FROM mst_outlet WHERE id = ? LIMIT 1',
+      [outletId]
+    );
+    if (outlets.length > 0) {
+      if (outlets[0].outlet_code) {
+        outletCode = outlets[0].outlet_code;
+      } else if (outlets[0].name) {
+        const name = outlets[0].name.trim();
+        const words = name.split(/\s+/);
+        outletCode = words.length > 1
+          ? words.map(w => w[0].toUpperCase()).join('')
+          : words[0].slice(0, 3).toUpperCase();
+      }
+    }
+  } catch (e) {
+    console.error('Error fetching outlet_code for order_no:', e.message);
+  }
+
+  const prefix = `WL${outletCode}${dateStr}`;
 
   const [rows] = await myWaschenPool.query(
     'SELECT order_no FROM tr_transaction WHERE order_no LIKE ? ORDER BY id DESC LIMIT 1',
@@ -20,13 +47,14 @@ const generateOrderNo = async () => {
   );
 
   let seq = 1;
-  if (rows.length > 0) {
+  if (rows.length > 0 && rows[0].order_no) {
     const lastNo = rows[0].order_no;
-    const lastSeq = parseInt(lastNo.replace(prefix, '')) || 0;
+    const lastSeqStr = lastNo.slice(prefix.length);
+    const lastSeq = parseInt(lastSeqStr, 10) || 0;
     seq = lastSeq + 1;
   }
 
-  return `${prefix}${String(seq).padStart(3, '0')}`;
+  return `${prefix}${String(seq).padStart(4, '0')}`;
 };
 
 /**
@@ -76,7 +104,7 @@ export const createTransaction = async (req, res) => {
       });
     }
 
-    const orderNo = await generateOrderNo();
+    const orderNo = await generateOrderNo(outletId);
     const grandTotalNum = parseFloat(grandTotal) || 0;
     const isOutstanding = paymentStatus === 'Outstanding';
     const isLunas = paymentStatus === 'Lunas';

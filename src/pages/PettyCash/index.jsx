@@ -92,6 +92,12 @@ export default function PettyCash() {
     setCashLogs(prev => [newLog, ...prev]);
   };
 
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+  };
+
   return (
     <div className="min-h-screen bg-[#f8f8f8] text-[#313030] flex flex-col font-sans">
       <HeaderNav
@@ -134,7 +140,10 @@ export default function PettyCash() {
           <div className="flex items-center gap-2 bg-[#f8f8f8] border border-[#e0e0e0] p-1.5 rounded-2xl w-full sm:w-auto">
             <button
               type="button"
-              onClick={() => setActiveTab('dashboard')}
+              onClick={() => {
+                scrollToTop();
+                setActiveTab('dashboard');
+              }}
               className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
                 activeTab === 'dashboard'
                   ? 'bg-[#5f1340] text-white shadow-xs'
@@ -146,7 +155,10 @@ export default function PettyCash() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('add')}
+              onClick={() => {
+                scrollToTop();
+                setActiveTab('add');
+              }}
               className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
                 activeTab === 'add'
                   ? 'bg-[#5f1340] text-white shadow-xs'

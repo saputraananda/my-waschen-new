@@ -14,7 +14,8 @@ const AUTH_KEYS = [
 const SHIFT_KEYS = [
   'activeShiftId',
   'shiftNumber',
-  'activeShiftOpenedAt'
+  'activeShiftOpenedAt',
+  'shiftSessionConfirmed'
 ];
 
 export function syncShiftToStorage(shift) {
@@ -28,15 +29,38 @@ export function syncShiftToStorage(shift) {
 
 export function clearShiftFromStorage() {
   SHIFT_KEYS.forEach((key) => localStorage.removeItem(key));
-  sessionStorage.removeItem('shiftSessionConfirmed');
+  try {
+    sessionStorage.removeItem('shiftSessionConfirmed');
+  } catch (e) {
+    // ignore
+  }
 }
 
 export function markShiftSessionConfirmed(shiftId) {
-  sessionStorage.setItem('shiftSessionConfirmed', String(shiftId));
+  if (!shiftId) return;
+  localStorage.setItem('shiftSessionConfirmed', String(shiftId));
+  try {
+    sessionStorage.setItem('shiftSessionConfirmed', String(shiftId));
+  } catch (e) {
+    // ignore
+  }
 }
 
 export function isShiftSessionConfirmed(shiftId) {
-  return sessionStorage.getItem('shiftSessionConfirmed') === String(shiftId);
+  if (!shiftId) return false;
+  const targetId = String(shiftId);
+  let sessionConfirmed = null;
+  try {
+    sessionConfirmed = sessionStorage.getItem('shiftSessionConfirmed');
+  } catch (e) {
+    // ignore
+  }
+
+  return (
+    localStorage.getItem('shiftSessionConfirmed') === targetId ||
+    sessionConfirmed === targetId ||
+    localStorage.getItem('activeShiftId') === targetId
+  );
 }
 
 /** Logout sesi user — shift outlet tetap Open di database. */
