@@ -36,13 +36,17 @@ export default function AddMember({
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustId, setSelectedCustId] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [showAllCustomers, setShowAllCustomers] = useState(false);
+  const [selectedBranchFilter, setSelectedBranchFilter] = useState(
+    activeOutletName || localStorage.getItem('activeOutletName') || 'Semua'
+  );
+  const [selectedSpendingTier, setSelectedSpendingTier] = useState('Semua');
 
   const [packageId, setPackageId] = useState('');
   const [mainCategory, setMainCategory] = useState('Tunai');
   const [edcCardType, setEdcCardType] = useState('Debit Card');
   const [isCrossTransfer, setIsCrossTransfer] = useState(false);
   const [crossBankOutletId, setCrossBankOutletId] = useState(1);
-  const [homeBranch, setHomeBranch] = useState(activeOutletName || 'Waschen Laundry Citra Gran');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -77,7 +81,15 @@ export default function AddMember({
       .catch((err) => console.error('Gagal memuat master membership/customer:', err));
   }, []);
 
-  const [selectedSpendingTier, setSelectedSpendingTier] = useState('Semua');
+  useEffect(() => {
+    if (activeOutletName) {
+      setSelectedBranchFilter(activeOutletName);
+    }
+  }, [activeOutletName]);
+
+  useEffect(() => {
+    setShowAllCustomers(false);
+  }, [customerSearch, selectedSpendingTier, selectedBranchFilter]);
 
   const selectedCustomer = useMemo(() => {
     return customersList.find((c) => String(c.id) === String(selectedCustId));
@@ -102,9 +114,34 @@ export default function AddMember({
         customerTier.toLowerCase() === selectedSpendingTier.toLowerCase() ||
         (c.spending_tier_code || '').toLowerCase().includes(selectedSpendingTier.toLowerCase());
 
-      return matchesSearch && matchesTier;
-    }).slice(0, 16);
-  }, [customersList, customerSearch, selectedSpendingTier]);
+      let matchesBranch = true;
+      if (selectedBranchFilter && selectedBranchFilter !== 'Semua') {
+        const custBranch = c.home_branch || c.homeBranch || '';
+        const filterClean = selectedBranchFilter
+          .toLowerCase()
+          .replace('waschen laundry ', '')
+          .replace('outlet ', '')
+          .trim();
+        const custBranchClean = custBranch
+          .toLowerCase()
+          .replace('waschen laundry ', '')
+          .replace('outlet ', '')
+          .trim();
+        matchesBranch =
+          !custBranch ||
+          custBranch === selectedBranchFilter ||
+          (custBranchClean.length > 0 &&
+            filterClean.length > 0 &&
+            (custBranchClean.includes(filterClean) || filterClean.includes(custBranchClean)));
+      }
+
+      return matchesSearch && matchesTier && matchesBranch;
+    });
+  }, [customersList, customerSearch, selectedSpendingTier, selectedBranchFilter]);
+
+  const displayedCustomers = useMemo(() => {
+    return showAllCustomers ? filteredCustomers : filteredCustomers.slice(0, 4);
+  }, [filteredCustomers, showAllCustomers]);
 
   const renderSpendingTierBadge = (spendingTier) => {
     const clean = String(spendingTier || 'One-Time').trim();
@@ -208,7 +245,7 @@ export default function AddMember({
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Step 1: Customer Selector UX */}
-        <div className="p-5 border border-[#e0e0e0] rounded-2xl bg-[#f8f8f8]/50 flex flex-col gap-4">
+        <div className="p-5 border border-[#e0e0e0] rounded-2xl bg-[#f8f8f8]/50 flex flex-col gap-4 self-start w-full">
           <div className="flex items-center justify-between border-b border-[#e0e0e0] pb-2">
             <div className="flex items-center gap-2 text-[#5f1340] font-black text-xs uppercase tracking-wider">
               <UserCheck className="h-4 w-4" />
@@ -251,6 +288,23 @@ export default function AddMember({
                 </div>
               </div>
 
+              {/* Branch Filter — default cabang login */}
+              <div>
+                <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block mb-1.5">Filter Cabang:</span>
+                <select
+                  value={selectedBranchFilter}
+                  onChange={(e) => setSelectedBranchFilter(e.target.value)}
+                  className="w-full h-10 px-3 bg-white border border-[#e0e0e0] rounded-xl text-xs font-semibold text-[#313030] outline-none focus:border-[#5f1340] focus:ring-2 focus:ring-[#5f1340]/10 cursor-pointer shadow-xs"
+                >
+                  <option value="Semua">Semua Cabang Outlet</option>
+                  {(outlets || []).map((o) => (
+                    <option key={o.id} value={o.full_name || o.name}>
+                      {o.full_name || o.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Spending Tier Filter Tabs */}
               <div>
                 <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block mb-1.5">Filter Tier Spending Pelanggan:</span>
@@ -275,14 +329,14 @@ export default function AddMember({
                 </div>
               </div>
 
-              {/* Customer Cards Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[360px] overflow-y-auto pr-1 custom-scrollbar pt-1">
-                {filteredCustomers.length > 0 ? (
-                  filteredCustomers.map((c) => (
+              {/* Customer Cards Grid — tanpa max-height agar card tidak terpotong */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1 content-start">
+                {displayedCustomers.length > 0 ? (
+                  displayedCustomers.map((c) => (
                     <div
                       key={c.id}
                       onClick={() => setSelectedCustId(c.id)}
-                      className="group relative bg-white border border-[#e0e0e0] hover:border-[#5f1340] rounded-2xl p-3.5 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
+                      className="group relative bg-white border border-[#e0e0e0] hover:border-[#5f1340] rounded-2xl p-3.5 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between shrink-0 min-h-[108px]"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -303,19 +357,11 @@ export default function AddMember({
                         {renderSpendingTierBadge(c.tier || c.spending_tier || 'One-Time')}
                       </div>
 
-                      <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10px]">
-                        <div>
-                          <span className="text-slate-400 block">Saldo Deposit:</span>
-                          <span className="font-black text-emerald-700 text-xs">
-                            Rp {parseFloat(c.deposit_balance || 0).toLocaleString('id-ID')}
-                          </span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-slate-400 block">Cabang:</span>
-                          <span className="font-bold text-slate-700 truncate max-w-[90px] block">
-                            {c.home_branch || 'Waschen'}
-                          </span>
-                        </div>
+                      <div className="mt-3 pt-2.5 border-t border-slate-100 text-[10px]">
+                        <span className="text-slate-400 block">Saldo Deposit:</span>
+                        <span className="font-black text-emerald-700 text-xs">
+                          Rp {parseFloat(c.deposit_balance || 0).toLocaleString('id-ID')}
+                        </span>
                       </div>
                     </div>
                   ))
@@ -333,6 +379,17 @@ export default function AddMember({
                   </div>
                 )}
               </div>
+
+              {/* Show More / Hide Customers Button */}
+              {filteredCustomers.length > 4 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllCustomers(!showAllCustomers)}
+                  className="w-full py-2.5 bg-slate-50 hover:bg-slate-100 border border-[#e0e0e0] text-slate-700 text-xs font-black rounded-xl cursor-pointer transition-colors flex items-center justify-center gap-1.5 shadow-2xs mt-1"
+                >
+                  <span>{showAllCustomers ? 'Sembunyikan Pelanggan' : `Tampilkan ${filteredCustomers.length - 4} Pelanggan Lainnya`}</span>
+                </button>
+              )}
             </div>
           ) : (
             <>
@@ -420,7 +477,7 @@ export default function AddMember({
               <div className="flex items-center gap-2">
                 <Sparkles className={`h-4 w-4 shrink-0 ${selectedPackage?.tier === 'Diamond' ? 'text-cyan-600' : 'text-amber-600'}`} />
                 <span>
-                  Setoran <strong>Rp {Number(selectedPackage?.top_up_amount || 500000).toLocaleString('id-ID')}</strong> + <span className="text-emerald-700 font-extrabold">Bonus Saldo +Rp {(selectedPackage?.tier === 'Diamond' ? 50000 : 25000).toLocaleString('id-ID')}</span>
+                  Deposit <strong>Rp {Number(selectedPackage?.top_up_amount || 500000).toLocaleString('id-ID')}</strong> + <span className="text-emerald-700 font-extrabold">Bonus Saldo +Rp {(selectedPackage?.tier === 'Diamond' ? 50000 : 25000).toLocaleString('id-ID')}</span>
                 </span>
               </div>
               <div className="px-3 py-1 bg-white rounded-lg border border-slate-200 shadow-2xs text-[#313030] flex items-center gap-1.5 shrink-0">

@@ -59,6 +59,71 @@ const resolveSpendingTierId = async (tierId, tierName) => {
   return defaultTier[0]?.id || 4;
 };
 
+/**
+ * Format kode pelanggan: CUS{outlet_code}{YYMM}{sequence 4 digit}
+ * Contoh: CUSCG26080001, CUSRH26080002
+ */
+const resolveOutletCode = async (outletId = 2) => {
+  let outletCode = 'CG';
+  try {
+    const [outlets] = await myWaschenPool.query(
+      'SELECT outlet_code, name FROM mst_outlet WHERE id = ? LIMIT 1',
+      [outletId]
+    );
+    if (outlets.length > 0) {
+      if (outlets[0].outlet_code) {
+        outletCode = outlets[0].outlet_code;
+      } else if (outlets[0].name) {
+        const name = outlets[0].name.trim();
+        const words = name.split(/\s+/);
+        outletCode = words.length > 1
+          ? words.map((w) => w[0].toUpperCase()).join('')
+          : words[0].slice(0, 3).toUpperCase();
+      }
+    }
+  } catch (e) {
+    console.error('Error fetching outlet_code for customer_code:', e.message);
+  }
+  return outletCode;
+};
+
+const resolveOutletIdForCustomer = async (preferredOutletId, homeBranch) => {
+  if (preferredOutletId) {
+    return parseInt(preferredOutletId, 10);
+  }
+  if (homeBranch) {
+    const [rows] = await myWaschenPool.query(
+      'SELECT id FROM mst_outlet WHERE full_name = ? OR name = ? LIMIT 1',
+      [homeBranch, homeBranch]
+    );
+    if (rows.length) return rows[0].id;
+  }
+  return 2;
+};
+
+const generateCustomerCode = async (outletId = 2) => {
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yymm = `${yy}${mm}`;
+  const outletCode = await resolveOutletCode(outletId);
+  const prefix = `CUS${outletCode}${yymm}`;
+
+  const [rows] = await myWaschenPool.query(
+    'SELECT customer_code FROM mst_customer WHERE customer_code LIKE ? ORDER BY id DESC LIMIT 1',
+    [`${prefix}%`]
+  );
+
+  let seq = 1;
+  if (rows.length > 0 && rows[0].customer_code) {
+    const lastSeqStr = rows[0].customer_code.slice(prefix.length);
+    const lastSeq = parseInt(lastSeqStr, 10) || 0;
+    seq = lastSeq + 1;
+  }
+
+  return `${prefix}${String(seq).padStart(4, '0')}`;
+};
+
 const resolveSourceId = async (sourceId, sourceName) => {
   if (sourceId) {
     const [rows] = await myWaschenPool.query(
@@ -267,9 +332,8 @@ export const createCustomer = async (req, res) => {
       || composeFullAddress({ address, block, houseNumber, district, subDistrict, city, postalCode })
       || null;
 
-    const [countRows] = await myWaschenPool.query('SELECT COUNT(*) as total FROM mst_customer');
-    const nextNum = (countRows[0].total || 0) + 1;
-    const customerCode = `CUST-${String(nextNum).padStart(3, '0')}`;
+    const resolvedOutletId = await resolveOutletIdForCustomer(preferredOutletId, homeBranch);
+    const customerCode = await generateCustomerCode(resolvedOutletId);
 
     const [result] = await myWaschenPool.query(
       `INSERT INTO mst_customer
@@ -297,7 +361,7 @@ export const createCustomer = async (req, res) => {
         postalCode || null,
         landmark || null,
         homeBranch || null,
-        preferredOutletId || null,
+        resolvedOutletId || null,
         resolvedTierId,
         resolvedSourceId,
         notes || null,
@@ -312,7 +376,7 @@ export const createCustomer = async (req, res) => {
     );
 
     emitDashboardRefresh('customer:updated', {
-      outletId: preferredOutletId || newCustomer[0]?.preferred_outlet_id,
+      outletId: resolvedOutletId || newCustomer[0]?.preferred_outlet_id,
       customerId: result.insertId
     });
 

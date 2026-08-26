@@ -582,6 +582,14 @@ export default function TransactionPage() {
       });
       return;
     }
+    if (!selectedCustomer.dbId) {
+      showAlert({
+        title: 'Data Pelanggan Tidak Lengkap',
+        message: 'ID pelanggan tidak valid. Kembali ke langkah 1 lalu pilih ulang pelanggan.',
+        type: 'error'
+      });
+      return;
+    }
     if (cartItems.length === 0) {
       showAlert({
         title: 'Keranjang Kosong',
@@ -660,7 +668,7 @@ export default function TransactionPage() {
     });
 
     const payload = {
-      customerId: selectedCustomer.dbId || 1,
+      customerId: selectedCustomer.dbId,
       outletId: parseInt(activeOutletId) || 2,
       shiftId: localStorage.getItem('activeShiftId')
         ? parseInt(localStorage.getItem('activeShiftId'))
@@ -746,12 +754,14 @@ export default function TransactionPage() {
 
       const receiptData = {
         id: orderId,
-        customerName: selectedCustomer.name,
-        customerPhone: selectedCustomer.phone,
-        customerAddress: selectedCustomer.address || '-',
-        customerTier: selectedCustomer.tier,
+        customerId: orderResult?.customer_id || selectedCustomer.dbId,
+        customerCode: orderResult?.customer_code || selectedCustomer.id,
+        customerName: orderResult?.customer_name || selectedCustomer.name,
+        customerPhone: orderResult?.customer_phone || selectedCustomer.phone,
+        customerAddress: orderResult?.customer_address || selectedCustomer.fullAddress || selectedCustomer.address || '-',
+        customerTier: orderResult?.customer_tier || selectedCustomer.tier,
         customerBalance: newMemberBalance,
-        branch: activeOutletName,
+        branch: orderResult?.outlet_name || activeOutletName,
         cashierName: formatEmployeeName(cashierFullName || userProfile?.fullName, 'Staff Kasir'),
         cashierFullName: cashierFullName || userProfile?.fullName || 'Staff Kasir',
         items: cartItems,

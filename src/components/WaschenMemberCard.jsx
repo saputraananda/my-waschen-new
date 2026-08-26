@@ -218,7 +218,7 @@ export default function WaschenMemberCard({
                 : 'bg-gradient-to-r from-amber-500 to-yellow-600 text-white border border-amber-300/40'
             }`}
           >
-            <span className="text-[9px] font-extrabold uppercase tracking-wider text-white/90">NOMINAL PAS:</span>
+            <span className="text-[9px] font-extrabold uppercase tracking-wider text-white/90">NOMINAL:</span>
             <span className="font-black text-sm sm:text-base text-white">
               Rp {Number(topUpAmount || 0).toLocaleString('id-ID')}
             </span>

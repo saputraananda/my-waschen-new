@@ -12,7 +12,7 @@ import {
   Clock
 } from 'lucide-react';
 import HeaderNav from '../../../components/HeaderNav';
-import ThermalNota from './ThermalNota.jsx';
+import ThermalNota from '../../../components/ThermalNota.jsx';
 import { formatName, formatEmployeeName } from '../../../utils/FormatName.js';
 import { useShift } from '../../../context/ShiftContext.jsx';
 

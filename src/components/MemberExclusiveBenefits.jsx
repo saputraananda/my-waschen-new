@@ -21,11 +21,10 @@ export default function MemberExclusiveBenefits({ tier = 'Gold', className = '' 
 
   return (
     <div
-      className={`rounded-2xl p-4 sm:p-5 border transition-all ${
-        isDiamond
-          ? 'bg-gradient-to-br from-cyan-950/20 via-slate-900/10 to-sky-950/20 border-cyan-500/30'
-          : 'bg-gradient-to-br from-amber-950/15 via-slate-900/10 to-rose-950/15 border-amber-500/30'
-      } ${className}`}
+      className={`rounded-2xl p-4 sm:p-5 border transition-all ${isDiamond
+        ? 'bg-gradient-to-br from-cyan-950/20 via-slate-900/10 to-sky-950/20 border-cyan-500/30'
+        : 'bg-gradient-to-br from-amber-950/15 via-slate-900/10 to-rose-950/15 border-amber-500/30'
+        } ${className}`}
     >
       {/* Header Banner */}
       <div className="flex items-center justify-between border-b border-slate-200/80 pb-3 mb-4">
@@ -39,11 +38,10 @@ export default function MemberExclusiveBenefits({ tier = 'Gold', className = '' 
         </div>
 
         <div
-          className={`px-3 py-1 rounded-full border text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-2xs ${
-            isDiamond
-              ? 'bg-cyan-50 text-cyan-900 border-cyan-300'
-              : 'bg-amber-50 text-amber-900 border-amber-300'
-          }`}
+          className={`px-3 py-1 rounded-full border text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-2xs ${isDiamond
+            ? 'bg-cyan-50 text-cyan-900 border-cyan-300'
+            : 'bg-amber-50 text-amber-900 border-amber-300'
+            }`}
         >
           {isDiamond ? (
             <>
@@ -164,18 +162,6 @@ export default function MemberExclusiveBenefits({ tier = 'Gold', className = '' 
                 : 'Bonus Saldo Rp 25.000 / Gratis 1x Cuci Kemeja'}
             </span>
           </div>
-        </div>
-      </div>
-
-      {/* Contact Footer Note */}
-      <div className="mt-3 pt-2.5 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between text-[10px] text-slate-500 font-bold gap-1">
-        <div className="flex items-center gap-1.5">
-          <PhoneCall className="h-3 w-3 text-[#5f1340]" />
-          <span>Whatsapp: 0851-2233-3371</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <Mail className="h-3 w-3 text-[#5f1340]" />
-          <span>customercare.waschen@gmail.com</span>
         </div>
       </div>
     </div>

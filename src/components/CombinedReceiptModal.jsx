@@ -207,7 +207,7 @@ export default function CombinedReceiptModal({
       });
 
       const payload = {
-        customerId: customer?.id || customer?.dbId,
+        customerId: customer?.dbId || customer?.id,
         outletId: activeOutletId || parseInt(localStorage.getItem('activeOutletId'), 10) || 2,
         cashierEmployeeId: cashierEmployeeId || parseInt(localStorage.getItem('employeeId'), 10) || 167,
         paymentMethod: resolvedPaymentMethod,
@@ -220,7 +220,7 @@ export default function CombinedReceiptModal({
           const paid = parseFloat(o.paidAmount || o.paid_amount) || 0;
           const unpaid = Math.max(0, total - paid);
           return {
-            transactionId: o.dbId || o.id,
+            transactionId: o.dbId || o.transaction_id || o.id,
             amountToPay: unpaid
           };
         })

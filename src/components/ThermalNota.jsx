@@ -1,8 +1,8 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X } from 'lucide-react';
-import { formatEmployeeName } from '../../../utils/FormatName.js';
-import { useAppDialog } from '../../../context/AppDialogContext.jsx';
+import { formatEmployeeName } from '../utils/FormatName.js';
+import { useAppDialog } from '../context/AppDialogContext.jsx';
 
 const paymentStatusLabel = (status, method, batchNo) => {
   if (batchNo) return `Lunas Gabungan (${method || 'Tunai'} - #${batchNo})`;

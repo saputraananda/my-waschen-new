@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import HeaderNav from '../../../components/HeaderNav.jsx';
-import ThermalNota from '../../Transaction/components/ThermalNota.jsx';
+import ThermalNota from '../../../components/ThermalNota.jsx';
 import CombinedReceiptModal from '../../../components/CombinedReceiptModal.jsx';
 import { formatName, formatEmployeeName } from '../../../utils/FormatName.js';
 import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
@@ -88,11 +88,13 @@ export default function DetailTransaction() {
   const mapOrder = (raw) => ({
     dbId: raw.id,
     id: raw.order_no,
+    customerId: raw.customer_id,
+    customerCode: raw.customer_code,
     customerName: raw.customer_name || 'Pelanggan',
     customerPhone: raw.customer_phone || '-',
     customerTier: raw.customer_tier || 'Reguler',
     customerAddress: raw.customer_address || '-',
-    branch: raw.home_branch || activeOutletName,
+    branch: raw.outlet_name || raw.home_branch || activeOutletName,
     category: raw.order_category,
     serviceType: raw.speed_name ? `${raw.order_category} - ${raw.speed_name}` : raw.order_category,
     perfume: raw.parfume_name || 'Standar',
@@ -150,10 +152,10 @@ export default function DetailTransaction() {
       setLogs(raw.logs || []);
       document.title = `Detail ${mapped.id} | Waschen Laundry`;
 
-      // Fetch customer transactions to check if customer has >= 2 unpaid orders
-      if (raw.customer_phone || raw.customer_name) {
+      // Fetch outstanding notes for the same customer (by customer_id, bukan nama/HP longgar)
+      if (raw.customer_id) {
         axios.get('/api/transactions', {
-          params: { search: raw.customer_phone || raw.customer_name }
+          params: { customer_id: raw.customer_id }
         }).then(tRes => {
           if (tRes.data?.data) {
             const mappedList = tRes.data.data.map(rawTx => ({
@@ -849,7 +851,8 @@ export default function DetailTransaction() {
           setBatchPrintData(null);
         }}
         customer={{
-          id: order?.customerId || order?.dbId,
+          dbId: order?.customerId,
+          id: order?.customerCode || order?.customerId,
           name: order?.customerName,
           phone: order?.customerPhone,
           address: order?.customerAddress

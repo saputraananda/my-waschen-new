@@ -106,9 +106,11 @@ export default function Dashboard() {
         const mappedOrders = (trxRes.data.data || []).map(o => ({
           id: o.order_no,
           dbId: o.id,
+          customerId: o.customer_id,
           customerName: o.customer_name || 'Pelanggan',
           customerPhone: o.customer_phone || '-',
           customerType: o.customer_tier || 'Regular',
+          branch: o.outlet_name || o.home_branch || activeOutletName,
           serviceType: o.speed_name ? `${o.order_category} - ${o.speed_name}` : o.order_category,
           category: o.order_category,
           qty: o.order_category === 'Kiloan' ? `${o.total_weight_kg} Kg` : `${o.total_pcs} Pcs`,

@@ -127,6 +127,13 @@ export default function AddCustomer({
     if (clean) setForm((prev) => ({ ...prev, phone: clean }));
   };
 
+  const resolveOutletIdFromBranch = (branchName) => {
+    const match = (outlets || []).find(
+      (o) => (o.full_name || o.name) === branchName
+    );
+    return match?.id || parseInt(activeOutletId, 10) || null;
+  };
+
   const payloadFromForm = () => ({
     name: formatName(form.name),
     phone: normalizePhone(form.phone),
@@ -146,7 +153,7 @@ export default function AddCustomer({
     notes: form.notes || null,
     generalNotes: form.generalNotes || null,
     homeBranch: form.homeBranch || activeOutletName,
-    preferredOutletId: parseInt(activeOutletId, 10) || null,
+    preferredOutletId: resolveOutletIdFromBranch(form.homeBranch || activeOutletName),
     customerTierId: form.customerTierId || null,
     customerSourceId: form.customerSourceId || null
   });
@@ -180,7 +187,7 @@ export default function AddCustomer({
       if (res.data?.success) {
         const created = res.data.data;
         const mapped = {
-          id: created.customer_code || `CUST-${String(created.id).padStart(3, '0')}`,
+          id: created.customer_code || String(created.id),
           dbId: created.id,
           name: created.name,
           phone: created.phone,
@@ -370,6 +377,9 @@ export default function AddCustomer({
                     <option value={activeOutletName || ''}>{activeOutletName || 'Utama'}</option>
                   )}
                 </select>
+                <span className="text-[10px] text-slate-400">
+                  Kode pelanggan otomatis: CUS{'{outlet}'}{'{YYMM}'}0001 (contoh: CUSCG26080001)
+                </span>
               </div>
             </div>
 

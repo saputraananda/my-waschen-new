@@ -104,6 +104,27 @@ export const createTransaction = async (req, res) => {
       });
     }
 
+    const resolvedCustomerId = parseInt(customerId, 10);
+    if (!resolvedCustomerId || Number.isNaN(resolvedCustomerId)) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Customer ID tidak valid. Pilih ulang pelanggan dari daftar.'
+      });
+    }
+
+    const [custCheck] = await connection.query(
+      'SELECT id, name, phone FROM mst_customer WHERE id = ? AND is_active = 1 LIMIT 1',
+      [resolvedCustomerId]
+    );
+    if (!custCheck.length) {
+      await connection.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Pelanggan tidak ditemukan di database'
+      });
+    }
+
     const orderNo = await generateOrderNo(outletId);
     const grandTotalNum = parseFloat(grandTotal) || 0;
     const isOutstanding = paymentStatus === 'Outstanding';
@@ -129,7 +150,7 @@ export const createTransaction = async (req, res) => {
       resolvedChangeAmount = 0;
     } else if (isLunas) {
       depositResult = await applyDepositOnPayment(connection, {
-        customerId,
+        customerId: resolvedCustomerId,
         orderNo,
         grandTotal: grandTotalNum,
         paymentMethod,
@@ -169,7 +190,7 @@ export const createTransaction = async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?, ?, ?, ?, NOW())`,
       [
         orderNo,
-        customerId,
+        resolvedCustomerId,
         outletId || 2,
         cashierEmployeeId || 167,
         shiftId || null,
@@ -255,23 +276,32 @@ export const createTransaction = async (req, res) => {
     }
 
     // 4. Update customer spending summary & auto tier
-    await applyTransactionSpendingUpdate(connection, customerId, grandTotalNum);
+    await applyTransactionSpendingUpdate(connection, resolvedCustomerId, grandTotalNum);
 
     await connection.commit();
 
     if (depositResult?.depositDelta) {
       emitDashboardRefresh('customer:updated', {
         outletId: outletId || 2,
-        customerId: Number(customerId)
+        customerId: resolvedCustomerId
       });
     }
 
     // Fetch full created order with items
     const [fullOrder] = await myWaschenPool.query(
-      `SELECT t.*, c.name as customer_name, c.phone as customer_phone, ct.name as customer_tier
+      `SELECT t.*,
+              t.customer_id,
+              c.customer_code,
+              c.name as customer_name,
+              c.phone as customer_phone,
+              ct.name as customer_tier,
+              COALESCE(NULLIF(TRIM(c.full_address), ''), NULLIF(TRIM(c.address), ''), '-') as customer_address,
+              c.home_branch,
+              COALESCE(o.full_name, o.name, c.home_branch, 'Outlet Waschen') as outlet_name
        FROM tr_transaction t
-       LEFT JOIN mst_customer c ON t.customer_id = c.id
+       LEFT JOIN mst_customer c ON c.id = t.customer_id
        LEFT JOIN mst_customer_tier ct ON c.spending_tier_id = ct.id
+       LEFT JOIN mst_outlet o ON o.id = t.outlet_id
        WHERE t.id = ?`,
       [transactionId]
     );
@@ -323,23 +353,40 @@ export const getTransactions = async (req, res) => {
 
     let sql = `
       SELECT t.*, 
+             t.customer_id,
+             c.customer_code,
              c.name as customer_name, 
              c.phone as customer_phone, 
              ct.name as customer_tier,
+             COALESCE(NULLIF(TRIM(c.full_address), ''), NULLIF(TRIM(c.address), ''), '-') as customer_address,
              c.home_branch,
+             COALESCE(o.full_name, o.name, c.home_branch, 'Outlet Waschen') as outlet_name,
              sp.name as speed_name,
              p.name as parfume_name,
              COALESCE(e.full_name, CONCAT('Kasir #', t.cashier_employee_id)) as cashier_name,
-             b.batch_no as payment_batch_no,
-             b.id as payment_batch_id
+             (
+               SELECT b.batch_no
+               FROM tr_payment_batch_item bi
+               JOIN tr_payment_batch b ON b.id = bi.batch_id
+               WHERE bi.transaction_id = t.id
+               ORDER BY bi.id DESC
+               LIMIT 1
+             ) as payment_batch_no,
+             (
+               SELECT b.id
+               FROM tr_payment_batch_item bi
+               JOIN tr_payment_batch b ON b.id = bi.batch_id
+               WHERE bi.transaction_id = t.id
+               ORDER BY bi.id DESC
+               LIMIT 1
+             ) as payment_batch_id
       FROM tr_transaction t
-      LEFT JOIN mst_customer c ON t.customer_id = c.id
+      LEFT JOIN mst_customer c ON c.id = t.customer_id
       LEFT JOIN mst_customer_tier ct ON c.spending_tier_id = ct.id
+      LEFT JOIN mst_outlet o ON o.id = t.outlet_id
       LEFT JOIN mst_service_speed sp ON t.speed_id = sp.id
       LEFT JOIN mst_parfume p ON t.parfume_id = p.id
       LEFT JOIN waschen.mst_employee e ON t.cashier_employee_id = e.employee_id
-      LEFT JOIN tr_payment_batch_item bi ON bi.transaction_id = t.id
-      LEFT JOIN tr_payment_batch b ON b.id = bi.batch_id
       WHERE 1=1
     `;
     const params = [];
@@ -424,31 +471,48 @@ export const getTransactions = async (req, res) => {
 export const getTransactionDetail = async (req, res) => {
   try {
     const { orderNo } = req.params;
+    const key = String(orderNo || '').trim();
 
     const [orderRows] = await myWaschenPool.query(
-      `SELECT t.*, 
-              c.name as customer_name, 
-              c.phone as customer_phone, 
+      `SELECT t.*,
+              t.customer_id,
+              c.customer_code,
+              c.name as customer_name,
+              c.phone as customer_phone,
               ct.name as customer_tier,
-              c.address as customer_address,
+              COALESCE(NULLIF(TRIM(c.full_address), ''), NULLIF(TRIM(c.address), ''), '-') as customer_address,
               c.home_branch,
+              COALESCE(o.full_name, o.name, c.home_branch, 'Outlet Waschen') as outlet_name,
               sp.name as speed_name,
               p.name as parfume_name,
               COALESCE(e.full_name, CONCAT('Kasir #', t.cashier_employee_id)) as cashier_name,
-              b.batch_no as payment_batch_no,
-              b.id as payment_batch_id
+              (
+                SELECT b.batch_no
+                FROM tr_payment_batch_item bi
+                JOIN tr_payment_batch b ON b.id = bi.batch_id
+                WHERE bi.transaction_id = t.id
+                ORDER BY bi.id DESC
+                LIMIT 1
+              ) as payment_batch_no,
+              (
+                SELECT b.id
+                FROM tr_payment_batch_item bi
+                JOIN tr_payment_batch b ON b.id = bi.batch_id
+                WHERE bi.transaction_id = t.id
+                ORDER BY bi.id DESC
+                LIMIT 1
+              ) as payment_batch_id
        FROM tr_transaction t
-       LEFT JOIN mst_customer c ON t.customer_id = c.id
+       LEFT JOIN mst_customer c ON c.id = t.customer_id
        LEFT JOIN mst_customer_tier ct ON c.spending_tier_id = ct.id
+       LEFT JOIN mst_outlet o ON o.id = t.outlet_id
        LEFT JOIN mst_service_speed sp ON t.speed_id = sp.id
        LEFT JOIN mst_parfume p ON t.parfume_id = p.id
        LEFT JOIN waschen.mst_employee e ON t.cashier_employee_id = e.employee_id
-       LEFT JOIN tr_payment_batch_item bi ON bi.transaction_id = t.id
-       LEFT JOIN tr_payment_batch b ON b.id = bi.batch_id
-       WHERE t.id = ? OR t.order_no = ?
-       ORDER BY bi.id DESC
+       WHERE t.order_no = ? OR t.id = ?
+       ORDER BY CASE WHEN t.order_no = ? THEN 0 ELSE 1 END, t.id DESC
        LIMIT 1`,
-      [orderNo, orderNo]
+      [key, key, key]
     );
 
     if (orderRows.length === 0) {
@@ -806,6 +870,44 @@ export const settlePaymentBatch = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Tidak ada nota yang dipilih untuk pelunasan.' });
     }
 
+    const resolvedCustomerId = parseInt(customerId, 10) || null;
+    if (!resolvedCustomerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Customer ID tidak valid. Buka ulang detail pelanggan lalu coba lagi.'
+      });
+    }
+
+    const [custRows] = await connection.query(
+      'SELECT id, name, phone FROM mst_customer WHERE id = ? LIMIT 1',
+      [resolvedCustomerId]
+    );
+    if (!custRows.length) {
+      return res.status(404).json({ success: false, message: 'Pelanggan tidak ditemukan' });
+    }
+    const customerRow = custRows[0];
+
+    // Pastikan semua nota milik pelanggan yang sama
+    for (const item of items) {
+      const txnId = parseInt(item.transactionId, 10);
+      if (!txnId) {
+        return res.status(400).json({ success: false, message: 'ID transaksi tidak valid pada daftar nota' });
+      }
+      const [ownRows] = await connection.query(
+        'SELECT id, order_no, customer_id FROM tr_transaction WHERE id = ? LIMIT 1',
+        [txnId]
+      );
+      if (!ownRows.length) {
+        return res.status(404).json({ success: false, message: `Nota ID ${txnId} tidak ditemukan` });
+      }
+      if (Number(ownRows[0].customer_id) !== resolvedCustomerId) {
+        return res.status(400).json({
+          success: false,
+          message: `Nota ${ownRows[0].order_no} bukan milik pelanggan yang dipilih`
+        });
+      }
+    }
+
     await connection.beginTransaction();
 
     const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -822,9 +924,9 @@ export const settlePaymentBatch = async (req, res) => {
     let depositAdded = 0;
     let changeAmount = excess;
 
-    if (excess > 0 && overpaymentToDeposit && customerId) {
+    if (excess > 0 && overpaymentToDeposit && resolvedCustomerId) {
       const depositRes = await applyDepositOnPayment(connection, {
-        customerId,
+        customerId: resolvedCustomerId,
         outletId,
         cashierEmployeeId,
         overpaymentAmount: excess,
@@ -843,7 +945,7 @@ export const settlePaymentBatch = async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         batchNo,
-        customerId || 0,
+        resolvedCustomerId,
         outletId || 0,
         cashierEmployeeId || 0,
         shiftId || null,
@@ -928,6 +1030,11 @@ export const settlePaymentBatch = async (req, res) => {
       data: {
         batchId,
         batchNo,
+        customerId: resolvedCustomerId,
+        customer_name: customerRow.name,
+        customer_phone: customerRow.phone,
+        customerName: customerRow.name,
+        customerPhone: customerRow.phone,
         totalAmount,
         paidAmount,
         changeAmount,
