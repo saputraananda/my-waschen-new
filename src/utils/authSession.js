@@ -82,3 +82,12 @@ export function getLoggedInEmployeeId() {
 export function isHqUser() {
   return localStorage.getItem('companyId') === '1';
 }
+
+/** Karyawan outlet Waschen (company_id = 5) wajib buka shift sebelum akses menu POS. */
+export function requiresShiftGate() {
+  return localStorage.getItem('companyId') === '5';
+}
+
+export function getCompanyId() {
+  return localStorage.getItem('companyId') || '';
+}

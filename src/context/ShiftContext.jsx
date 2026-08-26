@@ -10,15 +10,25 @@ import {
   isHqUser,
   isShiftSessionConfirmed,
   markShiftSessionConfirmed,
+  requiresShiftGate,
   syncShiftToStorage
 } from '../utils/authSession.js';
 
 const ShiftContext = createContext(null);
 
+/** Path yang boleh diakses tanpa shift (login + dashboard saja). */
+const SHIFT_FREE_PATHS = ['/login', '/', '/dashboard'];
+
+function isShiftFreePath(pathname) {
+  if (!pathname) return false;
+  return SHIFT_FREE_PATHS.some((p) => pathname === p);
+}
+
 export function ShiftProvider({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
   const isLoginPage = location.pathname === '/login';
+  const mustGateShift = requiresShiftGate();
 
   const [activeShift, setActiveShift] = useState(null);
   const [shiftChecked, setShiftChecked] = useState(false);
@@ -26,7 +36,7 @@ export function ShiftProvider({ children }) {
   const [isOpenShiftModalOpen, setIsOpenShiftModalOpen] = useState(false);
   const [isResumeModalOpen, setIsResumeModalOpen] = useState(false);
   const [isCloseShiftOpen, setIsCloseShiftOpen] = useState(false);
-  const [pendingNavigateToOrder, setPendingNavigateToOrder] = useState(false);
+  const [pendingNavigatePath, setPendingNavigatePath] = useState(null);
   const [outletId, setOutletId] = useState(localStorage.getItem('activeOutletId') || '2');
 
   const employeeId = getLoggedInEmployeeId();
@@ -41,16 +51,16 @@ export function ShiftProvider({ children }) {
     setIsOpenShiftModalOpen(false);
     setIsResumeModalOpen(false);
 
-    setPendingNavigateToOrder((pending) => {
+    setPendingNavigatePath((pending) => {
       if (pending) {
-        navigate('/transaction');
+        navigate(pending);
       }
-      return false;
+      return null;
     });
   }, [navigate]);
 
   const fetchCurrentShift = useCallback(async (oid = outletId) => {
-    if (isLoginPage || !hasToken || isHq) {
+    if (isLoginPage || !hasToken || !mustGateShift) {
       setShiftChecked(true);
       setSessionReady(true);
       return;
@@ -88,7 +98,7 @@ export function ShiftProvider({ children }) {
     } finally {
       setShiftChecked(true);
     }
-  }, [hasToken, isHq, isLoginPage, outletId]);
+  }, [hasToken, isLoginPage, mustGateShift, outletId]);
 
   useEffect(() => {
     if (isLoginPage || !hasToken) {
@@ -129,58 +139,69 @@ export function ShiftProvider({ children }) {
   const openCloseModal = useCallback(() => setIsCloseShiftOpen(true), []);
 
   const requestOpenShift = useCallback((options = {}) => {
-    if (options.thenNavigate) setPendingNavigateToOrder(true);
+    if (options.thenNavigate) {
+      setPendingNavigatePath(typeof options.thenNavigate === 'string' ? options.thenNavigate : '/transaction');
+    }
     setIsOpenShiftModalOpen(true);
   }, []);
 
-  /** Dipanggil dari tombol Order Baru / Click To Order */
-  const startOrderFlow = useCallback(() => {
-    if (isHq) {
-      navigate('/transaction');
-      return;
+  /**
+   * Guard navigasi menu: company_id=5 wajib shift terbuka.
+   * company_id=1 (HQ) dan selain 5 bebas.
+   */
+  const ensureShiftThenNavigate = useCallback((path = '/transaction') => {
+    if (!mustGateShift) {
+      navigate(path);
+      return true;
     }
-    if (!shiftChecked) return;
-
-    if (!activeShift) {
-      setPendingNavigateToOrder(true);
-      setIsOpenShiftModalOpen(true);
-      return;
-    }
-
-    if (!isShiftSessionConfirmed(activeShift.id)) {
-      setPendingNavigateToOrder(true);
-      setIsResumeModalOpen(true);
-      return;
-    }
-
-    navigate('/transaction');
-  }, [activeShift, isHq, navigate, shiftChecked]);
-
-  /** Guard di halaman /transaction jika user navigate langsung */
-  const ensureShiftForOrder = useCallback(() => {
-    if (isHq) return true;
     if (!shiftChecked) return false;
 
     if (!activeShift) {
-      setPendingNavigateToOrder(false);
+      setPendingNavigatePath(path);
       setIsOpenShiftModalOpen(true);
       return false;
     }
 
     if (!isShiftSessionConfirmed(activeShift.id)) {
-      setPendingNavigateToOrder(false);
+      setPendingNavigatePath(path);
+      setIsResumeModalOpen(true);
+      return false;
+    }
+
+    navigate(path);
+    return true;
+  }, [activeShift, mustGateShift, navigate, shiftChecked]);
+
+  /** Dipanggil dari tombol Order Baru / Click To Order */
+  const startOrderFlow = useCallback(() => {
+    ensureShiftThenNavigate('/transaction');
+  }, [ensureShiftThenNavigate]);
+
+  /** Guard di halaman POS / menu jika user navigate langsung via URL */
+  const ensureShiftForOrder = useCallback(() => {
+    if (!mustGateShift) return true;
+    if (!shiftChecked) return false;
+
+    if (!activeShift) {
+      setPendingNavigatePath(null);
+      setIsOpenShiftModalOpen(true);
+      return false;
+    }
+
+    if (!isShiftSessionConfirmed(activeShift.id)) {
+      setPendingNavigatePath(null);
       setIsResumeModalOpen(true);
       return false;
     }
 
     return true;
-  }, [activeShift, isHq, shiftChecked]);
+  }, [activeShift, mustGateShift, shiftChecked]);
 
   const cancelShiftGate = useCallback(() => {
     setIsOpenShiftModalOpen(false);
     setIsResumeModalOpen(false);
-    setPendingNavigateToOrder(false);
-    if (location.pathname.startsWith('/transaction')) {
+    setPendingNavigatePath(null);
+    if (!isShiftFreePath(location.pathname)) {
       navigate('/dashboard', { replace: true });
     }
   }, [location.pathname, navigate]);
@@ -192,9 +213,36 @@ export function ShiftProvider({ children }) {
     setIsCloseShiftOpen(false);
     setIsOpenShiftModalOpen(false);
     setIsResumeModalOpen(false);
-    setPendingNavigateToOrder(false);
+    setPendingNavigatePath(null);
     navigate('/dashboard', { replace: true });
   }, [navigate]);
+
+  /** Blok akses langsung via URL untuk company_id=5 jika shift belum siap */
+  useEffect(() => {
+    if (!mustGateShift || isLoginPage || !hasToken || !shiftChecked) return;
+    if (isShiftFreePath(location.pathname)) return;
+
+    if (!activeShift) {
+      setPendingNavigatePath(location.pathname);
+      setIsOpenShiftModalOpen(true);
+      navigate('/dashboard', { replace: true });
+      return;
+    }
+
+    if (!isShiftSessionConfirmed(activeShift.id)) {
+      setPendingNavigatePath(location.pathname);
+      setIsResumeModalOpen(true);
+      navigate('/dashboard', { replace: true });
+    }
+  }, [
+    activeShift,
+    hasToken,
+    isLoginPage,
+    location.pathname,
+    mustGateShift,
+    navigate,
+    shiftChecked
+  ]);
 
   const value = useMemo(() => ({
     activeShift,
@@ -207,18 +255,22 @@ export function ShiftProvider({ children }) {
     applyOpenShift,
     setOutletId,
     startOrderFlow,
+    ensureShiftThenNavigate,
     ensureShiftForOrder,
     requestOpenShift,
     cancelShiftGate,
-    /** Halaman browsing (dashboard/riwayat) tidak diblokir — hanya Order Baru yang butuh shift */
-    isShiftReady: isHq || (Boolean(activeShift) && sessionReady)
+    mustGateShift,
+    isHq,
+    isShiftReady: !mustGateShift || (Boolean(activeShift) && sessionReady)
   }), [
     activeShift,
     applyOpenShift,
     cancelShiftGate,
     ensureShiftForOrder,
+    ensureShiftThenNavigate,
     isCloseShiftOpen,
     isHq,
+    mustGateShift,
     openCloseModal,
     refreshShift,
     requestOpenShift,
@@ -227,7 +279,7 @@ export function ShiftProvider({ children }) {
     startOrderFlow
   ]);
 
-  const showShiftGate = !isLoginPage && hasToken && !isHq && shiftChecked;
+  const showShiftGate = !isLoginPage && hasToken && mustGateShift && shiftChecked;
 
   return (
     <ShiftContext.Provider value={value}>
