@@ -12,7 +12,6 @@ import {
     Layers,
     X
 } from 'lucide-react';
-import Toast from '../../components/Toast.jsx';
 import { formatEmployeeName } from '../../utils/FormatName.js';
 
 // Import local images from assets/images
@@ -79,9 +78,6 @@ export default function LoginPage() {
     const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
     const [welcomeName, setWelcomeName] = useState('');
 
-    // Toast State
-    const [toast, setToast] = useState({ isOpen: false, title: '', message: '', type: 'success' });
-
     const navigate = useNavigate();
 
     // Set document title & Carousel timer
@@ -142,6 +138,9 @@ export default function LoginPage() {
                 setWelcomeName(formatEmployeeName(user.fullName || user.username));
                 setIsSuccessModalOpen(true);
 
+                // Sync ShiftContext / auth flags (localStorage tidak memicu re-render otomatis)
+                window.dispatchEvent(new Event('waschen:auth-changed'));
+
                 setTimeout(() => {
                     navigate('/', { replace: true });
                 }, 2500);
@@ -160,14 +159,6 @@ export default function LoginPage() {
 
     return (
         <div className="relative min-h-screen bg-white flex overflow-hidden font-sans">
-            <Toast
-                isOpen={toast.isOpen}
-                onClose={() => setToast(prev => ({ ...prev, isOpen: false }))}
-                title={toast.title}
-                message={toast.message}
-                type={toast.type}
-            />
-
             {/* Error Modal with Sad Mascot */}
             {isErrorModalOpen && (
                 <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">

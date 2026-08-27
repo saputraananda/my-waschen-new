@@ -1,5 +1,7 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import Barcode from 'react-barcode';
+import { QRCodeSVG } from 'qrcode.react';
 import { Printer, X } from 'lucide-react';
 import { formatEmployeeName } from '../utils/FormatName.js';
 import { useAppDialog } from '../context/AppDialogContext.jsx';
@@ -84,7 +86,7 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
                       <span className="shrink-0">Rp {(item.effectiveSubtotal || 0).toLocaleString('id-ID')}</span>
                     </div>
                     <p className="text-[9px] text-slate-500">
-                      {item.qtyDisplay}{item.isCleanox ? ' • CLEANOX' : ''} | Merk: {item.brand} | Warna: {item.color}
+                      {item.qtyDisplay}{(item.isDryClean || item.is_dry_clean || item.laundry_method_code === 'DC') ? ' • DRY CLEAN (DC)' : ''}{item.isCleanox ? ' • CLEANOX' : ''}{item.size && item.size !== '-' ? ` | Ukuran: ${item.size}` : ''} | Merk: {item.brand} | Warna: {item.color}
                     </p>
                     {item.note && item.note !== '-' && (
                       <p className="text-[9px] text-amber-800">Ket: {item.note}</p>
@@ -174,7 +176,34 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
                 </p>
               )}
 
-              <p className="text-center text-[9px] text-slate-400 pt-2 pb-1 border-t border-dashed border-slate-300">
+              {/* Barcode & QR Code Section */}
+              <div className="pt-2 pb-1 border-t border-dashed border-slate-400 flex flex-col items-center justify-center gap-1.5 text-center">
+                <div className="bg-white p-1 rounded border border-slate-200">
+                  <Barcode
+                    value={createdOrderReceipt.barcode || createdOrderReceipt.id || 'WLRH202608250001'}
+                    format="CODE128"
+                    width={1.1}
+                    height={34}
+                    fontSize={9}
+                    margin={2}
+                    background="#ffffff"
+                    lineColor="#000000"
+                  />
+                </div>
+                <div className="bg-white p-1 rounded border border-slate-200 shadow-2xs">
+                  <QRCodeSVG
+                    value={`${window.location.origin}/dashboard?trackingNo=${encodeURIComponent(createdOrderReceipt.id)}`}
+                    size={76}
+                    level="M"
+                    includeMargin={false}
+                  />
+                </div>
+                <p className="text-[8px] text-slate-500 font-bold uppercase tracking-tight">
+                  Scan Barcode / QR untuk Lacak Status Nota
+                </p>
+              </div>
+
+              <p className="text-center text-[9px] text-slate-400 pt-1 pb-1 border-t border-dashed border-slate-300">
                 Terima kasih telah mempercayakan cucian Anda!
               </p>
             </div>

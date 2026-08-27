@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav.jsx';
-import Toast from '../../components/Toast.jsx';
 import { getSocket, joinOutletRoom } from '../../utils/socket.js';
+import { useAppDialog } from '../../context/AppDialogContext.jsx';
 
 // Layout Subcomponents
 import Banner from './components/Banner.jsx';
@@ -19,15 +19,13 @@ import { matchesWorkStatusTab, getWorkPercentage } from '../../utils/workStatusM
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { activeShift, openCloseModal, startOrderFlow, requestOpenShift } = useShift();
+  const { activeShift, shiftChecked, openCloseModal, startOrderFlow, requestOpenShift, mustGateShift } = useShift();
+  const { showAlert } = useAppDialog();
   const [userProfile, setUserProfile] = useState(null);
   const refreshTimerRef = useRef(null);
 
   // Modal Lacak Nota State
   const [isLacakNotaModalOpen, setIsLacakNotaModalOpen] = useState(false);
-
-  // Toast notifications state
-  const [toast, setToast] = useState({ isOpen: false, title: '', message: '', type: 'success' });
 
   // Active role & branch state
   const getInitialOutlet = () => {
@@ -51,9 +49,9 @@ export default function Dashboard() {
   // Live customers state from database
   const [customers, setCustomers] = useState([]);
 
-  // Live cash logs & float from database
+  // Live cash logs & float from database (initial_petty_cash, bukan initial_cash)
   const [cashLogs, setCashLogs] = useState([]);
-  const [initialCashFloat, setInitialCashFloat] = useState(0);
+  const [initialPettyCashFloat, setInitialPettyCashFloat] = useState(0);
 
   // Active Tab for Antrean Table Filtering
   const [activeFilterTab, setActiveFilterTab] = useState('Semua');
@@ -99,7 +97,9 @@ export default function Dashboard() {
       const [trxRes, custRes, pettyRes] = await Promise.all([
         axios.get('/api/transactions'),
         axios.get('/api/customers'),
-        axios.get('/api/petty-cash')
+        axios.get('/api/petty-cash', {
+          params: { outlet_id: localStorage.getItem('activeOutletId') || undefined }
+        })
       ]);
 
       if (trxRes.data && trxRes.data.success) {
@@ -178,8 +178,8 @@ export default function Dashboard() {
           }));
           setCashLogs(mappedLogs);
         }
-        if (typeof pettyRes.data.initialFloat === 'number') {
-          setInitialCashFloat(pettyRes.data.initialFloat);
+        if (typeof pettyRes.data.initialPettyCash === 'number' || typeof pettyRes.data.initialFloat === 'number') {
+          setInitialPettyCashFloat(pettyRes.data.initialPettyCash ?? pettyRes.data.initialFloat);
         }
       }
     } catch (err) {
@@ -318,13 +318,9 @@ export default function Dashboard() {
     fetchTargetRevenue();
   }, [activeOutletName]);
 
-  // Toast Helper
+  // Alert helper (AppDialog / AlertModal)
   const showToast = (title, message, type = 'success') => {
-    setToast({ isOpen: true, title, message, type });
-  };
-
-  const closeToast = () => {
-    setToast(prev => ({ ...prev, isOpen: false }));
+    showAlert({ title, message, type });
   };
 
   // Print Thermal Slip Trigger
@@ -347,7 +343,7 @@ export default function Dashboard() {
   // Cash log sum calculations
   const totalCashIn = cashLogs.filter(c => c.type === 'Masuk').reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
   const totalCashOut = cashLogs.filter(c => c.type === 'Keluar').reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
-  const netCashInDrawer = initialCashFloat + totalCashIn - totalCashOut;
+  const netCashInDrawer = initialPettyCashFloat + totalCashIn - totalCashOut;
 
   // Filter and search orders list
   const filteredOrders = orders.filter(order => {
@@ -383,17 +379,18 @@ export default function Dashboard() {
 
         {/* Left / Middle Main Column */}
         <div className="xl:col-span-3 flex flex-col gap-5 lg:gap-6">
-          <BadgeShift
-            shift={activeShift}
-            currentEmployeeId={localStorage.getItem('employeeId')}
-            onOpenClose={openCloseModal}
-            onOpenShift={() => requestOpenShift()}
-          />
+          {mustGateShift && (
+            <BadgeShift
+              shift={activeShift}
+              shiftChecked={shiftChecked}
+              currentEmployeeId={localStorage.getItem('employeeId')}
+              onOpenClose={openCloseModal}
+              onOpenShift={() => requestOpenShift()}
+            />
+          )}
 
           <Banner
             userProfile={userProfile}
-            orders={orders}
-            showToast={showToast}
             navigate={navigate}
             onOpenLacakNotaModal={() => setIsLacakNotaModalOpen(true)}
             onOrderClick={startOrderFlow}
@@ -419,7 +416,6 @@ export default function Dashboard() {
             activeFilterTab={activeFilterTab}
             setActiveFilterTab={setActiveFilterTab}
             handlePrintNota={handlePrintNota}
-            showToast={showToast}
             fetchLiveDashboardData={fetchLiveDashboardData}
           />
         </div>
@@ -428,11 +424,8 @@ export default function Dashboard() {
         <div className="xl:col-span-1 flex flex-col gap-5 lg:gap-6">
           <PettyCashCard
             netCashInDrawer={netCashInDrawer}
-            initialCashFloat={initialCashFloat}
+            initialPettyCashFloat={initialPettyCashFloat}
             totalCashOut={totalCashOut}
-            activeOutletId={activeOutletId}
-            fetchLiveDashboardData={fetchLiveDashboardData}
-            showToast={showToast}
             navigate={navigate}
           />
 
@@ -452,15 +445,6 @@ export default function Dashboard() {
       <ModalLacakNota
         isOpen={isLacakNotaModalOpen}
         onClose={() => setIsLacakNotaModalOpen(false)}
-      />
-
-      {/* Toast Notification */}
-      <Toast
-        isOpen={toast.isOpen}
-        title={toast.title}
-        message={toast.message}
-        type={toast.type}
-        onClose={closeToast}
       />
 
     </div>

@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { composeFullAddress } from '../../../utils/NormalizePhone.js';
+import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 
-export default function FillAddressModal({ customer, onClose, onSaved, showToast }) {
+export default function FillAddressModal({ customer, onClose, onSaved }) {
+  const { showAlert } = useAppDialog();
   const [form, setForm] = useState({
     address: customer?.address && customer.address !== '-' ? customer.address : '',
     block: customer?.block || '',
@@ -28,7 +30,7 @@ export default function FillAddressModal({ customer, onClose, onSaved, showToast
   const handleSave = async (e) => {
     e.preventDefault();
     if (!form.address && !form.fullAddress) {
-      showToast?.('Alamat Wajib', 'Isi alamat singkat atau alamat lengkap terlebih dahulu', 'error');
+      showAlert({ title: 'Alamat Wajib', message: 'Isi alamat singkat atau alamat lengkap terlebih dahulu', type: 'error' });
       return;
     }
     setSaving(true);
@@ -44,7 +46,7 @@ export default function FillAddressModal({ customer, onClose, onSaved, showToast
         onSaved(res.data.data);
       }
     } catch (err) {
-      showToast?.('Gagal Simpan', err.response?.data?.message || 'Tidak bisa menyimpan alamat', 'error');
+      showAlert({ title: 'Gagal Simpan', message: err.response?.data?.message || 'Tidak bisa menyimpan alamat', type: 'error' });
     } finally {
       setSaving(false);
     }

@@ -4,6 +4,7 @@ import axios from 'axios';
 import { formatName } from '../../../utils/FormatName';
 import { normalizePhone, composeFullAddress } from '../../../utils/NormalizePhone.js';
 import { ArrowLeft, Save, RotateCcw } from 'lucide-react';
+import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 
 const GREETINGS = ['Pak', 'Bu', 'Mas', 'Mba', 'Kaka', 'Mr.', 'Mrs.'];
 
@@ -57,7 +58,6 @@ export default function AddCustomer({
   outlets,
   activeOutletName,
   activeOutletId,
-  showToast,
   onCustomerCreated,
   onSwitchToCatalog,
   customerToEdit = null,
@@ -65,11 +65,14 @@ export default function AddCustomer({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { showAlert } = useAppDialog();
   const isEdit = Boolean(customerToEdit?.dbId || customerToEdit?.id);
   const [customerSources, setCustomerSources] = useState([]);
   const [customerTiers, setCustomerTiers] = useState([]);
   const [showDetailAddress, setShowDetailAddress] = useState(false);
+  const [showOptionalIdentity, setShowOptionalIdentity] = useState(false);
   const [fullAddressTouched, setFullAddressTouched] = useState(Boolean(customerToEdit?.full_address || customerToEdit?.fullAddress));
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [form, setForm] = useState(() => (
     customerToEdit ? fromCustomer(customerToEdit, activeOutletName) : emptyForm(activeOutletName)
   ));
@@ -80,10 +83,14 @@ export default function AddCustomer({
     if (document.body) document.body.scrollTop = 0;
 
     if (customerToEdit) {
-      setForm(fromCustomer(customerToEdit, activeOutletName));
+      const mapped = fromCustomer(customerToEdit, activeOutletName);
+      setForm(mapped);
       setFullAddressTouched(Boolean(customerToEdit.full_address || customerToEdit.fullAddress));
       if (customerToEdit.district || customerToEdit.sub_district || customerToEdit.subDistrict) {
         setShowDetailAddress(true);
+      }
+      if (mapped.gender || mapped.birthDate || mapped.occupation || mapped.email) {
+        setShowOptionalIdentity(true);
       }
     }
   }, [customerToEdit, activeOutletName]);
@@ -160,30 +167,35 @@ export default function AddCustomer({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.name || !form.phone) {
-      showToast('Form Belum Lengkap', 'Nama pelanggan dan nomor HP wajib diisi', 'error');
+    if (isSubmitting) return;
+
+    if (!form.greeting || !form.name || !form.phone) {
+      showAlert({ title: 'Form Belum Lengkap', message: 'Sapaan, nama lengkap, dan nomor HP wajib diisi', type: 'error' });
       return;
     }
     const cleanPhone = normalizePhone(form.phone);
     if (!cleanPhone || cleanPhone.length < 10) {
-      showToast('Nomor HP Tidak Valid', 'Masukkan nomor HP yang benar, contoh 087770597000', 'error');
+      showAlert({ title: 'Nomor HP Tidak Valid', message: 'Masukkan nomor HP yang benar, contoh 087770597000', type: 'error' });
       return;
     }
 
     const payload = payloadFromForm();
+    setIsSubmitting(true);
     try {
       if (isEdit) {
         const id = customerToEdit.dbId || customerToEdit.id;
-        const res = await axios.put(`/api/customers/${id}`, payload);
+        const res = await axios.put(`/api/customers/${id}`, payload, { timeout: 20000 });
         if (res.data?.success) {
-          showToast('Data Diperbarui', `Data ${payload.name} berhasil disimpan.`, 'success');
+          showAlert({ title: 'Data Diperbarui', message: `Data ${payload.name} berhasil disimpan.`, type: 'success' });
           onCustomerUpdated?.(res.data.data);
           onSwitchToCatalog?.();
+        } else {
+          showAlert({ title: 'Gagal Simpan', message: res.data?.message || 'Respons server tidak valid', type: 'error' });
         }
         return;
       }
 
-      const res = await axios.post('/api/customers', payload);
+      const res = await axios.post('/api/customers', payload, { timeout: 20000 });
       if (res.data?.success) {
         const created = res.data.data;
         const mapped = {
@@ -203,7 +215,10 @@ export default function AddCustomer({
           monthlySpending: 0,
           trxCount: 0,
           depositBalance: 0,
-          lastTrx: 'Baru Terdaftar',
+          lastTrx: '-',
+          registeredAt: created.created_at
+            ? new Date(created.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+            : new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
           source: created.source || created.source_name || '-',
           sourceId: created.customer_source_id,
           notes: created.notes || '',
@@ -212,7 +227,7 @@ export default function AddCustomer({
         };
         onCustomerCreated?.(mapped);
         localStorage.setItem('autoSelectCustId', mapped.id);
-        showToast('Registrasi Berhasil', `Pelanggan ${payload.name} tersimpan. Nomor HP: ${created.phone}`, 'success');
+        showAlert({ title: 'Registrasi Berhasil', message: `Pelanggan ${payload.name} tersimpan. Nomor HP: ${created.phone}`, type: 'success' });
         setForm(emptyForm(activeOutletName, {
           customerSourceId: '',
           customerTierId: customerTiers.find((t) => t.code === 'ONE_TIME')?.id || customerTiers[customerTiers.length - 1]?.id || ''
@@ -224,11 +239,22 @@ export default function AddCustomer({
           } else {
             onSwitchToCatalog?.();
           }
-        }, 800);
+        }, 400);
+      } else {
+        showAlert({ title: 'Gagal Simpan', message: res.data?.message || 'Respons server tidak valid', type: 'error' });
       }
     } catch (err) {
       console.error('Gagal menyimpan pelanggan:', err);
-      showToast('Gagal Simpan', err.response?.data?.message || 'Terjadi kesalahan saat menyimpan', 'error');
+      const timedOut = err.code === 'ECONNABORTED' || /timeout/i.test(err.message || '');
+      showAlert({
+        title: 'Gagal Simpan',
+        message: timedOut
+          ? 'Request timeout. Coba lagi — server mungkin sibuk.'
+          : (err.response?.data?.message || 'Terjadi kesalahan saat menyimpan'),
+        type: 'error'
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -250,7 +276,9 @@ export default function AddCustomer({
               </span>
             )}
           </div>
-          <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">Nama dan nomor HP wajib diisi. Alamat dan data lain bersifat opsional.</p>
+          <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
+            Wajib: sapaan, nama, dan nomor HP. Data lain boleh dilengkapi nanti.
+          </p>
         </div>
         <button
           type="button"
@@ -267,16 +295,26 @@ export default function AddCustomer({
 
         {/* Left Column: Identitas & Preferensi */}
         <div className="flex flex-col gap-4 sm:gap-5">
-          {/* Identitas Card */}
+          {/* Identitas Card — hanya field wajib */}
           <div className="flex flex-col gap-4 p-4 sm:p-5 border border-[#e0e0e0] rounded-2xl bg-[#fcfcfc]">
-            <h3 className="text-xs font-black text-[#5f1340] uppercase tracking-wider border-b border-[#f0f0f0] pb-2">
-              Identitas Pelanggan
-            </h3>
+            <div className="flex items-center justify-between border-b border-[#f0f0f0] pb-2 gap-2">
+              <h3 className="text-xs font-black text-[#5f1340] uppercase tracking-wider">
+                Identitas Pelanggan
+              </h3>
+              <span className="text-[9px] font-extrabold uppercase tracking-wider text-[#5f1340] bg-[#5f1340]/5 border border-[#5f1340]/15 px-2 py-0.5 rounded-lg shrink-0">
+                Wajib
+              </span>
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="flex flex-col gap-1 sm:col-span-1">
-                <label className={labelCls}>Sapaan</label>
-                <select className={`${fieldCls} cursor-pointer`} value={form.greeting} onChange={(e) => patch({ greeting: e.target.value })}>
+                <label className={labelCls}>Sapaan *</label>
+                <select
+                  className={`${fieldCls} cursor-pointer`}
+                  value={form.greeting}
+                  onChange={(e) => patch({ greeting: e.target.value })}
+                  required
+                >
                   <option value="">— Pilih —</option>
                   {GREETINGS.map((g) => <option key={g} value={g}>{g}</option>)}
                 </select>
@@ -301,43 +339,63 @@ export default function AddCustomer({
               <span className="text-[10px] text-slate-400">Otomatis diformat ke 08xx meski diisi +62 atau 62.</span>
             </div>
 
-            <div className="flex flex-col gap-1">
-              <label className={labelCls}>Jenis Kelamin</label>
-              <div className="grid grid-cols-2 gap-2 text-xs font-bold">
-                {['Laki-Laki', 'Perempuan'].map((g) => {
-                  const active = form.gender === g;
-                  return (
-                    <button
-                      type="button"
-                      key={g}
-                      onClick={() => patch({ gender: active ? '' : g })}
-                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
-                        active
-                          ? 'border-[#5f1340] bg-[#5f1340]/5 text-[#5f1340]'
-                          : 'border-[#e0e0e0] bg-white text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      {g}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <div className="pt-1 border-t border-[#f0f0f0]">
+              <button
+                type="button"
+                onClick={() => setShowOptionalIdentity((v) => !v)}
+                className="text-xs font-bold text-[#5f1340] hover:underline cursor-pointer flex items-center gap-1"
+              >
+                {showOptionalIdentity
+                  ? '▲ Sembunyikan Data Tambahan'
+                  : '▼ Lengkapi Data Tambahan (Jenis Kelamin, Tgl Lahir, Pekerjaan, Email)'}
+              </button>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1">
-                <label className={labelCls}>Tanggal Lahir</label>
-                <input className={fieldCls} type="date" value={form.birthDate} onChange={(e) => patch({ birthDate: e.target.value })} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className={labelCls}>Pekerjaan</label>
-                <input className={fieldCls} placeholder="PNS, Swasta, dll" value={form.occupation} onChange={(e) => patch({ occupation: e.target.value })} />
-              </div>
-            </div>
+              {showOptionalIdentity && (
+                <div className="flex flex-col gap-3 mt-3 p-3 bg-white border border-[#e0e0e0] rounded-xl">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                    Opsional — bisa diisi nanti
+                  </span>
 
-            <div className="flex flex-col gap-1">
-              <label className={labelCls}>Email</label>
-              <input className={fieldCls} type="email" placeholder="pelanggan@email.com" value={form.email} onChange={(e) => patch({ email: e.target.value })} />
+                  <div className="flex flex-col gap-1">
+                    <label className={labelCls}>Jenis Kelamin</label>
+                    <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+                      {['Laki-Laki', 'Perempuan'].map((g) => {
+                        const active = form.gender === g;
+                        return (
+                          <button
+                            type="button"
+                            key={g}
+                            onClick={() => patch({ gender: active ? '' : g })}
+                            className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
+                              active
+                                ? 'border-[#5f1340] bg-[#5f1340]/5 text-[#5f1340]'
+                                : 'border-[#e0e0e0] bg-white text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            {g}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label className={labelCls}>Tanggal Lahir</label>
+                      <input className={fieldCls} type="date" value={form.birthDate} onChange={(e) => patch({ birthDate: e.target.value })} />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className={labelCls}>Pekerjaan</label>
+                      <input className={fieldCls} placeholder="PNS, Swasta, dll" value={form.occupation} onChange={(e) => patch({ occupation: e.target.value })} />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className={labelCls}>Email</label>
+                    <input className={fieldCls} type="email" placeholder="pelanggan@email.com" value={form.email} onChange={(e) => patch({ email: e.target.value })} />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -377,9 +435,6 @@ export default function AddCustomer({
                     <option value={activeOutletName || ''}>{activeOutletName || 'Utama'}</option>
                   )}
                 </select>
-                <span className="text-[10px] text-slate-400">
-                  Kode pelanggan otomatis: CUS{'{outlet}'}{'{YYMM}'}0001 (contoh: CUSCG26080001)
-                </span>
               </div>
             </div>
 
@@ -476,13 +531,14 @@ export default function AddCustomer({
       {/* Full-width Footer Action Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between border-t border-[#e0e0e0] pt-5 gap-3 mt-1">
         <span className="text-xs text-slate-400 font-medium text-center sm:text-left">
-          * Tanda bintang wajib diisi. Data langsung terhubung ke POS Kasir.
+          * Wajib: sapaan, nama, nomor HP. Data lain opsional dan bisa dilengkapi nanti.
         </span>
 
         <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
           {!isEdit && (
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => {
                 setFullAddressTouched(false);
                 setForm(emptyForm(activeOutletName, {
@@ -490,7 +546,7 @@ export default function AddCustomer({
                   customerTierId: customerTiers.find((t) => t.code === 'ONE_TIME')?.id || ''
                 }));
               }}
-              className="flex-1 sm:flex-none px-4 py-3 bg-white border border-[#e0e0e0] hover:bg-slate-50 text-slate-700 font-bold rounded-xl text-xs cursor-pointer flex items-center justify-center gap-2 transition-colors"
+              className="flex-1 sm:flex-none px-4 py-3 bg-white border border-[#e0e0e0] hover:bg-slate-50 disabled:opacity-50 text-slate-700 font-bold rounded-xl text-xs cursor-pointer flex items-center justify-center gap-2 transition-colors"
             >
               <RotateCcw className="h-4 w-4" />
               <span>Reset Form</span>
@@ -499,10 +555,15 @@ export default function AddCustomer({
 
           <button
             type="submit"
-            className="flex-1 sm:flex-none px-6 py-3 bg-[#5f1340] hover:bg-[#4d0f33] text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-colors"
+            disabled={isSubmitting}
+            className="flex-1 sm:flex-none px-6 py-3 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-colors"
           >
             <Save className="h-4 w-4" />
-            <span>{isEdit ? 'Simpan Perubahan' : 'Simpan Pelanggan'}</span>
+            <span>
+              {isSubmitting
+                ? 'Menyimpan...'
+                : (isEdit ? 'Simpan Perubahan' : 'Simpan Pelanggan')}
+            </span>
           </button>
         </div>
       </div>

@@ -33,6 +33,7 @@ export default function HeaderNav({
 
   const handleLogout = () => {
     logoutSession();
+    window.dispatchEvent(new Event('waschen:auth-changed'));
     navigate('/login', { replace: true });
   };
 
@@ -77,6 +78,9 @@ export default function HeaderNav({
 
   const shiftLabel = (() => {
     if (!activeShift) {
+      if (shiftCtx?.mustGateShift && shiftCtx?.shiftChecked === false) {
+        return 'Cek shift…';
+      }
       const sn = localStorage.getItem('shiftNumber');
       if (sn === '2') return 'Shift Siang (10.30 - 20.00)';
       if (sn === '1') return 'Shift Pagi (08.00 - 17.00)';

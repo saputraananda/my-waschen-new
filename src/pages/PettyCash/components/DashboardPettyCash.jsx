@@ -4,7 +4,7 @@ import { Search } from 'lucide-react';
 
 export default function DashboardPettyCash({
   cashLogs,
-  initialCashFloat,
+  initialPettyCashFloat,
   activeOutletName
 }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -12,7 +12,7 @@ export default function DashboardPettyCash({
 
   const totalCashIn = cashLogs.filter(c => c.type === 'Masuk').reduce((acc, c) => acc + c.amount, 0);
   const totalCashOut = cashLogs.filter(c => c.type === 'Keluar').reduce((acc, c) => acc + c.amount, 0);
-  const netCashInDrawer = initialCashFloat + totalCashIn - totalCashOut;
+  const netCashInDrawer = initialPettyCashFloat + totalCashIn - totalCashOut;
 
   const filteredLogs = cashLogs.filter(log => {
     const matchesSearch = log.desc.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -31,8 +31,8 @@ export default function DashboardPettyCash({
         </div>
 
         <div className="bg-white border border-[#e0e0e0] rounded-2xl p-5 shadow-xs">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Modal Awal Floating</span>
-          <span className="text-lg font-black text-[#313030] block mt-1">Rp {initialCashFloat.toLocaleString('id-ID')}</span>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Modal Awal Petty Cash</span>
+          <span className="text-lg font-black text-[#313030] block mt-1">Rp {initialPettyCashFloat.toLocaleString('id-ID')}</span>
         </div>
 
         <div className="bg-white border border-[#e0e0e0] rounded-2xl p-5 shadow-xs">

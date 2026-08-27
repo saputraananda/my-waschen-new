@@ -11,6 +11,7 @@ import { STATUS_STEPS, DEFAULT_WORK_STATUSES, getWorkPercentage, percentageTone,
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 import { getBankAccountForOutlet, getAllBankAccounts, OUTLET_BANK_ACCOUNTS } from '../../../utils/bankAccounts.js';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
+import TransactionBarcodeCard from '../../../components/TransactionBarcodeCard.jsx';
 import {
   CheckCircle2,
   ChevronDown,
@@ -53,7 +54,6 @@ export default function DetailTransaction() {
   const [workStatusOptions, setWorkStatusOptions] = useState(DEFAULT_WORK_STATUSES);
   const [updatingItemId, setUpdatingItemId] = useState(null);
 
-  const [toast, setToast] = useState(null);
   const [printReceipt, setPrintReceipt] = useState(null);
 
   // Combined Multi-Invoice Payment Modal
@@ -81,8 +81,7 @@ export default function DetailTransaction() {
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
 
   const showToast = (title, message, type = 'success') => {
-    setToast({ title, message, type });
-    setTimeout(() => setToast(null), 3500);
+    showAlert({ title, message, type });
   };
 
   const mapOrder = (raw) => ({
@@ -94,6 +93,8 @@ export default function DetailTransaction() {
     customerPhone: raw.customer_phone || '-',
     customerTier: raw.customer_tier || 'Reguler',
     customerAddress: raw.customer_address || '-',
+    memberBalance: parseFloat(raw.member_balance || raw.customer_deposit_balance || raw.deposit_balance || 0),
+    customerBalance: parseFloat(raw.member_balance || raw.customer_deposit_balance || raw.deposit_balance || 0),
     branch: raw.outlet_name || raw.home_branch || activeOutletName,
     category: raw.order_category,
     serviceType: raw.speed_name ? `${raw.order_category} - ${raw.speed_name}` : raw.order_category,
@@ -132,6 +133,7 @@ export default function DetailTransaction() {
     size: it.size || '-',
     note: it.condition_notes || '-',
     isCleanox: it.is_cleanox === 1,
+    isDryClean: it.is_dry_clean === 1 || it.laundry_method_code === 'DC',
     photoUrl: it.photo_url || null
   }));
 
@@ -309,7 +311,7 @@ export default function DetailTransaction() {
       ]);
       if (logsRes.data?.success) setPaymentDetail(logsRes.data.data);
       if (methodsRes.data?.success) {
-        setPaymentMethods((methodsRes.data.data || []).filter((m) => !m.requires_member_balance));
+        setPaymentMethods(methodsRes.data.data || []);
       }
     } catch (err) {
       showToast('Gagal Memuat', err.response?.data?.message || 'Tidak dapat memuat riwayat pembayaran', 'error');
@@ -434,20 +436,6 @@ export default function DetailTransaction() {
         userProfile={userProfile}
       />
 
-      {toast && (
-        <div className="fixed top-5 right-5 z-50 animate-bounce">
-          <div className={`p-4 rounded-2xl shadow-2xl border flex items-center gap-3 ${
-            toast.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'
-          }`}>
-            <CheckCircle2 className="h-5 w-5" />
-            <div>
-              <span className="font-extrabold text-xs block">{toast.title}</span>
-              <span className="text-[11px] font-medium">{toast.message}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
       <main className="max-w-[1200px] w-full mx-auto p-4 sm:p-6 flex-grow flex flex-col gap-5">
         {isLoading ? (
           <div className="bg-white border border-[#e0e0e0] rounded-3xl p-12 text-center text-slate-400 font-bold text-sm">
@@ -547,6 +535,14 @@ export default function DetailTransaction() {
                   <span className="text-[10px] text-slate-500 block">Catatan: {order.specialNotes}</span>
                 </div>
               </div>
+
+              {/* Barcode & QR Code Card */}
+              <TransactionBarcodeCard
+                orderNo={order.id}
+                barcodeValue={order.barcode || order.id}
+                onPrint={handlePrint}
+                className="mt-4"
+              />
             </div>
 
             {/* Items */}
@@ -593,9 +589,17 @@ export default function DetailTransaction() {
                             </td>
                             <td className="py-3 px-4">
                               <span className="font-extrabold text-[#313030] block">{it.serviceName}</span>
-                              {it.isCleanox && (
-                                <span className="text-[9px] font-black text-sky-800 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-full">Cleanox</span>
-                              )}
+                              <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                                {it.size && it.size !== '-' && (
+                                  <span className="text-[9px] font-bold text-purple-900 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded-full">Ukuran: {it.size}</span>
+                                )}
+                                {it.isDryClean && (
+                                  <span className="text-[9px] font-black text-amber-900 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-full">Dry Clean (DC)</span>
+                                )}
+                                {it.isCleanox && (
+                                  <span className="text-[9px] font-black text-sky-800 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-full">Cleanox</span>
+                                )}
+                              </div>
                             </td>
                             <td className="py-3 px-4 font-bold text-slate-600">{it.qtyDisplay}</td>
                             <td className="py-3 px-4">

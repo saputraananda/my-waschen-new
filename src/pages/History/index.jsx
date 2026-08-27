@@ -8,7 +8,6 @@ import { useShift } from '../../context/ShiftContext.jsx';
 import {
   History as HistoryIcon,
   Trash2,
-  CheckCircle2,
   ShoppingBag
 } from 'lucide-react';
 
@@ -25,13 +24,6 @@ export default function History() {
 
   // Transactions State
   const [transactions, setTransactions] = useState([]);
-
-  // Toast Notification
-  const [toast, setToast] = useState(null);
-  const showToast = (title, message, type = 'success') => {
-    setToast({ title, message, type });
-    setTimeout(() => setToast(null), 3500);
-  };
 
   useEffect(() => {
     document.title = 'Riwayat Transaksi POS | Waschen Laundry';
@@ -118,19 +110,6 @@ export default function History() {
         userProfile={userProfile}
       />
 
-      {/* Toast Notification */}
-      {toast && (
-        <div className="fixed top-5 right-5 z-50 animate-bounce">
-          <div className="p-4 rounded-2xl shadow-2xl border flex items-center gap-3 bg-emerald-50 border-emerald-200 text-emerald-900">
-            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-            <div>
-              <span className="font-extrabold text-xs block">{toast.title}</span>
-              <span className="text-[11px] font-medium">{toast.message}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Main Workspace */}
       <main className="max-w-[1500px] w-full mx-auto p-4 sm:p-6 flex-grow flex flex-col gap-6">
         {/* Top Header Bar */}
@@ -197,7 +176,6 @@ export default function History() {
             transactions={transactions}
             setTransactions={setTransactions}
             outlets={outlets}
-            showToast={showToast}
             fetchTransactions={fetchTransactions}
           />
         ) : (

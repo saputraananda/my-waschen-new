@@ -1,3 +1,6 @@
+import path from 'path';
+import { buildUploadPublicUrl, PAYMENT_RECEIPT_SUBDIR } from '../middleware/upload.js';
+
 /**
  * Helper log & resolve status pembayaran transaksi
  */
@@ -34,7 +37,11 @@ export const resolvePaymentStatus = (paidAmount, grandTotal) => {
   return 'DP';
 };
 
+/**
+ * URL publik bukti bayar mengikuti UPLOAD_BASE_DIR (+ assets/payment_receipt)
+ */
 export const buildPaymentProofUrl = (filename) => {
   if (!filename) return null;
-  return `/uploads/assets/payment_proof/${filename}`;
+  const name = path.basename(filename);
+  return buildUploadPublicUrl(`${PAYMENT_RECEIPT_SUBDIR}/${name}`);
 };

@@ -13,7 +13,7 @@ import dashboardRoutes from './routes/dashboard.routes.js';
 import shiftRoutes from './routes/shift.routes.js';
 import masterRoutes from './routes/master.routes.js';
 import historyRoutes from './routes/history.routes.js';
-import { getBaseUploadDir } from './middleware/upload.js';
+import { getBaseUploadDir, getUploadUrlPrefix, uploadPaymentReceipt, buildUploadPublicUrl } from './middleware/upload.js';
 
 // Load environment variables
 dotenv.config();
@@ -24,8 +24,19 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Serve static uploaded files (/uploads)
-app.use('/uploads', express.static(getBaseUploadDir()));
+// Serve static uploaded files — prefix URL = nama folder UPLOAD_BASE_DIR
+app.use(getUploadUrlPrefix(), express.static(getBaseUploadDir()));
+
+// General upload endpoint for payment proofs / images
+app.post('/api/upload', uploadPaymentReceipt, (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'File tidak diunggah' });
+  }
+  const filename = req.file.filename || path.basename(req.file.path);
+  const relativePath = `assets/payment_receipt/${filename}`;
+  const publicUrl = buildUploadPublicUrl(relativePath);
+  return res.json({ success: true, url: publicUrl, filename });
+});
 
 // API Routes
 app.use('/api/auth', authRoutes);

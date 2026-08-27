@@ -168,7 +168,10 @@ export default function TransactionPage() {
     material: '',
     size: '',
     note: '',
-    isCleanox: false
+    isCleanox: false,
+    isDryClean: false,
+    length: 1,
+    width: 1
   });
 
   const [showPinModal, setShowPinModal] = useState(false);
@@ -395,7 +398,10 @@ export default function TransactionPage() {
         material: '',
         size: '',
         note: '',
-        isCleanox: service.isCleanox === true
+        isCleanox: service.isCleanox === true,
+        isDryClean: false,
+        length: 1,
+        width: 1
       });
     } else {
       setItemSpecs({
@@ -406,7 +412,10 @@ export default function TransactionPage() {
         material: '',
         size: '',
         note: '',
-        isCleanox: service.isCleanox === true
+        isCleanox: service.isCleanox === true,
+        isDryClean: false,
+        length: 1,
+        width: 1
       });
     }
   };
@@ -432,7 +441,10 @@ export default function TransactionPage() {
       material: cartItem.material === '-' ? '' : (cartItem.material || ''),
       size: cartItem.size === '-' ? '' : (cartItem.size || ''),
       note: cartItem.note === '-' ? '' : (cartItem.note || ''),
-      isCleanox: cartItem.isCleanox === true
+      isCleanox: cartItem.isCleanox === true,
+      isDryClean: cartItem.isDryClean === true,
+      length: cartItem.length || 1,
+      width: cartItem.width || 1
     });
   };
 
@@ -444,6 +456,8 @@ export default function TransactionPage() {
     let effectivePrice = 0;
     let qtyDisplay = '';
 
+    const isMeter = configuringItem.unit_id === 4 || configuringItem.unit === 'm²' || configuringItem.unit === 'm2' || configuringItem.unit === 'Meter';
+
     if (configuringItem.category === 'Kiloan') {
       const weight = Math.max(0.5, parseFloat(itemSpecs.weight) || 4);
       if (weight < 4) {
@@ -452,6 +466,14 @@ export default function TransactionPage() {
         effectivePrice = weight * configuringItem.price;
       }
       qtyDisplay = `${weight.toFixed(1)} Kg`;
+    } else if (isMeter) {
+      const len = parseFloat(itemSpecs.length) || 1;
+      const wid = parseFloat(itemSpecs.width) || 1;
+      const q = Math.max(1, parseInt(itemSpecs.qty, 10) || 1);
+      const areaPerPcs = len * wid;
+      const totalArea = areaPerPcs * q;
+      effectivePrice = totalArea * configuringItem.price;
+      qtyDisplay = `${q} Pcs (${totalArea.toFixed(2)} m²)`;
     } else {
       const q = Math.max(1, parseInt(itemSpecs.qty, 10) || 1);
       effectivePrice = q * configuringItem.price;
@@ -466,14 +488,19 @@ export default function TransactionPage() {
           ? {
               ...item,
               isCleanox: itemSpecs.isCleanox === true,
-              qty: itemSpecs.qty,
-              weight: itemSpecs.weight,
+              isDryClean: itemSpecs.isDryClean === true,
+              qty: isMeter ? (parseInt(itemSpecs.qty, 10) || 1) : (configuringItem.category === 'Kiloan' ? (parseFloat(itemSpecs.weight) || 4) : (parseInt(itemSpecs.qty, 10) || 1)),
+              weight: parseFloat(itemSpecs.weight) || 4,
               qtyDisplay,
               effectiveSubtotal: effectivePrice,
               brand: itemSpecs.brand || '-',
               color: itemSpecs.color || '-',
               material: itemSpecs.material || '-',
-              size: itemSpecs.size || '-',
+              length: parseFloat(itemSpecs.length) || 1,
+              width: parseFloat(itemSpecs.width) || 1,
+              size: isMeter
+                ? `${parseFloat(itemSpecs.length) || 1}m x ${parseFloat(itemSpecs.width) || 1}m (${((parseFloat(itemSpecs.length) || 1) * (parseFloat(itemSpecs.width) || 1)).toFixed(2)} m²)`
+                : (itemSpecs.size || '-'),
               note: itemSpecs.note || '-',
               isExpanded: false
             }
@@ -489,19 +516,24 @@ export default function TransactionPage() {
       serviceDbId: configuringItem.dbId,
       serviceIsCleanox: configuringItem.isCleanox === true,
       isCleanox: itemSpecs.isCleanox === true,
+      isDryClean: itemSpecs.isDryClean === true,
       name: configuringItem.name,
       category: configuringItem.category,
       unit: configuringItem.unit,
       unitPrice: configuringItem.price,
       duration: configuringItem.duration,
-      qty: itemSpecs.qty,
-      weight: itemSpecs.weight,
+      qty: isMeter ? (parseInt(itemSpecs.qty, 10) || 1) : (configuringItem.category === 'Kiloan' ? (parseFloat(itemSpecs.weight) || 4) : (parseInt(itemSpecs.qty, 10) || 1)),
+      weight: parseFloat(itemSpecs.weight) || 4,
       qtyDisplay,
       effectiveSubtotal: effectivePrice,
       brand: itemSpecs.brand || '-',
       color: itemSpecs.color || '-',
       material: itemSpecs.material || '-',
-      size: itemSpecs.size || '-',
+      length: parseFloat(itemSpecs.length) || 1,
+      width: parseFloat(itemSpecs.width) || 1,
+      size: isMeter
+        ? `${parseFloat(itemSpecs.length) || 1}m x ${parseFloat(itemSpecs.width) || 1}m (${((parseFloat(itemSpecs.length) || 1) * (parseFloat(itemSpecs.width) || 1)).toFixed(2)} m²)`
+        : (itemSpecs.size || '-'),
       note: itemSpecs.note || '-',
       isExpanded: false
     };
@@ -528,6 +560,12 @@ export default function TransactionPage() {
   const handleToggleItemCleanox = (cartId) => {
     setCartItems(cartItems.map(item => (
       item.cartId === cartId ? { ...item, isCleanox: !item.isCleanox } : item
+    )));
+  };
+
+  const handleToggleItemDryClean = (cartId) => {
+    setCartItems(cartItems.map(item => (
+      item.cartId === cartId ? { ...item, isDryClean: !item.isDryClean } : item
     )));
   };
 
@@ -702,6 +740,8 @@ export default function TransactionPage() {
         unitPrice: item.unitPrice,
         subtotal: item.effectiveSubtotal,
         isCleanox: item.isCleanox === true,
+        isDryClean: item.isDryClean === true,
+        laundryMethodId: item.isDryClean === true ? 2 : 1,
         brand: item.brand,
         color: item.color,
         material: item.material,
@@ -733,7 +773,7 @@ export default function TransactionPage() {
       if (proofFile && txnDbId) {
         const fd = new FormData();
         fd.append('proof', proofFile);
-        await axios.post(`/api/history/transactions/${txnDbId}/payment-proof`, fd);
+        await axios.post(`/api/transactions/${txnDbId}/payment-proof`, fd);
       }
 
       const depositDelta = orderResult?.deposit_delta ?? 0;
@@ -982,6 +1022,7 @@ export default function TransactionPage() {
             handleRemoveFromCart={handleRemoveFromCart}
             handleEditCartItem={handleEditCartItem}
             handleToggleItemCleanox={handleToggleItemCleanox}
+            handleToggleItemDryClean={handleToggleItemDryClean}
             configuringItem={configuringItem}
             setConfiguringItem={setConfiguringItem}
             itemSpecs={itemSpecs}
@@ -1059,7 +1100,6 @@ export default function TransactionPage() {
         <FillAddressModal
           customer={addressModalCustomer}
           onClose={() => setAddressModalCustomer(null)}
-          showToast={(title, message) => showAlert({ title, message, type: 'warning' })}
           onSaved={(updated) => {
             const nextAddress = updated.full_address || updated.address || '-';
             setCustomers((prev) => prev.map((c) => (

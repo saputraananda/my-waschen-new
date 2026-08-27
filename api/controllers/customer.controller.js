@@ -36,6 +36,33 @@ const CUSTOMER_SELECT = `
   ) trx ON trx.customer_id = c.id
 `;
 
+/** Query ringan untuk response create/update — tanpa agregasi seluruh tr_transaction */
+const CUSTOMER_SELECT_LIGHT = `
+  SELECT c.*,
+         st.id AS spending_tier_id,
+         st.code AS spending_tier_code,
+         st.name AS tier,
+         st.label AS tier_label,
+         cs.id AS customer_source_id,
+         cs.code AS source_code,
+         cs.name AS source_name,
+         cs.label AS source,
+         mpkg.tier AS membership_tier,
+         mpkg.name AS membership_package_name,
+         mpkg.top_up_amount AS membership_top_up_amount,
+         am.start_date AS membership_start_date,
+         am.end_date AS membership_end_date,
+         am.status AS membership_status,
+         COALESCE(c.total_orders, 0) AS trx_count_live,
+         COALESCE(c.total_spent, 0) AS total_spent_live,
+         NULL AS last_order_date
+  FROM mst_customer c
+  LEFT JOIN mst_customer_tier st ON c.spending_tier_id = st.id
+  LEFT JOIN mst_customer_source cs ON c.customer_source_id = cs.id
+  LEFT JOIN tr_membership am ON c.active_membership_id = am.id AND am.status = 'Active'
+  LEFT JOIN mst_membership_package mpkg ON am.package_id = mpkg.id
+`;
+
 const resolveSpendingTierId = async (tierId, tierName) => {
   if (tierId) {
     const [rows] = await myWaschenPool.query(
@@ -304,6 +331,8 @@ export const createCustomer = async (req, res) => {
       });
     }
 
+    // Sapaan disarankan dari form, tapi tidak memblokir API bila kosong (data lama / integrasi)
+
     const cleanPhone = normalizePhone(phone);
     if (!cleanPhone || cleanPhone.length < 10) {
       return res.status(400).json({
@@ -371,14 +400,18 @@ export const createCustomer = async (req, res) => {
     );
 
     const [newCustomer] = await myWaschenPool.query(
-      `${CUSTOMER_SELECT} WHERE c.id = ?`,
+      `${CUSTOMER_SELECT_LIGHT} WHERE c.id = ? LIMIT 1`,
       [result.insertId]
     );
 
-    emitDashboardRefresh('customer:updated', {
-      outletId: resolvedOutletId || newCustomer[0]?.preferred_outlet_id,
-      customerId: result.insertId
-    });
+    try {
+      emitDashboardRefresh('customer:updated', {
+        outletId: resolvedOutletId || newCustomer[0]?.preferred_outlet_id,
+        customerId: result.insertId
+      });
+    } catch (emitErr) {
+      console.error('emitDashboardRefresh customer:updated failed:', emitErr.message);
+    }
 
     return res.status(201).json({
       success: true,
@@ -389,7 +422,9 @@ export const createCustomer = async (req, res) => {
     console.error('Error creating customer:', error);
     return res.status(500).json({
       success: false,
-      message: 'Gagal menambahkan pelanggan baru',
+      message: error.code === 'ER_CON_COUNT_ERROR'
+        ? 'Server database sibuk (too many connections). Coba lagi sebentar.'
+        : (error.message || 'Gagal menambahkan pelanggan baru'),
       error: error.message
     });
   }
@@ -508,12 +543,16 @@ export const updateCustomer = async (req, res) => {
       ]
     );
 
-    const [updated] = await myWaschenPool.query(`${CUSTOMER_SELECT} WHERE c.id = ?`, [id]);
+    const [updated] = await myWaschenPool.query(`${CUSTOMER_SELECT_LIGHT} WHERE c.id = ? LIMIT 1`, [id]);
 
-    emitDashboardRefresh('customer:updated', {
-      outletId: updated[0]?.preferred_outlet_id,
-      customerId: Number(id)
-    });
+    try {
+      emitDashboardRefresh('customer:updated', {
+        outletId: updated[0]?.preferred_outlet_id,
+        customerId: Number(id)
+      });
+    } catch (emitErr) {
+      console.error('emitDashboardRefresh customer:updated failed:', emitErr.message);
+    }
 
     return res.status(200).json({
       success: true,

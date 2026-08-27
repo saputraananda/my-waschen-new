@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { formatName } from '../utils/FormatName';
 import { formatWorkPercentage, getWorkPercentage } from '../utils/workStatusMeta.js';
+import TransactionBarcodeCard from './TransactionBarcodeCard.jsx';
 import {
   Search,
   QrCode,
@@ -383,6 +384,12 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
                 </div>
               </div>
 
+              {/* Barcode & QR Code Section */}
+              <TransactionBarcodeCard
+                orderNo={trackedOrder.order_no || trackedOrder.id}
+                barcodeValue={trackedOrder.barcode || trackedOrder.order_no || trackedOrder.id}
+              />
+
               {/* 2. Visual Overall Stepper Timeline (Nota Progress) */}
               <div className="bg-slate-50 border border-[#e0e0e0] rounded-2xl p-4 sm:p-5">
                 <div className="flex justify-between items-center mb-4">
@@ -464,6 +471,14 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
                               {/* Layanan */}
                               <td className="py-3.5 px-4">
                                 <span className="font-extrabold text-[#313030] text-xs block">{item.service_name || item.serviceName || trackedOrder.serviceType}</span>
+                                <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                                  {(item.is_dry_clean === 1 || item.isDryClean || item.laundry_method_code === 'DC') && (
+                                    <span className="text-[9px] font-black text-amber-900 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-full">Dry Clean (DC)</span>
+                                  )}
+                                  {(item.is_cleanox === 1 || item.isCleanox) && (
+                                    <span className="text-[9px] font-black text-sky-800 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-full">Cleanox</span>
+                                  )}
+                                </div>
                                 {item.condition_notes || item.conditionNotes ? (
                                   <span className="text-[10px] text-slate-500 block mt-0.5">Catatan: {item.condition_notes || item.conditionNotes}</span>
                                 ) : null}

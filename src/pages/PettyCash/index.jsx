@@ -4,12 +4,11 @@ import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav';
 import DashboardPettyCash from './components/DashboardPettyCash';
 import AddPettyCash from './components/AddPettyCash';
+import { useAppDialog } from '../../context/AppDialogContext.jsx';
 import {
   Wallet,
   Plus,
-  BarChart3,
-  CheckCircle2,
-  AlertCircle
+  BarChart3
 } from 'lucide-react';
 
 export const mapCashLogFromApi = (p) => ({
@@ -25,18 +24,17 @@ export const mapCashLogFromApi = (p) => ({
 export default function PettyCash() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { showAlert } = useAppDialog();
   const [userProfile, setUserProfile] = useState(null);
   const [activeOutletName, setActiveOutletName] = useState(localStorage.getItem('activeOutletName') || 'Waschen Laundry Raffles Hills');
   const [activeOutletId, setActiveOutletId] = useState(localStorage.getItem('activeOutletId') || '');
   const [outlets, setOutlets] = useState([]);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [cashLogs, setCashLogs] = useState([]);
-  const [initialCashFloat, setInitialCashFloat] = useState(0);
-  const [toast, setToast] = useState(null);
+  const [initialPettyCashFloat, setInitialPettyCashFloat] = useState(0);
 
   const showToast = (title, message, type = 'success') => {
-    setToast({ title, message, type });
-    setTimeout(() => setToast(null), 3500);
+    showAlert({ title, message, type });
   };
 
   useEffect(() => {
@@ -72,10 +70,14 @@ export default function PettyCash() {
 
   const fetchPettyCash = async () => {
     try {
-      const res = await axios.get('/api/petty-cash');
+      const outletId = localStorage.getItem('activeOutletId') || activeOutletId;
+      const res = await axios.get('/api/petty-cash', {
+        params: outletId ? { outlet_id: outletId } : undefined
+      });
       if (res.data && res.data.success) {
-        if (typeof res.data.initialFloat === 'number') {
-          setInitialCashFloat(res.data.initialFloat);
+        const floatVal = res.data.initialPettyCash ?? res.data.initialFloat;
+        if (typeof floatVal === 'number') {
+          setInitialPettyCashFloat(floatVal);
         }
         if (res.data.data && res.data.data.length > 0) {
           setCashLogs(res.data.data.map(mapCashLogFromApi));
@@ -108,24 +110,6 @@ export default function PettyCash() {
         outlets={outlets}
         userProfile={userProfile}
       />
-
-      {toast && (
-        <div className="fixed top-5 right-5 z-50 animate-bounce">
-          <div className={`p-4 rounded-2xl shadow-2xl border flex items-center gap-3 ${
-            toast.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-emerald-50 border-emerald-200 text-emerald-900'
-          }`}>
-            {toast.type === 'error' ? (
-              <AlertCircle className="h-5 w-5 text-rose-600" />
-            ) : (
-              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-            )}
-            <div>
-              <span className="font-extrabold text-xs block">{toast.title}</span>
-              <span className="text-[11px] font-medium">{toast.message}</span>
-            </div>
-          </div>
-        </div>
-      )}
 
       <main className="max-w-[1500px] w-full mx-auto p-4 sm:p-6 flex-grow flex flex-col gap-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-xs">
@@ -174,7 +158,7 @@ export default function PettyCash() {
         {activeTab === 'dashboard' && (
           <DashboardPettyCash
             cashLogs={cashLogs}
-            initialCashFloat={initialCashFloat}
+            initialPettyCashFloat={initialPettyCashFloat}
             activeOutletName={activeOutletName}
           />
         )}
@@ -184,8 +168,14 @@ export default function PettyCash() {
             activeOutletId={activeOutletId}
             userProfile={userProfile}
             showToast={showToast}
-            onCashLogCreated={handleCashLogCreated}
-            onSwitchToDashboard={() => setActiveTab('dashboard')}
+            onCashLogCreated={(newLog) => {
+              handleCashLogCreated(newLog);
+              fetchPettyCash();
+            }}
+            onSwitchToDashboard={() => {
+              setActiveTab('dashboard');
+              fetchPettyCash();
+            }}
           />
         )}
       </main>

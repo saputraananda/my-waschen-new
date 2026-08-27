@@ -72,6 +72,8 @@ export default function Menu({ navigate, onOrderClick }) {
   const ensureShiftThenNavigate = shiftCtx?.ensureShiftThenNavigate;
   const mustGateShift = shiftCtx?.mustGateShift;
   const isShiftReady = shiftCtx?.isShiftReady;
+  const shiftChecked = shiftCtx?.shiftChecked;
+  const showShiftLock = Boolean(mustGateShift && shiftChecked && !isShiftReady);
 
   const handleMenuClick = (item) => {
     if (item.useOrderFlow && onOrderClick) {
@@ -91,7 +93,7 @@ export default function Menu({ navigate, onOrderClick }) {
     <div>
       <div className="flex items-center justify-between gap-2 mb-3">
         <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Menu Cepat POS Laundry</h3>
-        {mustGateShift && !isShiftReady && (
+        {showShiftLock && (
           <span className="text-[9px] font-extrabold uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg">
             Buka shift dulu
           </span>
@@ -100,7 +102,7 @@ export default function Menu({ navigate, onOrderClick }) {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
         {MENU_ITEMS.map((item) => {
           const Icon = item.icon;
-          const locked = mustGateShift && !isShiftReady;
+          const locked = showShiftLock;
           return (
             <button
               key={item.key}

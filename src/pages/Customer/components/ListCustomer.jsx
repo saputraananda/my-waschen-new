@@ -146,7 +146,9 @@ export default function ListCustomer({
         const c = res.data.data;
         const trxCount = parseInt(c.trx_count_live ?? c.total_orders, 10) || 0;
         const totalSpending = parseFloat(c.total_spent_live ?? c.total_spent) || 0;
-        const lastDate = c.last_order_date || c.updated_at;
+        const formatDateId = (d) =>
+          d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
+        const lastDate = c.last_order_date || null;
         setSelectedCustomerDetail({
           ...cust,
           id: c.customer_code || cust.id,
@@ -163,9 +165,8 @@ export default function ListCustomer({
           membershipTier: c.membership_tier || cust.membershipTier,
           totalSpending,
           trxCount,
-          lastTrx: lastDate
-            ? new Date(lastDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-            : cust.lastTrx,
+          registeredAt: formatDateId(c.created_at) || cust.registeredAt || '-',
+          lastTrx: trxCount > 0 && lastDate ? formatDateId(lastDate) : '-',
           source: c.source || c.source_name || cust.source,
           notes: c.notes || cust.notes,
           history: Array.isArray(c.history) ? c.history : []
@@ -280,6 +281,7 @@ export default function ListCustomer({
                   <th className="py-3.5 px-4 text-center">Member</th>
                   <th className="py-3.5 px-4">Total Spending</th>
                   <th className="py-3.5 px-4">Total Transaksi</th>
+                  <th className="py-3.5 px-4">Terdaftar Pada</th>
                   <th className="py-3.5 px-4">Terakhir Transaksi</th>
                   <th className="py-3.5 px-4 text-center">Aksi</th>
                 </tr>
@@ -287,7 +289,7 @@ export default function ListCustomer({
               <tbody className="divide-y divide-[#e0e0e0]/70 font-semibold">
                 {filteredCustomers.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="py-10 text-center text-slate-400 font-bold">
+                    <td colSpan={11} className="py-10 text-center text-slate-400 font-bold">
                       Tidak ada pelanggan pada filter cabang / tier ini.
                     </td>
                   </tr>
@@ -331,7 +333,10 @@ export default function ListCustomer({
                         {cust.trxCount || 0}X
                       </td>
                       <td className="py-3.5 px-4 text-slate-500 font-bold text-[11px]">
-                        {cust.lastTrx}
+                        {cust.registeredAt || '-'}
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-500 font-bold text-[11px]">
+                        {cust.trxCount > 0 ? (cust.lastTrx || '-') : '-'}
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <div className="inline-flex items-center gap-1.5">
@@ -369,6 +374,7 @@ export default function ListCustomer({
               <div>
                 <h3 className="text-sm font-extrabold text-[#313030]">{formatName(selectedCustomerDetail.name)}</h3>
                 <p className="text-[10px] text-slate-400">Tahu Waschen dari: {selectedCustomerDetail.source}</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Terdaftar pada: {selectedCustomerDetail.registeredAt || '-'}</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -431,6 +437,8 @@ export default function ListCustomer({
                   <div><strong>Alamat Lengkap:</strong> {selectedCustomerDetail.fullAddress || selectedCustomerDetail.address}{selectedCustomerDetail.city ? ` (${selectedCustomerDetail.city})` : ''}</div>
                   <div><strong>Patokan / Landmark:</strong> {selectedCustomerDetail.landmark || '-'}</div>
                   <div><strong>Catatan Khusus:</strong> {selectedCustomerDetail.notes}</div>
+                  <div><strong>Terdaftar Pada:</strong> {selectedCustomerDetail.registeredAt || '-'}</div>
+                  <div><strong>Terakhir Transaksi:</strong> {(selectedCustomerDetail.trxCount || 0) > 0 ? (selectedCustomerDetail.lastTrx || '-') : '-'}</div>
                   <div><strong>Total Spending:</strong> Rp {(selectedCustomerDetail.totalSpending || 0).toLocaleString('id-ID')}</div>
                 </div>
               </div>

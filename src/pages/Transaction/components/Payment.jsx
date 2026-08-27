@@ -1,8 +1,10 @@
-import React, { useMemo } from 'react';
-import { Receipt, ArrowLeft, CreditCard, Save, Wallet, Coins, Upload, X, Loader2 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Receipt, ArrowLeft, CreditCard, Save, Wallet, Coins, Upload, Camera, X, Loader2, SwitchCamera } from 'lucide-react';
 import { formatEmployeeName } from '../../../utils/FormatName.js';
 import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
 import CascadingPaymentSelector from '../../../components/CascadingPaymentSelector.jsx';
+import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 
 export default function Payment({
   setCurrentStep,
@@ -42,6 +44,180 @@ export default function Payment({
   crossBankOutletId = 1,
   setCrossBankOutletId
 }) {
+  const { showAlert } = useAppDialog();
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [isStartingCamera, setIsStartingCamera] = useState(false);
+  const [facingMode, setFacingMode] = useState('environment');
+  const [flashOn, setFlashOn] = useState(false);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setCameraReady(false);
+  };
+
+  const closeCamera = () => {
+    stopCamera();
+    setIsCameraOpen(false);
+    setIsStartingCamera(false);
+    setFlashOn(false);
+  };
+
+  const startCameraStream = async (mode = 'environment') => {
+    stopCamera();
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: mode },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      });
+    } catch {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: true
+      });
+    }
+    streamRef.current = stream;
+    setFacingMode(mode);
+    return stream;
+  };
+
+  const openCamera = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      showAlert({
+        title: 'Kamera Tidak Didukung',
+        message: 'Browser ini tidak mendukung akses kamera langsung. Gunakan opsi pilih file.',
+        type: 'error'
+      });
+      return;
+    }
+
+    setIsStartingCamera(true);
+    try {
+      await startCameraStream('environment');
+      setIsCameraOpen(true);
+    } catch (err) {
+      console.error('Gagal akses kamera:', err);
+      showAlert({
+        title: 'Akses Kamera Ditolak',
+        message: 'Izinkan akses kamera di browser, atau gunakan opsi pilih file.',
+        type: 'error'
+      });
+    } finally {
+      setIsStartingCamera(false);
+    }
+  };
+
+  const switchCamera = async () => {
+    const next = facingMode === 'environment' ? 'user' : 'environment';
+    setCameraReady(false);
+    try {
+      await startCameraStream(next);
+      if (videoRef.current && streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+        await videoRef.current.play();
+        setCameraReady(true);
+      }
+    } catch (err) {
+      console.error('Gagal ganti kamera:', err);
+      showAlert({
+        title: 'Gagal Ganti Kamera',
+        message: 'Perangkat ini mungkin hanya punya satu kamera.',
+        type: 'warning'
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (!isCameraOpen || !streamRef.current || !videoRef.current) return undefined;
+    const video = videoRef.current;
+    video.srcObject = streamRef.current;
+    video.play()
+      .then(() => setCameraReady(true))
+      .catch((err) => console.error('Gagal putar preview kamera:', err));
+    return undefined;
+  }, [isCameraOpen]);
+
+  useEffect(() => () => stopCamera(), []);
+
+  // Kunci scroll backdrop saat modal kamera terbuka
+  useEffect(() => {
+    if (!isCameraOpen) return undefined;
+
+    const scrollY = window.scrollY;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+
+    document.body.classList.add('modal-open');
+    document.documentElement.classList.add('modal-open');
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+
+    return () => {
+      document.body.classList.remove('modal-open');
+      document.documentElement.classList.remove('modal-open');
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+      document.body.style.width = '';
+      document.body.style.paddingRight = '';
+      window.scrollTo(0, scrollY);
+    };
+  }, [isCameraOpen]);
+
+  const capturePhoto = () => {
+    const video = videoRef.current;
+    if (!video || !cameraReady) return;
+
+    setFlashOn(true);
+    setTimeout(() => setFlashOn(false), 180);
+
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 720;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, width, height);
+
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        showAlert({
+          title: 'Gagal Ambil Foto',
+          message: 'Tidak bisa menyimpan hasil kamera. Coba lagi.',
+          type: 'error'
+        });
+        return;
+      }
+      const file = new File([blob], `bukti_bayar_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      setPaymentProofFile(file);
+      setTimeout(() => closeCamera(), 220);
+    }, 'image/jpeg', 0.92);
+  };
+
   const isMemberBalanceMethod = mainCategory === 'Potong Saldo Member';
 
   const paidAmountNum = parseRupiah(paidAmountInput);
@@ -411,26 +587,48 @@ export default function Payment({
                   <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
                     Upload Bukti Pembayaran (Opsional)
                   </label>
-                  <label className="flex flex-col items-center justify-center w-full p-4 border-2 border-dashed border-[#e0e0e0] rounded-2xl cursor-pointer hover:border-[#5f1340]/40 hover:bg-[#5f1340]/[0.02] transition-all">
-                    <Upload className="h-5 w-5 text-slate-400 mb-1.5" />
-                    <span className="text-[11px] font-bold text-slate-500">
-                      {paymentProofFile ? paymentProofFile.name : 'Klik untuk upload foto/PDF bukti bayar'}
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,application/pdf"
-                      className="hidden"
-                      onChange={(e) => setPaymentProofFile(e.target.files?.[0] || null)}
-                    />
-                  </label>
-                  {paymentProofFile && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <label className="flex flex-col items-center justify-center w-full p-4 border-2 border-dashed border-[#e0e0e0] rounded-2xl cursor-pointer hover:border-[#5f1340]/40 hover:bg-[#5f1340]/[0.02] transition-all">
+                      <Upload className="h-5 w-5 text-slate-400 mb-1.5" />
+                      <span className="text-[11px] font-bold text-slate-500 text-center">
+                        Pilih file foto/PDF
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,application/pdf"
+                        className="hidden"
+                        onChange={(e) => setPaymentProofFile(e.target.files?.[0] || null)}
+                      />
+                    </label>
                     <button
                       type="button"
-                      onClick={() => setPaymentProofFile(null)}
-                      className="mt-1.5 text-[10px] font-bold text-rose-600 flex items-center gap-1 cursor-pointer"
+                      onClick={openCamera}
+                      disabled={isStartingCamera}
+                      className="flex flex-col items-center justify-center w-full p-4 border-2 border-dashed border-[#e0e0e0] rounded-2xl cursor-pointer hover:border-[#5f1340]/40 hover:bg-[#5f1340]/[0.02] transition-all disabled:opacity-60"
                     >
-                      <X className="h-3 w-3" /> Hapus file
+                      {isStartingCamera ? (
+                        <Loader2 className="h-5 w-5 text-slate-400 mb-1.5 animate-spin" />
+                      ) : (
+                        <Camera className="h-5 w-5 text-slate-400 mb-1.5" />
+                      )}
+                      <span className="text-[11px] font-bold text-slate-500 text-center">
+                        {isStartingCamera ? 'Membuka kamera...' : 'Ambil foto kamera'}
+                      </span>
                     </button>
+                  </div>
+                  {paymentProofFile && (
+                    <div className="mt-2 flex items-center justify-between gap-2 px-3 py-2 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl">
+                      <span className="text-[11px] font-bold text-slate-600 truncate">
+                        {paymentProofFile.name || 'Bukti bayar terpilih'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentProofFile(null)}
+                        className="text-[10px] font-bold text-rose-600 flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <X className="h-3 w-3" /> Hapus
+                      </button>
+                    </div>
                   )}
                 </div>
               </>
@@ -485,6 +683,116 @@ export default function Payment({
         </div>
       </div>
 
+      {isCameraOpen && createPortal(
+        <div
+          className="fixed inset-0 z-[80] bg-[#1a0a12]/92 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-fade-in modal-backdrop overscroll-none"
+          role="dialog"
+          aria-modal="true"
+          onWheel={(e) => e.preventDefault()}
+          onTouchMove={(e) => e.preventDefault()}
+        >
+          <div
+            className="relative w-full max-w-md overflow-hidden rounded-[28px] shadow-[0_25px_80px_rgba(95,19,64,0.45)] border border-white/10 bg-gradient-to-b from-[#2a1020] to-[#12060c]"
+            onWheel={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+          >
+            <div className="absolute top-0 inset-x-0 z-20 px-4 pt-4 pb-10 bg-gradient-to-b from-black/70 via-black/30 to-transparent flex items-start justify-between pointer-events-none">
+              <div className="pointer-events-auto">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#5f1340]/90 text-amber-100 text-[10px] font-black tracking-wide uppercase shadow-lg shadow-[#5f1340]/40">
+                  <Camera className="h-3 w-3" />
+                  Bukti Bayar
+                </div>
+                <p className="mt-2 text-white text-sm font-black drop-shadow">Posisikan struk / bukti transfer</p>
+                <p className="text-white/65 text-[11px] font-medium">Pastikan teks jelas di dalam bingkai</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeCamera}
+                className="pointer-events-auto p-2.5 rounded-full bg-white/15 hover:bg-white/25 text-white backdrop-blur-md border border-white/20 cursor-pointer transition-colors"
+                aria-label="Tutup kamera"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="relative w-full aspect-[3/4] sm:aspect-[4/5] bg-black overflow-hidden">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${facingMode === 'user' ? 'scale-x-[-1]' : ''} ${cameraReady ? 'opacity-100' : 'opacity-40'}`}
+              />
+
+              <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_center,transparent_45%,rgba(0,0,0,0.55)_100%)]" />
+
+              <div className="absolute inset-[14%] sm:inset-[16%] pointer-events-none">
+                <div className="absolute inset-0 rounded-2xl border border-white/35 shadow-[0_0_0_9999px_rgba(0,0,0,0.28)]" />
+                <span className="absolute -top-0.5 -left-0.5 w-7 h-7 border-t-[3px] border-l-[3px] border-amber-300 rounded-tl-xl" />
+                <span className="absolute -top-0.5 -right-0.5 w-7 h-7 border-t-[3px] border-r-[3px] border-amber-300 rounded-tr-xl" />
+                <span className="absolute -bottom-0.5 -left-0.5 w-7 h-7 border-b-[3px] border-l-[3px] border-amber-300 rounded-bl-xl" />
+                <span className="absolute -bottom-0.5 -right-0.5 w-7 h-7 border-b-[3px] border-r-[3px] border-amber-300 rounded-br-xl" />
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-3 px-3 py-1 rounded-full bg-black/45 backdrop-blur-sm text-[10px] font-bold text-amber-100 tracking-wide">
+                  Sejajarkan bukti di sini
+                </div>
+              </div>
+
+              {!cameraReady && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white z-10">
+                  <Loader2 className="h-6 w-6 animate-spin text-amber-200" />
+                  <span className="text-xs font-bold tracking-wide">Menyiapkan kamera…</span>
+                </div>
+              )}
+
+              <div
+                className={`absolute inset-0 bg-white pointer-events-none transition-opacity duration-150 z-30 ${
+                  flashOn ? 'opacity-90' : 'opacity-0'
+                }`}
+              />
+            </div>
+
+            <div className="relative z-20 px-5 pt-4 pb-5 bg-gradient-to-t from-black via-[#1a0a12] to-transparent">
+              <div className="flex items-center justify-between gap-4">
+                <button
+                  type="button"
+                  onClick={closeCamera}
+                  className="w-14 h-14 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-[11px] font-black cursor-pointer transition-colors"
+                >
+                  Batal
+                </button>
+
+                <button
+                  type="button"
+                  onClick={capturePhoto}
+                  disabled={!cameraReady}
+                  className="group relative w-[76px] h-[76px] rounded-full cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Ambil foto"
+                >
+                  <span className="absolute inset-0 rounded-full border-[3px] border-white/90 group-active:scale-95 transition-transform" />
+                  <span className="absolute inset-[7px] rounded-full bg-gradient-to-br from-[#8b1f5a] to-[#5f1340] shadow-[0_8px_28px_rgba(95,19,64,0.65)] group-hover:from-[#a3286a] group-active:scale-90 transition-all flex items-center justify-center">
+                    <Camera className="h-7 w-7 text-amber-100" />
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={switchCamera}
+                  disabled={!cameraReady}
+                  className="w-14 h-14 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center cursor-pointer disabled:opacity-40 transition-colors"
+                  title="Ganti kamera"
+                  aria-label="Ganti kamera"
+                >
+                  <SwitchCamera className="h-5 w-5" />
+                </button>
+              </div>
+              <p className="mt-3 text-center text-[10px] text-white/50 font-medium">
+                Tekan tombol tengah untuk mengabadikan bukti pembayaran
+              </p>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

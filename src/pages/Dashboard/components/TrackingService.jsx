@@ -14,7 +14,8 @@ import {
   Upload,
   Coins,
   History,
-  ExternalLink
+  ExternalLink,
+  QrCode
 } from 'lucide-react';
 import axios from 'axios';
 import { formatName } from '../../../utils/FormatName.js';
@@ -22,6 +23,8 @@ import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 import { STATUS_STEPS, DEFAULT_WORK_STATUSES, getWorkPercentage, percentageTone, formatWorkPercentage, matchesWorkStatusTab } from '../../../utils/workStatusMeta.js';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
+import TransactionBarcodeCard from '../../../components/TransactionBarcodeCard.jsx';
+import ModalLacakNota from '../../../components/ModalLacakNota.jsx';
 
 export default function TrackingService({
   filteredOrders,
@@ -31,12 +34,12 @@ export default function TrackingService({
   activeFilterTab,
   setActiveFilterTab,
   handlePrintNota,
-  showToast,
   fetchLiveDashboardData
 }) {
   const navigate = useNavigate();
   const { showAlert } = useAppDialog();
   const [selectedOrderModal, setSelectedOrderModal] = useState(null);
+  const [isLacakModalOpen, setIsLacakModalOpen] = useState(false);
   const [workStatusTabs, setWorkStatusTabs] = useState([]);
   const [workStatusOptions, setWorkStatusOptions] = useState(DEFAULT_WORK_STATUSES);
   const [updatingItemId, setUpdatingItemId] = useState(null);
@@ -100,7 +103,7 @@ export default function TrackingService({
 
   const handleUpdateItemStatus = async (item, nextStatus) => {
     if (!selectedOrderModal?.dbId || !item?.id) {
-      showToast?.('Gagal Update', 'ID item tidak valid', 'error');
+      showAlert({ title: 'Gagal Update', message: 'ID item tidak valid', type: 'error' });
       return;
     }
     if ((item.status || selectedOrderModal.workStatus) === nextStatus) return;
@@ -115,7 +118,7 @@ export default function TrackingService({
         }
       );
       if (!res.data?.success) {
-        showToast?.('Gagal Update', res.data?.message || 'Gagal mengubah status item', 'error');
+        showAlert({ title: 'Gagal Update', message: res.data?.message || 'Gagal mengubah status item', type: 'error' });
         return;
       }
 
@@ -130,11 +133,11 @@ export default function TrackingService({
           ))
         };
       });
-      showToast?.('Status Item Diperbarui', `${item.serviceName || 'Item'} → ${nextStatus}`, 'success');
+      showAlert({ title: 'Status Item Diperbarui', message: `${item.serviceName || 'Item'} → ${nextStatus}`, type: 'success' });
       if (typeof fetchLiveDashboardData === 'function') fetchLiveDashboardData();
     } catch (err) {
       console.error('Gagal update status item:', err);
-      showToast?.('Gagal Update', err.response?.data?.message || 'Koneksi server gagal', 'error');
+      showAlert({ title: 'Gagal Update', message: err.response?.data?.message || 'Koneksi server gagal', type: 'error' });
     } finally {
       setUpdatingItemId(null);
     }
@@ -145,7 +148,9 @@ export default function TrackingService({
     const modalOrder = {
       ...order,
       grandTotal: order.grandTotal ?? order.totalAmount ?? 0,
-      paidAmount: order.paidAmount ?? 0
+      paidAmount: order.paidAmount ?? 0,
+      memberBalance: parseFloat(order.memberBalance || order.member_balance || order.customerBalance || order.deposit_balance || order.customer_deposit_balance || 0),
+      customerBalance: parseFloat(order.memberBalance || order.member_balance || order.customerBalance || order.deposit_balance || order.customer_deposit_balance || 0)
     };
     setPaymentModalOrder(modalOrder);
     setMainCategory('Tunai');
@@ -170,7 +175,7 @@ export default function TrackingService({
       }
     } catch (err) {
       console.error('Gagal memuat detail pembayaran:', err);
-      showToast?.('Gagal Memuat', err.response?.data?.message || 'Tidak dapat memuat riwayat pembayaran', 'error');
+      showAlert({ title: 'Gagal Memuat', message: err.response?.data?.message || 'Tidak dapat memuat riwayat pembayaran', type: 'error' });
     } finally {
       setIsLoadingPayment(false);
     }
@@ -182,7 +187,7 @@ export default function TrackingService({
     const addAmount = parseRupiah(paymentForm.additionalAmount);
 
     if (normalizePaymentStatus(paymentModalOrder.paymentStatus) === 'Lunas') {
-      showToast?.('Sudah Lunas', 'Nota ini sudah lunas.', 'error');
+      showAlert({ title: 'Sudah Lunas', message: 'Nota ini sudah lunas.', type: 'error' });
       return;
     }
     if (addAmount <= 0) {
@@ -226,11 +231,11 @@ export default function TrackingService({
       });
 
       const updated = res.data?.data;
-      showToast?.(
-        'Pembayaran Diperbarui',
-        `Nota ${paymentModalOrder.id} — ${updated?.paymentStatus || 'OK'}`,
-        'success'
-      );
+      showAlert({
+        title: 'Pembayaran Diperbarui',
+        message: `Nota ${paymentModalOrder.id} — ${updated?.paymentStatus || 'OK'}`,
+        type: 'success'
+      });
       setPaymentModalOrder(null);
       setPaymentDetail(null);
       setSelectedOrderModal(null);
@@ -239,7 +244,7 @@ export default function TrackingService({
       }
     } catch (err) {
       console.error('Gagal memperbarui pembayaran:', err);
-      showToast?.('Gagal Bayar', err.response?.data?.message || 'Terjadi kesalahan sistem', 'error');
+      showAlert({ title: 'Gagal Bayar', message: err.response?.data?.message || 'Terjadi kesalahan sistem', type: 'error' });
     } finally {
       setIsSubmittingPayment(false);
     }
@@ -315,6 +320,17 @@ export default function TrackingService({
               <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1.5 text-slate-400 text-xs font-bold">&times;</button>
             )}
           </div>
+
+          {/* Scan Barcode Button */}
+          <button
+            type="button"
+            onClick={() => setIsLacakModalOpen(true)}
+            className="px-3 py-1.5 bg-white border border-[#e0e0e0] hover:border-[#5f1340] text-[#5f1340] font-black rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+            title="Scan Barcode / QR Kamera untuk lacak nota"
+          >
+            <QrCode className="h-3.5 w-3.5" />
+            <span>Scan Barcode</span>
+          </button>
 
           {/* Date Picker */}
           <input
@@ -563,6 +579,13 @@ export default function TrackingService({
                 </div>
               </div>
 
+              {/* Barcode & QR Code Section */}
+              <TransactionBarcodeCard
+                orderNo={selectedOrderModal.id}
+                barcodeValue={selectedOrderModal.barcode || selectedOrderModal.id}
+                onPrint={() => handlePrintNota(selectedOrderModal)}
+              />
+
               {/* Rincian Status Per Item Section */}
               <div>
                 <div className="flex justify-between items-center mb-2.5">
@@ -596,6 +619,14 @@ export default function TrackingService({
                             <tr key={it.id || idx} className="hover:bg-slate-50">
                               <td className="py-3 px-4">
                                 <span className="font-extrabold text-[#313030] block">{it.serviceName || selectedOrderModal.serviceType}</span>
+                                <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                                  {(it.is_dry_clean === 1 || it.isDryClean || it.laundry_method_code === 'DC') && (
+                                    <span className="text-[9px] font-black text-amber-900 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-full">Dry Clean (DC)</span>
+                                  )}
+                                  {(it.is_cleanox === 1 || it.isCleanox) && (
+                                    <span className="text-[9px] font-black text-sky-800 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-full">Cleanox</span>
+                                  )}
+                                </div>
                                 {it.conditionNotes && it.conditionNotes !== '-' && (
                                   <span className="text-[10px] text-slate-400 block font-normal mt-0.5">Catatan: {it.conditionNotes}</span>
                                 )}
@@ -926,6 +957,12 @@ export default function TrackingService({
           </div>
         </div>
       )}
+
+      {/* Modal Scanner & Lacak Nota Barcode */}
+      <ModalLacakNota
+        isOpen={isLacakModalOpen}
+        onClose={() => setIsLacakModalOpen(false)}
+      />
     </div>
   );
 }

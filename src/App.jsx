@@ -23,7 +23,9 @@ function App() {
       const modalElements = document.querySelectorAll('.fixed.inset-0, [role="dialog"], .modal-backdrop');
       const isModalOpen = Array.from(modalElements).some(el => {
         const style = window.getComputedStyle(el);
-        return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+        // Jangan cek opacity: modal dengan animate-fade-in mulai dari 0
+        // sehingga scroll lock gagal aktif.
+        return style.display !== 'none' && style.visibility !== 'hidden';
       });
 
       if (isModalOpen) {

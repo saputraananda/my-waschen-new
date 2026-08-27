@@ -2,8 +2,9 @@ import { myWaschenPool, mainPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 import { applyTransactionSpendingUpdate } from '../utils/spendingTier.js';
 import { applyDepositOnPayment } from '../utils/customerDeposit.js';
-import { insertPaymentLog, resolvePaymentStatus } from '../utils/paymentLog.js';
+import { insertPaymentLog, resolvePaymentStatus, buildPaymentProofUrl } from '../utils/paymentLog.js';
 import { computeAccumulatedWorkPercentage, refreshHeaderWorkPercentage, nextLifecycleStatus, workStatusTabSql } from '../utils/workStatus.js';
+import path from 'path';
 
 /**
  * Helper to generate order number (nota):
@@ -186,9 +187,10 @@ export const createTransaction = async (req, res) => {
     // 1. Insert tr_transaction
     const [orderResult] = await connection.query(
       `INSERT INTO tr_transaction 
-       (order_no, customer_id, outlet_id, cashier_employee_id, shift_id, order_category, total_weight_kg, total_pcs, speed_id, parfume_id, subtotal, speed_surcharge, discount_amount, discount_notes, grand_total, payment_status, payment_method, paid_amount, change_amount, payment_proof_url, paid_at, work_status, is_delivery, delivery_address, delivery_notes, special_notes, order_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?, ?, ?, ?, NOW())`,
+       (order_no, barcode, customer_id, outlet_id, cashier_employee_id, shift_id, order_category, total_weight_kg, total_pcs, speed_id, parfume_id, subtotal, speed_surcharge, discount_amount, discount_notes, grand_total, payment_status, payment_method, paid_amount, change_amount, payment_proof_url, paid_at, work_status, is_delivery, delivery_address, delivery_notes, special_notes, order_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?, ?, ?, ?, NOW())`,
       [
+        orderNo,
         orderNo,
         resolvedCustomerId,
         outletId || 2,
@@ -221,10 +223,13 @@ export const createTransaction = async (req, res) => {
 
     // 2. Insert tr_transaction_detail
     for (const item of items) {
+      const isDryClean = (item.isDryClean || item.is_dry_clean || item.laundryMethodId === 2 || item.laundry_method_id === 2) ? true : false;
+      const laundryMethodId = isDryClean ? 2 : (parseInt(item.laundryMethodId || item.laundry_method_id, 10) || 1);
+
       await connection.query(
         `INSERT INTO tr_transaction_detail 
-         (transaction_id, service_id, service_name, qty, unit, unit_price, subtotal, is_cleanox, brand, color, material, size, condition_notes, item_work_status, photo_url)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (transaction_id, service_id, service_name, qty, unit, unit_price, subtotal, is_cleanox, laundry_method_id, brand, color, material, size, condition_notes, item_work_status, photo_url)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           transactionId,
           item.serviceId || item.serviceDbId || item.id || 1,
@@ -234,6 +239,7 @@ export const createTransaction = async (req, res) => {
           parseFloat(item.unitPrice || item.price) || 0,
           parseFloat(item.subtotal || item.effectiveSubtotal || ((item.qty || 1) * (item.price || 0))) || 0,
           item.isCleanox ? 1 : 0,
+          laundryMethodId,
           item.brand || null,
           item.color || null,
           item.material || null,
@@ -294,6 +300,8 @@ export const createTransaction = async (req, res) => {
               c.customer_code,
               c.name as customer_name,
               c.phone as customer_phone,
+              COALESCE(c.deposit_balance, 0) as member_balance,
+              COALESCE(c.deposit_balance, 0) as customer_deposit_balance,
               ct.name as customer_tier,
               COALESCE(NULLIF(TRIM(c.full_address), ''), NULLIF(TRIM(c.address), ''), '-') as customer_address,
               c.home_branch,
@@ -307,7 +315,13 @@ export const createTransaction = async (req, res) => {
     );
 
     const [orderItems] = await myWaschenPool.query(
-      'SELECT * FROM tr_transaction_detail WHERE transaction_id = ?',
+      `SELECT td.*,
+              (CASE WHEN td.laundry_method_id = 2 THEN 1 ELSE 0 END) as is_dry_clean,
+              COALESCE(ml.name, 'Wet Clean') as laundry_method_name,
+              COALESCE(ml.code, 'WC') as laundry_method_code
+       FROM tr_transaction_detail td
+       LEFT JOIN mst_method_laundry ml ON ml.id = td.laundry_method_id
+       WHERE td.transaction_id = ?`,
       [transactionId]
     );
 
@@ -357,6 +371,8 @@ export const getTransactions = async (req, res) => {
              c.customer_code,
              c.name as customer_name, 
              c.phone as customer_phone, 
+             COALESCE(c.deposit_balance, 0) as member_balance,
+             COALESCE(c.deposit_balance, 0) as customer_deposit_balance,
              ct.name as customer_tier,
              COALESCE(NULLIF(TRIM(c.full_address), ''), NULLIF(TRIM(c.address), ''), '-') as customer_address,
              c.home_branch,
@@ -479,6 +495,8 @@ export const getTransactionDetail = async (req, res) => {
               c.customer_code,
               c.name as customer_name,
               c.phone as customer_phone,
+              COALESCE(c.deposit_balance, 0) as member_balance,
+              COALESCE(c.deposit_balance, 0) as customer_deposit_balance,
               ct.name as customer_tier,
               COALESCE(NULLIF(TRIM(c.full_address), ''), NULLIF(TRIM(c.address), ''), '-') as customer_address,
               c.home_branch,
@@ -525,7 +543,13 @@ export const getTransactionDetail = async (req, res) => {
     const order = orderRows[0];
 
     const [items] = await myWaschenPool.query(
-      'SELECT * FROM tr_transaction_detail WHERE transaction_id = ?',
+      `SELECT td.*,
+              (CASE WHEN td.laundry_method_id = 2 THEN 1 ELSE 0 END) as is_dry_clean,
+              COALESCE(ml.name, 'Wet Clean') as laundry_method_name,
+              COALESCE(ml.code, 'WC') as laundry_method_code
+       FROM tr_transaction_detail td
+       LEFT JOIN mst_method_laundry ml ON ml.id = td.laundry_method_id
+       WHERE td.transaction_id = ?`,
       [order.id]
     );
 
@@ -1119,6 +1143,49 @@ export const getPaymentBatchByNo = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Gagal mengambil data batch pelunasan',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * POST /api/transactions/:id/payment-proof
+ * Upload bukti bayar (file / foto kamera) → UPLOAD_BASE_DIR/assets/payment_receipt
+ */
+export const uploadPaymentProof = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'File bukti pembayaran wajib diupload' });
+    }
+
+    const proofUrl = buildPaymentProofUrl(path.basename(req.file.filename || req.file.path));
+    const [orderRows] = await myWaschenPool.query(
+      'SELECT id, outlet_id FROM tr_transaction WHERE id = ? OR order_no = ? LIMIT 1',
+      [id, id]
+    );
+    if (!orderRows.length) {
+      return res.status(404).json({ success: false, message: 'Nota tidak ditemukan' });
+    }
+
+    const order = orderRows[0];
+    await myWaschenPool.query(
+      'UPDATE tr_transaction SET payment_proof_url = ?, updated_at = NOW() WHERE id = ?',
+      [proofUrl, order.id]
+    );
+
+    emitDashboardRefresh('transaction:updated', { outletId: order.outlet_id, transactionId: order.id });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Bukti pembayaran berhasil diupload',
+      data: { paymentProofUrl: proofUrl }
+    });
+  } catch (error) {
+    console.error('Error uploadPaymentProof:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal upload bukti pembayaran',
       error: error.message
     });
   }

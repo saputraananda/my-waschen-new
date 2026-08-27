@@ -18,15 +18,16 @@ import {
   Upload,
   Wallet,
   Coins,
-  History
+  History,
+  QrCode
 } from 'lucide-react';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
+import ModalLacakNota from '../../../components/ModalLacakNota.jsx';
 
 export default function HistoryTransaction({
   transactions,
   setTransactions,
   outlets,
-  showToast,
   fetchTransactions
 }) {
   const navigate = useNavigate();
@@ -34,6 +35,7 @@ export default function HistoryTransaction({
 
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState('');
+  const [isLacakModalOpen, setIsLacakModalOpen] = useState(false);
   const [paymentFilter, setPaymentFilter] = useState('Semua'); // Semua | Lunas | DP | Outstanding | Sisa Tagihan
   const [activeFilterTab, setActiveFilterTab] = useState('Semua'); // Status Workflow Tab
   const [selectedBranchFilter, setSelectedBranchFilter] = useState(localStorage.getItem('activeOutletName') || 'Semua');
@@ -102,7 +104,12 @@ export default function HistoryTransaction({
 
   const openPaymentModal = async (order, e) => {
     if (e) e.stopPropagation();
-    setPaymentModalOrder(order);
+    const modalOrder = {
+      ...order,
+      memberBalance: parseFloat(order.memberBalance || order.member_balance || order.customerBalance || order.deposit_balance || order.customer_deposit_balance || 0),
+      customerBalance: parseFloat(order.memberBalance || order.member_balance || order.customerBalance || order.deposit_balance || order.customer_deposit_balance || 0)
+    };
+    setPaymentModalOrder(modalOrder);
     setMainCategory('Tunai');
     setEdcCardType('Debit Card');
     setIsCrossTransfer(false);
@@ -125,7 +132,7 @@ export default function HistoryTransaction({
       }
     } catch (err) {
       console.error('Gagal memuat detail pembayaran:', err);
-      showToast('Gagal Memuat', err.response?.data?.message || 'Tidak dapat memuat riwayat pembayaran', 'error');
+      showAlert({ title: 'Gagal Memuat', message: err.response?.data?.message || 'Tidak dapat memuat riwayat pembayaran', type: 'error' });
     } finally {
       setIsLoadingPayment(false);
     }
@@ -137,7 +144,7 @@ export default function HistoryTransaction({
     const addAmount = parseRupiah(paymentForm.additionalAmount);
 
     if (normalizePaymentStatus(paymentModalOrder.paymentStatus) === 'Lunas') {
-      showToast('Sudah Lunas', 'Nota ini sudah lunas.', 'error');
+      showAlert({ title: 'Sudah Lunas', message: 'Nota ini sudah lunas.', type: 'error' });
       return;
     }
     if (addAmount <= 0) {
@@ -193,13 +200,13 @@ export default function HistoryTransaction({
           : t
       )));
 
-      showToast('Pembayaran Diperbarui', `Nota ${paymentModalOrder.id} — ${updated?.paymentStatus || 'OK'}`);
+      showAlert({ title: 'Pembayaran Diperbarui', message: `Nota ${paymentModalOrder.id} — ${updated?.paymentStatus || 'OK'}`, type: 'success' });
       setPaymentModalOrder(null);
       setPaymentDetail(null);
       fetchTransactions();
     } catch (err) {
       console.error('Gagal memperbarui pembayaran:', err);
-      showToast('Gagal Bayar', err.response?.data?.message || 'Terjadi kesalahan sistem', 'error');
+      showAlert({ title: 'Gagal Bayar', message: err.response?.data?.message || 'Terjadi kesalahan sistem', type: 'error' });
     } finally {
       setIsSubmittingPayment(false);
     }
@@ -223,13 +230,13 @@ export default function HistoryTransaction({
         reason: deleteReason
       });
 
-      showToast('Request Delete Dikirim', `Pengajuan hapus nota ${deleteModalOrder.id} telah dikirim (Status: Pending)`);
+      showAlert({ title: 'Request Delete Dikirim', message: `Pengajuan hapus nota ${deleteModalOrder.id} telah dikirim (Status: Pending)`, type: 'success' });
       setDeleteModalOrder(null);
       setDeleteReason('');
       fetchTransactions();
     } catch (err) {
       console.error('Gagal pengajuan hapus nota:', err);
-      showToast('Gagal Request Delete', err.response?.data?.message || 'Terjadi kesalahan sistem', 'error');
+      showAlert({ title: 'Gagal Request Delete', message: err.response?.data?.message || 'Terjadi kesalahan sistem', type: 'error' });
     } finally {
       setIsSubmittingDelete(false);
     }
@@ -328,6 +335,17 @@ export default function HistoryTransaction({
               <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1.5 text-slate-400 text-xs font-bold">&times;</button>
             )}
           </div>
+
+          {/* Scan Barcode Button */}
+          <button
+            type="button"
+            onClick={() => setIsLacakModalOpen(true)}
+            className="px-3 py-1.5 bg-white border border-[#e0e0e0] hover:border-[#5f1340] text-[#5f1340] font-black rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+            title="Scan Barcode / QR Kamera untuk lacak nota"
+          >
+            <QrCode className="h-3.5 w-3.5" />
+            <span>Scan Barcode</span>
+          </button>
 
           {/* Branch Filter */}
           <select
@@ -449,6 +467,10 @@ export default function HistoryTransaction({
                           </span>
                         )}
                       </div>
+                      <span className="text-[9.5px] font-mono text-slate-400 font-normal block mt-0.5 flex items-center gap-1">
+                        <QrCode className="h-3 w-3 text-slate-400 shrink-0" />
+                        {order.barcode || order.id}
+                      </span>
                     </td>
 
                     {/* Pelanggan */}
@@ -973,6 +995,12 @@ export default function HistoryTransaction({
           </div>
         </div>
       )}
+
+      {/* Modal Scanner Barcode / QR */}
+      <ModalLacakNota
+        isOpen={isLacakModalOpen}
+        onClose={() => setIsLacakModalOpen(false)}
+      />
     </div>
   );
 }

@@ -6,14 +6,15 @@ import ListCustomer from './components/ListCustomer';
 import AddCustomer from './components/AddCustomer';
 import {
   Users,
-  Plus,
-  CheckCircle2
+  Plus
 } from 'lucide-react';
 
 const mapCustomerFromApi = (c, activeOutletName) => {
   const trxCount = parseInt(c.trx_count_live ?? c.total_orders, 10) || 0;
   const totalSpending = parseFloat(c.total_spent_live ?? c.total_spent) || 0;
-  const lastDate = c.last_order_date || c.updated_at;
+  const formatDateId = (d) =>
+    d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
+  const lastDate = c.last_order_date || null;
   return {
     id: c.customer_code || `CUST-${String(c.id).padStart(3, '0')}`,
     dbId: c.id,
@@ -42,9 +43,8 @@ const mapCustomerFromApi = (c, activeOutletName) => {
     monthlySpending: parseFloat(c.monthly_spending) || 0,
     trxCount,
     depositBalance: parseFloat(c.deposit_balance) || 0,
-    lastTrx: lastDate
-      ? new Date(lastDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-      : '-',
+    registeredAt: formatDateId(c.created_at),
+    lastTrx: trxCount > 0 && lastDate ? formatDateId(lastDate) : '-',
     source: c.source || c.source_name || '-',
     sourceId: c.customer_source_id,
     notes: c.notes || 'Pelanggan terdaftar Waschen.',
@@ -65,12 +65,6 @@ export default function Customer() {
   const [activeTab, setActiveTab] = useState('catalog');
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [customers, setCustomers] = useState([]);
-  const [toast, setToast] = useState(null);
-
-  const showToast = (title, message, type = 'success') => {
-    setToast({ title, message, type });
-    setTimeout(() => setToast(null), 4000);
-  };
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -162,20 +156,6 @@ export default function Customer() {
         userProfile={userProfile}
       />
 
-      {toast && (
-        <div className="fixed top-5 right-5 z-50 animate-bounce">
-          <div className={`p-4 rounded-2xl shadow-2xl border flex items-center gap-3 ${
-            toast.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-emerald-50 border-emerald-200 text-emerald-900'
-          }`}>
-            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-            <div>
-              <span className="font-extrabold text-xs block">{toast.title}</span>
-              <span className="text-[11px] font-medium">{toast.message}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
       <main className="max-w-[1500px] w-full mx-auto p-3 sm:p-6 flex-grow flex flex-col gap-4 sm:gap-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 bg-white border border-[#e0e0e0] rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xs">
           <div>
@@ -234,7 +214,6 @@ export default function Customer() {
             outlets={outlets}
             activeOutletName={activeOutletName}
             activeOutletId={activeOutletId}
-            showToast={showToast}
             onCustomerCreated={handleCustomerCreated}
             onSwitchToCatalog={() => { setEditingCustomer(null); setActiveTab('catalog'); }}
             customerToEdit={editingCustomer}

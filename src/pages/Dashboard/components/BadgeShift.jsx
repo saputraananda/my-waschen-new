@@ -1,40 +1,92 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AlertCircle, Clock, User, Wallet } from 'lucide-react';
 import { formatEmployeeName } from '../../../utils/FormatName.js';
 
+function getMinutesNow() {
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes();
+}
+
 /**
  * Badge shift:
- * - Belum open + sudah ≥ 08.00 → kedip "Open Shift"
- * - Shift aktif + lewat jam closing (17 / 20) → kedip "Close Shift"
+ * - Loading (shift belum dicek) → skeleton netral, BUKAN "Belum Open"
+ * - Belum open (setelah dicek) → reminder open shift
+ * - Shift aktif + lewat jam closing → kedip close shift
  */
-export default function BadgeShift({ shift, currentEmployeeId, onOpenClose, onOpenShift }) {
-  const now = new Date();
-  const minutes = now.getHours() * 60 + now.getMinutes();
+export default function BadgeShift({
+  shift,
+  shiftChecked = true,
+  currentEmployeeId,
+  onOpenClose,
+  onOpenShift
+}) {
+  const [minutes, setMinutes] = useState(getMinutesNow);
+
+  useEffect(() => {
+    const tick = () => setMinutes(getMinutesNow());
+    tick();
+
+    const intervalId = setInterval(tick, 30_000);
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', tick);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', tick);
+    };
+  }, []);
+
   const afterOpenReminder = minutes >= 8 * 60;
+  const isOpen = shift && shift.status === 'Open';
 
-  // Belum open shift — reminder mulai jam 08.00
-  if (!shift || shift.status !== 'Open') {
-    if (!afterOpenReminder) return null;
+  // Masih loading / optimistic belum dikonfirmasi API — jangan tampilkan "Belum Open"
+  if (!shiftChecked && !isOpen) {
+    return (
+      <div className="w-full flex items-center gap-3 px-4 py-3 bg-slate-50 border border-[#e0e0e0] rounded-2xl shadow-xs">
+        <div className="h-5 w-5 rounded-full bg-slate-200 animate-pulse shrink-0" />
+        <div className="flex-1 min-w-0 space-y-1.5">
+          <div className="h-3 w-40 max-w-full bg-slate-200 rounded animate-pulse" />
+          <div className="h-2.5 w-56 max-w-full bg-slate-100 rounded animate-pulse" />
+        </div>
+        <span className="text-[10px] font-bold text-slate-400 shrink-0">Cek shift…</span>
+      </div>
+    );
+  }
 
+  // Belum open shift — hanya setelah API selesai dicek
+  if (!isOpen) {
     return (
       <button
         type="button"
         onClick={onOpenShift}
-        className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-sky-50 border border-sky-300 rounded-2xl text-left cursor-pointer hover:bg-sky-100 transition-colors shadow-xs animate-pulse"
+        className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-2xl text-left cursor-pointer transition-colors shadow-xs ${
+          afterOpenReminder
+            ? 'bg-sky-50 border border-sky-300 hover:bg-sky-100 animate-pulse'
+            : 'bg-amber-50 border border-amber-200 hover:bg-amber-100'
+        }`}
       >
         <div className="flex items-center gap-2.5 min-w-0">
-          <Wallet className="h-5 w-5 text-sky-700 shrink-0" />
+          <Wallet className={`h-5 w-5 shrink-0 ${afterOpenReminder ? 'text-sky-700' : 'text-amber-700'}`} />
           <div className="min-w-0">
-            <span className="text-xs font-black text-sky-900 block truncate">
-              Belum Open Shift — sudah lewat jam 08.00
+            <span className={`text-xs font-black block truncate ${afterOpenReminder ? 'text-sky-900' : 'text-amber-900'}`}>
+              {afterOpenReminder
+                ? 'Belum Open Shift — sudah lewat jam 08.00'
+                : 'Belum Open Shift'}
             </span>
-            <span className="text-[10px] text-sky-700 font-medium flex items-center gap-1 mt-0.5">
+            <span className={`text-[10px] font-medium flex items-center gap-1 mt-0.5 ${afterOpenReminder ? 'text-sky-700' : 'text-amber-700'}`}>
               <Clock className="h-3 w-3" />
               Klik Order Baru atau badge ini untuk membuka sesi kas
             </span>
           </div>
         </div>
-        <span className="px-3 py-1.5 bg-sky-600 text-white text-[10px] font-black rounded-xl shrink-0">
+        <span className={`px-3 py-1.5 text-white text-[10px] font-black rounded-xl shrink-0 ${
+          afterOpenReminder ? 'bg-sky-600' : 'bg-amber-600'
+        }`}>
           Open Shift
         </span>
       </button>

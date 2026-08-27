@@ -48,7 +48,7 @@ async function queryActive(table) {
  */
 export const getAllMasters = async (req, res) => {
   try {
-    const [paymentMethods, customerSources, pettyCashCategories, promos, customerTiers, workStatuses, outlets] =
+    const [paymentMethods, customerSources, pettyCashCategories, promos, customerTiers, workStatuses, outlets, laundryMethods, materials] =
       await Promise.all([
         queryActive('mst_payment_method'),
         queryActive('mst_customer_source'),
@@ -56,7 +56,9 @@ export const getAllMasters = async (req, res) => {
         queryActive('mst_promo'),
         queryActive('mst_customer_tier'),
         myWaschenPool.query('SELECT * FROM mst_work_status WHERE is_active = 1 ORDER BY percentage ASC, id ASC').then(([rows]) => rows),
-        myWaschenPool.query('SELECT id, name, full_name, address FROM mst_outlet ORDER BY name ASC').then(([rows]) => rows)
+        myWaschenPool.query('SELECT id, name, full_name, address FROM mst_outlet ORDER BY name ASC').then(([rows]) => rows),
+        queryActive('mst_method_laundry'),
+        myWaschenPool.query('SELECT id, code, name FROM mst_material WHERE is_active = 1 ORDER BY name ASC').then(([rows]) => rows)
       ]);
 
     return res.status(200).json({
@@ -68,7 +70,9 @@ export const getAllMasters = async (req, res) => {
         promos,
         customerTiers,
         workStatuses,
-        outlets
+        outlets,
+        laundryMethods,
+        materials
       }
     });
   } catch (error) {
@@ -242,5 +246,25 @@ export const getWorkStatuses = async (req, res) => {
   } catch (error) {
     console.error('Error fetching work statuses:', error);
     return res.status(500).json({ success: false, message: 'Gagal mengambil status pengerjaan', error: error.message });
+  }
+};
+
+export const getLaundryMethods = async (req, res) => {
+  try {
+    const data = await queryActive('mst_method_laundry');
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error('Error fetching laundry methods:', error);
+    return res.status(500).json({ success: false, message: 'Gagal mengambil metode laundry', error: error.message });
+  }
+};
+
+export const getMaterials = async (req, res) => {
+  try {
+    const [rows] = await myWaschenPool.query('SELECT id, code, name FROM mst_material WHERE is_active = 1 ORDER BY name ASC');
+    return res.status(200).json({ success: true, data: rows });
+  } catch (error) {
+    console.error('Error fetching materials:', error);
+    return res.status(500).json({ success: false, message: 'Gagal mengambil data bahan/material', error: error.message });
   }
 };

@@ -8,7 +8,9 @@ import {
   getPettyCashCategories,
   getPromos,
   getCustomerTiers,
-  getWorkStatuses
+  getWorkStatuses,
+  getLaundryMethods,
+  getMaterials
 } from '../controllers/master.controller.js';
 
 const router = express.Router();
@@ -22,5 +24,7 @@ router.get('/petty-cash-categories', getPettyCashCategories);
 router.get('/promos', getPromos);
 router.get('/customer-tiers', getCustomerTiers);
 router.get('/work-statuses', getWorkStatuses);
+router.get('/laundry-methods', getLaundryMethods);
+router.get('/materials', getMaterials);
 
 export default router;

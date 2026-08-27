@@ -3,7 +3,7 @@ import { Plus, Wallet, ArrowRight } from 'lucide-react';
 
 export default function PettyCashCard({
   netCashInDrawer,
-  initialCashFloat,
+  initialPettyCashFloat,
   totalCashOut,
   navigate
 }) {
@@ -47,7 +47,7 @@ export default function PettyCashCard({
           <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-white/15 text-[10px] font-bold uppercase">
             <div>
               <span className="block text-pink-200/70 text-[8px] tracking-wider">Kas Float Awal:</span>
-              <span className="font-extrabold text-white mt-0.5 block">Rp {initialCashFloat.toLocaleString('id-ID')}</span>
+              <span className="font-extrabold text-white mt-0.5 block">Rp {initialPettyCashFloat.toLocaleString('id-ID')}</span>
             </div>
             <div>
               <span className="block text-pink-200/70 text-[8px] tracking-wider">Total Kas Keluar:</span>

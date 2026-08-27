@@ -8,6 +8,7 @@ export default function Cart({
   handleRemoveFromCart,
   handleEditCartItem,
   handleToggleItemCleanox,
+  handleToggleItemDryClean,
   configuringItem,
   setConfiguringItem,
   itemSpecs,
@@ -75,18 +76,40 @@ export default function Cart({
                       </span>
                       <div className="min-w-0">
                         <span className="font-black text-xs text-[#313030] block truncate">{item.name}</span>
-                        <span className="text-[11px] text-slate-400 font-semibold">
+                        <span className="text-[11px] text-slate-400 font-semibold block">
                           {item.qtyDisplay} &bull; Rp {item.unitPrice.toLocaleString('id-ID')} / {item.unit}
                         </span>
-                        {item.serviceIsCleanox && !item.isCleanox && (
-                          <span className="inline-block mt-1 text-[9px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
-                            Layanan Cleanox (default off)
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1 flex-wrap mt-1">
+                          {item.isDryClean && (
+                            <span className="inline-block text-[9px] font-black text-amber-900 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full">
+                              Dry Clean (DC)
+                            </span>
+                          )}
+                          {item.serviceIsCleanox && !item.isCleanox && (
+                            <span className="inline-block text-[9px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                              Layanan Cleanox (default off)
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-3 shrink-0">
+                      <label
+                        className="flex items-center gap-1.5 cursor-pointer shrink-0"
+                        title="Metode Dry Clean (DC) per item"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={item.isDryClean === true}
+                          onChange={() => handleToggleItemDryClean && handleToggleItemDryClean(item.cartId)}
+                          className="rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                        />
+                        <span className={`text-[10px] font-black whitespace-nowrap ${item.isDryClean ? 'text-amber-800' : 'text-slate-400'}`}>
+                          Dry Clean (DC)
+                        </span>
+                      </label>
                       <label
                         className="flex items-center gap-1.5 cursor-pointer shrink-0"
                         title="Cleanox By Waschen per item"
@@ -125,6 +148,11 @@ export default function Cart({
                       <span>Edit Rincian Item</span>
                     </span>
                     <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                      {item.size && item.size !== '-' && (
+                        <span className="text-[10px] font-bold text-purple-900 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full">
+                          Ukuran: {item.size}
+                        </span>
+                      )}
                       {item.isCleanox && (
                         <span className="text-[10px] font-bold text-sky-800 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full">
                           Cleanox

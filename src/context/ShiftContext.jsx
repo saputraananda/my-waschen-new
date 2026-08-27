@@ -24,30 +24,73 @@ function isShiftFreePath(pathname) {
   return SHIFT_FREE_PATHS.some((p) => pathname === p);
 }
 
+/** Hydrate shift dari localStorage agar UI tidak flash "Belum Open" saat API masih loading. */
+function readOptimisticShift() {
+  const id = localStorage.getItem('activeShiftId');
+  if (!id) return null;
+  const shiftNumber = parseInt(localStorage.getItem('shiftNumber') || '1', 10) || 1;
+  const openedAt = localStorage.getItem('activeShiftOpenedAt') || null;
+  const confirmed = isShiftSessionConfirmed(id);
+  if (!confirmed) return null;
+  return {
+    id: parseInt(id, 10),
+    shift_number: shiftNumber,
+    status: 'Open',
+    opened_at: openedAt,
+    cashier_employee_id: getLoggedInEmployeeId(),
+    opener_name: localStorage.getItem('fullName') || null,
+    _optimistic: true
+  };
+}
+
 export function ShiftProvider({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
   const isLoginPage = location.pathname === '/login';
-  const mustGateShift = requiresShiftGate();
 
-  const [activeShift, setActiveShift] = useState(null);
-  const [shiftChecked, setShiftChecked] = useState(false);
-  const [sessionReady, setSessionReady] = useState(false);
+  const [activeShift, setActiveShift] = useState(() => readOptimisticShift());
+  const [shiftChecked, setShiftChecked] = useState(() => {
+    // Jika ada shift terkonfirmasi di localStorage, UI langsung siap (API soft-confirm di background)
+    if (!requiresShiftGate() || !localStorage.getItem('token')) return true;
+    return Boolean(readOptimisticShift());
+  });
+  const [sessionReady, setSessionReady] = useState(() => Boolean(readOptimisticShift()));
   const [isOpenShiftModalOpen, setIsOpenShiftModalOpen] = useState(false);
   const [isResumeModalOpen, setIsResumeModalOpen] = useState(false);
   const [isCloseShiftOpen, setIsCloseShiftOpen] = useState(false);
   const [pendingNavigatePath, setPendingNavigatePath] = useState(null);
   const [outletId, setOutletId] = useState(localStorage.getItem('activeOutletId') || '2');
+  /** Reactive auth flags — di-sync setelah login / ganti route (localStorage tidak trigger re-render) */
+  const [mustGateShift, setMustGateShift] = useState(() => requiresShiftGate());
+  const [hasToken, setHasToken] = useState(() => !!localStorage.getItem('token'));
+  const [authEpoch, setAuthEpoch] = useState(0);
 
   const employeeId = getLoggedInEmployeeId();
   const isHq = isHqUser();
-  const hasToken = !!localStorage.getItem('token');
+
+  const syncAuthFlags = useCallback((options = {}) => {
+    const nextGate = requiresShiftGate();
+    const nextToken = !!localStorage.getItem('token');
+    const oid = localStorage.getItem('activeOutletId');
+
+    setMustGateShift((prev) => (prev === nextGate ? prev : nextGate));
+    setHasToken((prev) => (prev === nextToken ? prev : nextToken));
+    if (oid) {
+      setOutletId((prev) => (String(prev) === String(oid) ? prev : oid));
+    }
+
+    // Hanya bump epoch jika auth benar-benar berubah (hindari refetch berulang)
+    if (options.force || options.authChanged) {
+      setAuthEpoch((n) => n + 1);
+    }
+  }, []);
 
   const applyOpenShift = useCallback((shift) => {
     setActiveShift(shift);
     syncShiftToStorage(shift);
     markShiftSessionConfirmed(shift.id);
     setSessionReady(true);
+    setShiftChecked(true);
     setIsOpenShiftModalOpen(false);
     setIsResumeModalOpen(false);
 
@@ -59,14 +102,38 @@ export function ShiftProvider({ children }) {
     });
   }, [navigate]);
 
-  const fetchCurrentShift = useCallback(async (oid = outletId) => {
-    if (isLoginPage || !hasToken || !mustGateShift) {
+  /**
+   * @param {string|number} oid
+   * @param {{ soft?: boolean }} options soft=true: jangan blank-kan UI saat refetch
+   */
+  const fetchCurrentShift = useCallback(async (oid = outletId, options = {}) => {
+    const soft = options.soft !== false; // default soft
+    const gated = requiresShiftGate();
+    const token = !!localStorage.getItem('token');
+
+    if (isLoginPage) {
+      return;
+    }
+
+    if (!token) {
+      setActiveShift(null);
+      clearShiftFromStorage();
+      setSessionReady(false);
+      setShiftChecked(true);
+      return;
+    }
+
+    if (!gated) {
       setShiftChecked(true);
       setSessionReady(true);
       return;
     }
 
-    setShiftChecked(false);
+    // Soft refresh: tetap tampilkan shift lama / optimistic — jangan flash "Belum Open"
+    if (!soft) {
+      setShiftChecked(false);
+    }
+
     try {
       const res = await axios.get('/api/shifts/current', {
         params: { outlet_id: oid || 2 }
@@ -93,30 +160,57 @@ export function ShiftProvider({ children }) {
       }
     } catch (err) {
       console.error('Gagal cek shift:', err);
-      setActiveShift(null);
-      setSessionReady(false);
+      // Soft: jangan hapus shift yang sudah tampil jika network error
+      if (!soft) {
+        setActiveShift(null);
+        setSessionReady(false);
+      }
     } finally {
       setShiftChecked(true);
     }
-  }, [hasToken, isLoginPage, mustGateShift, outletId]);
+  }, [isLoginPage, outletId]);
+
+  useEffect(() => {
+    // Sync outlet/token tanpa force refetch tiap ganti path
+    syncAuthFlags();
+  }, [location.pathname, syncAuthFlags]);
 
   useEffect(() => {
     if (isLoginPage || !hasToken) {
       setShiftChecked(true);
       return;
     }
-    fetchCurrentShift(outletId);
-  }, [fetchCurrentShift, hasToken, isLoginPage, outletId, location.pathname]);
+    fetchCurrentShift(outletId, { soft: true });
+  }, [fetchCurrentShift, hasToken, isLoginPage, outletId, authEpoch]);
 
   useEffect(() => {
     const onStorage = (e) => {
       if (e.key === 'activeOutletId' && e.newValue) {
         setOutletId(e.newValue);
       }
+      if (e.key === 'token' || e.key === 'companyId') {
+        syncAuthFlags({ authChanged: true });
+      }
     };
+    const onAuthChanged = () => syncAuthFlags({ authChanged: true });
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (isLoginPage || !localStorage.getItem('token')) return;
+      // Soft refetch di background — UI tidak blank
+      const oid = localStorage.getItem('activeOutletId') || outletId || '2';
+      fetchCurrentShift(oid, { soft: true });
+    };
+
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
+    window.addEventListener('waschen:auth-changed', onAuthChanged);
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('waschen:auth-changed', onAuthChanged);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [fetchCurrentShift, isLoginPage, outletId, syncAuthFlags]);
 
   const confirmResume = useCallback(async () => {
     if (!activeShift?.id || !employeeId) return;
@@ -130,10 +224,12 @@ export function ShiftProvider({ children }) {
     }
   }, [activeShift?.id, applyOpenShift, employeeId]);
 
-  const refreshShift = useCallback(() => {
+  const refreshShift = useCallback((options = {}) => {
     const oid = localStorage.getItem('activeOutletId') || outletId || '2';
-    setOutletId(oid);
-    return fetchCurrentShift(oid);
+    if (String(oid) !== String(outletId)) {
+      setOutletId(oid);
+    }
+    return fetchCurrentShift(oid, { soft: options.soft !== false });
   }, [fetchCurrentShift, outletId]);
 
   const openCloseModal = useCallback(() => setIsCloseShiftOpen(true), []);

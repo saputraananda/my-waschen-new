@@ -2,6 +2,36 @@ import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 
 /**
+ * Petty cash / kas laci memakai initial_petty_cash dari shift aktif.
+ * initial_cash hanya untuk open/close shift (modal kas tunai), jangan dipakai di sini.
+ */
+const getOpenShiftPettyFloat = async (outletId) => {
+  let sql = `
+    SELECT id, initial_petty_cash, outlet_id
+    FROM tr_cashier_shift
+    WHERE status = 'Open'
+  `;
+  const params = [];
+
+  if (outletId && outletId !== 'Semua') {
+    sql += ' AND outlet_id = ?';
+    params.push(outletId);
+  }
+
+  sql += ' ORDER BY id DESC LIMIT 1';
+
+  const [shiftRows] = await myWaschenPool.query(sql, params);
+  if (!shiftRows.length) {
+    return { shiftId: null, initialPettyCash: 0 };
+  }
+
+  return {
+    shiftId: shiftRows[0].id,
+    initialPettyCash: parseFloat(shiftRows[0].initial_petty_cash || 0)
+  };
+};
+
+/**
  * GET /api/petty-cash
  * Mengambil riwayat mutasi kas kecil kasir outlet
  */
@@ -26,22 +56,27 @@ export const getPettyCashLogs = async (req, res) => {
 
     const [rows] = await myWaschenPool.query(sql, params);
 
-    // Get active shift initial float
-    const [shiftRows] = await myWaschenPool.query(
-      'SELECT initial_cash FROM tr_cashier_shift WHERE status = "Open" ORDER BY id DESC LIMIT 1'
-    );
-    const initialFloat = shiftRows.length > 0 ? parseFloat(shiftRows[0].initial_cash || 0) : 0;
+    const { initialPettyCash } = await getOpenShiftPettyFloat(outlet_id);
 
-    // Get current balance
-    const [latestRow] = await myWaschenPool.query(
-      'SELECT balance_after FROM tr_petty_cash ORDER BY id DESC LIMIT 1'
-    );
-    const currentBalance = latestRow.length > 0 ? parseFloat(latestRow[0].balance_after || 0) : initialFloat;
+    let balanceSql = 'SELECT balance_after FROM tr_petty_cash WHERE 1=1';
+    const balanceParams = [];
+    if (outlet_id && outlet_id !== 'Semua') {
+      balanceSql += ' AND outlet_id = ?';
+      balanceParams.push(outlet_id);
+    }
+    balanceSql += ' ORDER BY id DESC LIMIT 1';
+
+    const [latestRow] = await myWaschenPool.query(balanceSql, balanceParams);
+    const currentBalance = latestRow.length > 0
+      ? parseFloat(latestRow[0].balance_after || 0)
+      : initialPettyCash;
 
     return res.status(200).json({
       success: true,
       data: rows,
-      initialFloat,
+      /** @deprecated gunakan initialPettyCash */
+      initialFloat: initialPettyCash,
+      initialPettyCash,
       currentBalance
     });
   } catch (error) {
@@ -70,25 +105,17 @@ export const addPettyCashEntry = async (req, res) => {
       });
     }
 
-    // Resolve shift id
-    let resolvedShiftId = shiftId || null;
-    if (!resolvedShiftId) {
-      const [shiftRows] = await myWaschenPool.query(
-        'SELECT id, initial_cash FROM tr_cashier_shift WHERE status = "Open" ORDER BY id DESC LIMIT 1'
-      );
-      if (shiftRows.length > 0) resolvedShiftId = shiftRows[0].id;
-    }
+    const resolvedOutletId = outletId || 2;
+    const { shiftId: openShiftId, initialPettyCash } = await getOpenShiftPettyFloat(resolvedOutletId);
+    const resolvedShiftId = shiftId || openShiftId || null;
 
-    const [shiftRows] = await myWaschenPool.query(
-      'SELECT initial_cash FROM tr_cashier_shift WHERE status = "Open" ORDER BY id DESC LIMIT 1'
-    );
-    const initialFloat = shiftRows.length > 0 ? parseFloat(shiftRows[0].initial_cash || 0) : 0;
-
-    // Get current balance
     const [latestRow] = await myWaschenPool.query(
-      'SELECT balance_after FROM tr_petty_cash ORDER BY id DESC LIMIT 1'
+      'SELECT balance_after FROM tr_petty_cash WHERE outlet_id = ? ORDER BY id DESC LIMIT 1',
+      [resolvedOutletId]
     );
-    const balanceBefore = latestRow.length > 0 ? parseFloat(latestRow[0].balance_after || 0) : initialFloat;
+    const balanceBefore = latestRow.length > 0
+      ? parseFloat(latestRow[0].balance_after || 0)
+      : initialPettyCash;
     const balanceAfter = type === 'Masuk' ? (balanceBefore + numAmount) : (balanceBefore - numAmount);
 
     const [result] = await myWaschenPool.query(
@@ -96,7 +123,7 @@ export const addPettyCashEntry = async (req, res) => {
        (outlet_id, shift_id, cashier_employee_id, type, category, amount, balance_before, balance_after, description, receipt_photo_url, transaction_date)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
-        outletId || 2,
+        resolvedOutletId,
         resolvedShiftId,
         cashierEmployeeId || 167,
         type,
@@ -112,7 +139,7 @@ export const addPettyCashEntry = async (req, res) => {
     const [newRow] = await myWaschenPool.query('SELECT * FROM tr_petty_cash WHERE id = ?', [result.insertId]);
 
     emitDashboardRefresh('petty-cash:updated', {
-      outletId: outletId || newRow[0]?.outlet_id,
+      outletId: resolvedOutletId,
       type,
       amount: numAmount
     });
@@ -120,7 +147,10 @@ export const addPettyCashEntry = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: `Berhasil mencatat kas ${type.toLowerCase()} Rp ${numAmount.toLocaleString('id-ID')}`,
-      data: newRow[0]
+      data: newRow[0],
+      initialPettyCash,
+      balanceBefore,
+      balanceAfter
     });
   } catch (error) {
     console.error('Error recording petty cash entry:', error);
@@ -140,9 +170,15 @@ export const getCurrentShift = async (req, res) => {
   try {
     const { outlet_id } = req.query;
 
-    const [shiftRows] = await myWaschenPool.query(
-      'SELECT * FROM tr_cashier_shift WHERE status = "Open" ORDER BY id DESC LIMIT 1'
-    );
+    let sql = 'SELECT * FROM tr_cashier_shift WHERE status = "Open"';
+    const params = [];
+    if (outlet_id && outlet_id !== 'Semua') {
+      sql += ' AND outlet_id = ?';
+      params.push(outlet_id);
+    }
+    sql += ' ORDER BY id DESC LIMIT 1';
+
+    const [shiftRows] = await myWaschenPool.query(sql, params);
 
     if (shiftRows.length === 0) {
       return res.status(200).json({
@@ -168,19 +204,21 @@ export const getCurrentShift = async (req, res) => {
 
 /**
  * POST /api/petty-cash/shift/open
- * Buka sesi shift kasir (input modal awal laci)
+ * Legacy — open shift resmi ada di /api/shifts/open (pakai initial_cash + initial_petty_cash terpisah).
+ * Endpoint ini tetap ada untuk kompatibilitas; jangan dipakai sebagai sumber float petty cash.
  */
 export const openShift = async (req, res) => {
   try {
-    const { outletId, cashierEmployeeId, initialCash, shiftNumber } = req.body;
+    const { outletId, cashierEmployeeId, initialCash, initialPettyCash, shiftNumber } = req.body;
 
-    const initial = parseFloat(initialCash) || 0;
+    const cash = parseFloat(initialCash) || 0;
+    const petty = parseFloat(initialPettyCash ?? initialCash) || 0;
 
     const [result] = await myWaschenPool.query(
       `INSERT INTO tr_cashier_shift 
-       (outlet_id, cashier_employee_id, shift_number, opened_at, initial_cash, expected_cash, status)
-       VALUES (?, ?, ?, NOW(), ?, ?, 'Open')`,
-      [outletId || 2, cashierEmployeeId || 167, shiftNumber || 1, initial, initial]
+       (outlet_id, cashier_employee_id, shift_number, opened_at, initial_cash, initial_petty_cash, expected_cash, status)
+       VALUES (?, ?, ?, NOW(), ?, ?, ?, 'Open')`,
+      [outletId || 2, cashierEmployeeId || 167, shiftNumber || 1, cash, petty, cash]
     );
 
     return res.status(201).json({
@@ -188,7 +226,8 @@ export const openShift = async (req, res) => {
       message: 'Shift kasir berhasil dibuka',
       data: {
         shiftId: result.insertId,
-        initialCash: initial
+        initialCash: cash,
+        initialPettyCash: petty
       }
     });
   } catch (error) {

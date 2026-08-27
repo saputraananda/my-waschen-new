@@ -90,7 +90,15 @@ export default function CascadingPaymentSelector({
     return defaultBankAccount;
   }, [isCrossTransfer, crossBankOutletId, defaultBankAccount]);
 
-  const hasMemberBalance = (selectedCustomer?.memberBalance || 0) >= grandTotal;
+  const currentMemberBal = parseFloat(
+    selectedCustomer?.memberBalance ??
+    selectedCustomer?.customerBalance ??
+    selectedCustomer?.deposit_balance ??
+    selectedCustomer?.customer_deposit_balance ??
+    selectedCustomer?.depositBalance ??
+    0
+  );
+  const hasMemberBalance = currentMemberBal >= grandTotal && currentMemberBal > 0;
 
   return (
     <div className="space-y-3 animate-fade-in">
@@ -112,16 +120,23 @@ export default function CascadingPaymentSelector({
         >
           {mainGroupList.map((cat) => {
             const isMember = cat.id === 'Potong Saldo Member';
-            if (isMember && !hasMemberBalance) {
+            if (isMember) {
+              if (!hasMemberBalance) {
+                return (
+                  <option key={cat.id} value={cat.id} disabled>
+                    {cat.label} (Saldo Tidak Cukup: Rp {currentMemberBal.toLocaleString('id-ID')})
+                  </option>
+                );
+              }
               return (
-                <option key={cat.id} value={cat.id} disabled>
-                  {cat.label} (Saldo Tidak Cukup: Rp {(selectedCustomer?.memberBalance || 0).toLocaleString('id-ID')})
+                <option key={cat.id} value={cat.id}>
+                  {cat.label} (Saldo: Rp {currentMemberBal.toLocaleString('id-ID')})
                 </option>
               );
             }
             return (
               <option key={cat.id} value={cat.id}>
-                {cat.label} {isMember ? `(Saldo: Rp ${(selectedCustomer?.memberBalance || 0).toLocaleString('id-ID')})` : ''}
+                {cat.label}
               </option>
             );
           })}

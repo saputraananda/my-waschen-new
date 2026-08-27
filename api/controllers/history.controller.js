@@ -7,12 +7,9 @@ import {
   resolvePaymentStatus,
   buildPaymentProofUrl
 } from '../utils/paymentLog.js';
-import { createUploader } from '../middleware/upload.js';
+import { uploadPaymentReceipt } from '../middleware/upload.js';
 
-export const uploadPaymentProofMiddleware = createUploader('assets/payment_proof', {
-  fileTypes: /jpeg|jpg|png|webp|pdf/,
-  maxFileSize: 5 * 1024 * 1024
-}).single('proof');
+export const uploadPaymentProofMiddleware = uploadPaymentReceipt;
 
 /**
  * GET /api/history/transactions/:id/payments
@@ -21,7 +18,13 @@ export const getPaymentLogs = async (req, res) => {
   try {
     const { id } = req.params;
     const [orderRows] = await myWaschenPool.query(
-      'SELECT id, order_no, grand_total, paid_amount, payment_status, payment_method, payment_proof_url FROM tr_transaction WHERE id = ? OR order_no = ? LIMIT 1',
+      `SELECT t.id, t.order_no, t.grand_total, t.paid_amount, t.payment_status, t.payment_method, t.payment_proof_url, t.customer_id,
+              COALESCE(c.deposit_balance, 0) AS member_balance,
+              COALESCE(c.deposit_balance, 0) AS customer_deposit_balance
+       FROM tr_transaction t
+       LEFT JOIN mst_customer c ON c.id = t.customer_id
+       WHERE t.id = ? OR t.order_no = ?
+       LIMIT 1`,
       [id, id]
     );
     if (!orderRows.length) {
