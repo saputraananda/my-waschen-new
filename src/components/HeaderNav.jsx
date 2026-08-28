@@ -10,7 +10,8 @@ import {
   LogOut,
   ArrowLeft,
   FileText,
-  Download
+  Download,
+  Printer
 } from 'lucide-react';
 
 export default function HeaderNav({
@@ -55,7 +56,8 @@ export default function HeaderNav({
       path === '/membership' ||
       path === '/services' ||
       path === '/petty-cash' ||
-      path === '/daily-report'
+      path === '/daily-report' ||
+      path === '/settings/printer'
     ) {
       return '/dashboard';
     }
@@ -221,6 +223,16 @@ export default function HeaderNav({
                           Aktif
                         </span>
                       )}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsProfileDropdownOpen(false);
+                        navigate('/settings/printer');
+                      }}
+                      className="w-full text-left px-4 py-2 hover:bg-[#5f1340]/5 text-[#313030] flex items-center gap-2 font-bold cursor-pointer transition-colors"
+                    >
+                      <Printer className="h-4 w-4 text-[#5f1340]" />
+                      <span>Setting Printer</span>
                     </button>
                     <button
                       onClick={handleLogout}

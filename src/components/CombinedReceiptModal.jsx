@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import Barcode from 'react-barcode';
 import { QRCodeSVG } from 'qrcode.react';
 import axios from 'axios';
 import {
@@ -386,30 +385,19 @@ export default function CombinedReceiptModal({
                   )}
                 </div>
 
-                {/* 1D Barcode & 2D QR Code Section */}
+                {/* QR Code Section */}
                 <div className="pt-2 pb-1 border-t border-dashed border-slate-400 flex flex-col items-center justify-center gap-1.5 text-center">
-                  <div className="bg-white p-1 rounded border border-slate-200">
-                    <Barcode
-                      value={batchNo}
-                      format="CODE128"
-                      width={1.1}
-                      height={34}
-                      fontSize={9}
-                      margin={2}
-                      background="#ffffff"
-                      lineColor="#000000"
-                    />
-                  </div>
-                  <div className="bg-white p-1 rounded border border-slate-200 shadow-2xs">
+                  <div className="bg-white p-1.5 rounded border border-slate-200 shadow-2xs">
                     <QRCodeSVG
                       value={`${window.location.origin}/dashboard?batchNo=${encodeURIComponent(batchNo)}`}
-                      size={76}
+                      size={84}
                       level="M"
                       includeMargin={false}
                     />
                   </div>
+                  <p className="font-mono text-[9px] font-bold text-slate-700">{batchNo}</p>
                   <p className="text-[8px] text-slate-500 font-bold uppercase tracking-tight">
-                    Scan Barcode / QR Pelunasan Gabungan Nota
+                    Scan QR Pelunasan Gabungan Nota
                   </p>
                 </div>
 

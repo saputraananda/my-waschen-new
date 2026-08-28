@@ -184,6 +184,8 @@ export default function HistoryTransaction({
         paymentProofUrl: proofUrl,
         notes: paymentForm.notes || `Pelunasan nota ${paymentModalOrder.id}`,
         overpaymentToDeposit: paymentForm.overpaymentAction === 'deposit',
+        overpaymentToRefund: paymentForm.overpaymentAction === 'refund',
+        overpaymentAction: paymentForm.overpaymentAction,
         cashierEmployeeId: localStorage.getItem('employeeId') || null
       });
 
@@ -195,7 +197,8 @@ export default function HistoryTransaction({
               paymentStatus: updated?.paymentStatus || t.paymentStatus,
               paymentMethod: updated?.paymentMethod || t.paymentMethod,
               paidAmount: updated?.paidAmount ?? t.paidAmount,
-              paymentProofUrl: updated?.paymentProofUrl || t.paymentProofUrl
+              paymentProofUrl: updated?.paymentProofUrl || t.paymentProofUrl,
+              isRefundRequested: paymentForm.overpaymentAction === 'refund' ? true : t.isRefundRequested
             }
           : t
       )));
@@ -944,7 +947,7 @@ export default function HistoryTransaction({
                             <Coins className="h-4 w-4" />
                             Kelebihan bayar: Rp {(parseRupiah(paymentForm.additionalAmount) - (paymentDetail?.remaining || 0)).toLocaleString('id-ID')}
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-3 gap-2">
                             <button
                               type="button"
                               onClick={() => setPaymentForm({ ...paymentForm, overpaymentAction: 'change' })}
@@ -963,7 +966,21 @@ export default function HistoryTransaction({
                             >
                               Simpan ke Saldo
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => setPaymentForm({ ...paymentForm, overpaymentAction: 'refund' })}
+                              className={`py-2 rounded-lg text-[10px] font-black cursor-pointer ${
+                                paymentForm.overpaymentAction === 'refund' ? 'bg-sky-600 text-white' : 'bg-white border border-sky-300 text-sky-800'
+                              }`}
+                            >
+                              Refund
+                            </button>
                           </div>
+                          {paymentForm.overpaymentAction === 'refund' && (
+                            <p className="text-[10px] text-sky-800 font-medium">
+                              Gap refund akan diajukan (Pending Approval di app utama).
+                            </p>
+                          )}
                         </div>
                       )}
                     </>

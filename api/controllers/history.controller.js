@@ -103,10 +103,15 @@ export const updateTransactionPayment = async (req, res) => {
       paidAmount,
       additionalAmount,
       overpaymentToDeposit,
+      overpaymentToRefund,
+      overpaymentAction,
       paymentProofUrl,
       notes,
       cashierEmployeeId
     } = req.body;
+
+    const wantRefundOverpayment = Boolean(overpaymentToRefund)
+      || String(overpaymentAction || '').toLowerCase() === 'refund';
 
     await connection.beginTransaction();
 
@@ -126,6 +131,7 @@ export const updateTransactionPayment = async (req, res) => {
     let newPaid = currentPaid;
     let changeAmount = parseFloat(order.change_amount) || 0;
     let depositResult = null;
+    let refundAmountToSave = 0;
 
     if (targetStatus === 'Outstanding') {
       newPaid = 0;
@@ -141,8 +147,12 @@ export const updateTransactionPayment = async (req, res) => {
       targetStatus = resolvePaymentStatus(totalPaidAttempt, grandTotal);
 
       if (targetStatus === 'Lunas' && totalPaidAttempt > grandTotal) {
-        const excess = totalPaidAttempt - grandTotal;
-        if (overpaymentToDeposit) {
+        const excess = Math.round((totalPaidAttempt - grandTotal) * 100) / 100;
+        if (wantRefundOverpayment) {
+          newPaid = totalPaidAttempt;
+          changeAmount = 0;
+          refundAmountToSave = excess;
+        } else if (overpaymentToDeposit) {
           newPaid = grandTotal;
           changeAmount = 0;
           if (excess > 0) {
@@ -185,12 +195,14 @@ export const updateTransactionPayment = async (req, res) => {
           grandTotal,
           paymentMethod: paymentMethod || order.payment_method,
           paidAmount: newPaid,
-          overpaymentToDeposit: Boolean(overpaymentToDeposit),
+          overpaymentToDeposit: Boolean(overpaymentToDeposit) && !wantRefundOverpayment,
+          overpaymentToRefund: wantRefundOverpayment,
           outletId: order.outlet_id,
           cashierEmployeeId: cashierEmployeeId || order.cashier_employee_id
         });
         newPaid = depositResult.paidAmount;
         changeAmount = depositResult.changeAmount;
+        refundAmountToSave = parseFloat(depositResult.refundAmount) || 0;
       } else if (targetStatus === 'DP') {
         if (newPaid <= 0 || newPaid >= grandTotal) {
           await connection.rollback();
@@ -220,9 +232,32 @@ export const updateTransactionPayment = async (req, res) => {
          change_amount = ?,
          payment_proof_url = ?,
          paid_at = CASE WHEN ? = 'Lunas' THEN NOW() WHEN paid_at IS NULL AND ? > 0 THEN NOW() ELSE paid_at END,
+         is_refund_requested = CASE WHEN ? > 0 THEN 1 ELSE is_refund_requested END,
+         refund_approval_status = CASE WHEN ? > 0 THEN 0 ELSE refund_approval_status END,
+         refund_requested_at = CASE WHEN ? > 0 THEN NOW() ELSE refund_requested_at END,
+         refund_reason = CASE WHEN ? > 0 THEN ? ELSE refund_reason END,
+         refund_amount = CASE WHEN ? > 0 THEN ? ELSE refund_amount END,
          updated_at = NOW()
        WHERE id = ?`,
-      [targetStatus, method, newPaid, changeAmount, proofUrl, targetStatus, newPaid, order.id]
+      [
+        targetStatus,
+        method,
+        newPaid,
+        changeAmount,
+        proofUrl,
+        targetStatus,
+        newPaid,
+        refundAmountToSave,
+        refundAmountToSave,
+        refundAmountToSave,
+        refundAmountToSave,
+        refundAmountToSave > 0
+          ? `Kelebihan bayar nota ${order.order_no} — gap refund Rp ${refundAmountToSave.toLocaleString('id-ID')}`
+          : null,
+        refundAmountToSave,
+        refundAmountToSave,
+        order.id
+      ]
     );
 
     await connection.commit();

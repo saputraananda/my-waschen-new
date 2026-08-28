@@ -89,6 +89,8 @@ export const createTransaction = async (req, res) => {
       paidAmount,
       changeAmount,
       overpaymentToDeposit,
+      overpaymentToRefund,
+      overpaymentAction,
       paymentProofUrl,
       isDelivery,
       deliveryAddress,
@@ -96,6 +98,9 @@ export const createTransaction = async (req, res) => {
       specialNotes,
       items
     } = req.body;
+
+    const wantRefundOverpayment = Boolean(overpaymentToRefund)
+      || String(overpaymentAction || '').toLowerCase() === 'refund';
 
     if (!customerId || !items || items.length === 0) {
       await connection.rollback();
@@ -156,7 +161,8 @@ export const createTransaction = async (req, res) => {
         grandTotal: grandTotalNum,
         paymentMethod,
         paidAmount,
-        overpaymentToDeposit: Boolean(overpaymentToDeposit),
+        overpaymentToDeposit: Boolean(overpaymentToDeposit) && !wantRefundOverpayment,
+        overpaymentToRefund: wantRefundOverpayment,
         outletId: outletId || 2,
         cashierEmployeeId: cashierEmployeeId || 167
       });
@@ -283,6 +289,26 @@ export const createTransaction = async (req, res) => {
 
     // 4. Update customer spending summary & auto tier
     await applyTransactionSpendingUpdate(connection, resolvedCustomerId, grandTotalNum);
+
+    // 5. Pengajuan refund kelebihan bayar (approval di app lain)
+    const refundAmount = parseFloat(depositResult?.refundAmount) || 0;
+    if (refundAmount > 0) {
+      await connection.query(
+        `UPDATE tr_transaction
+         SET is_refund_requested = 1,
+             refund_approval_status = 0,
+             refund_requested_at = NOW(),
+             refund_reason = ?,
+             refund_amount = ?,
+             updated_at = NOW()
+         WHERE id = ?`,
+        [
+          `Kelebihan bayar nota ${orderNo} — gap refund Rp ${refundAmount.toLocaleString('id-ID')}`,
+          refundAmount,
+          transactionId
+        ]
+      );
+    }
 
     await connection.commit();
 
@@ -455,7 +481,12 @@ export const getTransactions = async (req, res) => {
         [order.id]
       );
       const [items] = await myWaschenPool.query(
-        'SELECT * FROM tr_transaction_detail WHERE transaction_id = ?',
+        `SELECT td.*,
+                COALESCE(td.service_name, s.name) as service_name,
+                s.code as service_code
+         FROM tr_transaction_detail td
+         LEFT JOIN mst_service s ON s.id = td.service_id
+         WHERE td.transaction_id = ?`,
         [order.id]
       );
       return {
@@ -544,10 +575,12 @@ export const getTransactionDetail = async (req, res) => {
 
     const [items] = await myWaschenPool.query(
       `SELECT td.*,
+              s.code as service_code,
               (CASE WHEN td.laundry_method_id = 2 THEN 1 ELSE 0 END) as is_dry_clean,
               COALESCE(ml.name, 'Wet Clean') as laundry_method_name,
               COALESCE(ml.code, 'WC') as laundry_method_code
        FROM tr_transaction_detail td
+       LEFT JOIN mst_service s ON s.id = td.service_id
        LEFT JOIN mst_method_laundry ml ON ml.id = td.laundry_method_id
        WHERE td.transaction_id = ?`,
       [order.id]
@@ -821,6 +854,8 @@ export const markTransactionAsPaid = async (req, res) => {
 /**
  * PATCH /api/transactions/:id/request-delete
  * Pengajuan Hapus Nota oleh Kasir (Status = Pending / 0, Menunggu Approval = 1)
+ * Jika nota sudah dibayar (terutama Saldo Member), ikut tandai pengajuan refund
+ * sebesar paid_amount agar app approval bisa mengembalikan dana.
  */
 export const requestDeleteTransaction = async (req, res) => {
   try {
@@ -833,15 +868,36 @@ export const requestDeleteTransaction = async (req, res) => {
     }
 
     const order = orderRows[0];
+    const paidAmount = parseFloat(order.paid_amount) || 0;
+    const isMemberPay = /saldo member/i.test(order.payment_method || '');
+    const shouldRefundOnDelete = paidAmount > 0;
+
     await myWaschenPool.query(
       `UPDATE tr_transaction 
        SET is_delete_requested = 1,
            delete_approval_status = 0,
            delete_requested_at = NOW(),
            delete_reason = ?,
+           is_refund_requested = CASE WHEN ? THEN 1 ELSE is_refund_requested END,
+           refund_approval_status = CASE WHEN ? THEN 0 ELSE refund_approval_status END,
+           refund_requested_at = CASE WHEN ? THEN NOW() ELSE refund_requested_at END,
+           refund_reason = CASE WHEN ? THEN ? ELSE refund_reason END,
+           refund_amount = CASE WHEN ? THEN ? ELSE refund_amount END,
            updated_at = NOW()
        WHERE id = ?`,
-      [reason || 'Request Hapus Nota oleh Kasir', order.id]
+      [
+        reason || 'Request Hapus Nota oleh Kasir',
+        shouldRefundOnDelete ? 1 : 0,
+        shouldRefundOnDelete ? 1 : 0,
+        shouldRefundOnDelete ? 1 : 0,
+        shouldRefundOnDelete ? 1 : 0,
+        shouldRefundOnDelete
+          ? `Refund akibat pengajuan hapus nota ${order.order_no}${isMemberPay ? ' (Saldo Member)' : ''} — Rp ${paidAmount.toLocaleString('id-ID')}`
+          : null,
+        shouldRefundOnDelete ? 1 : 0,
+        shouldRefundOnDelete ? paidAmount : 0,
+        order.id
+      ]
     );
 
     emitDashboardRefresh('transaction:updated', {
@@ -857,7 +913,9 @@ export const requestDeleteTransaction = async (req, res) => {
         orderId: order.id,
         orderNo: order.order_no,
         isDeleteRequested: 1,
-        deleteApprovalStatus: 0
+        deleteApprovalStatus: 0,
+        isRefundRequested: shouldRefundOnDelete ? 1 : 0,
+        refundAmount: shouldRefundOnDelete ? paidAmount : 0
       }
     });
   } catch (error) {
@@ -865,6 +923,88 @@ export const requestDeleteTransaction = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Gagal mengajukan hapus nota',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * PATCH /api/transactions/:id/request-refund
+ * Pengajuan refund manual / pelunasan kelebihan bayar (Pending Approval di app lain)
+ */
+export const requestRefundTransaction = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason, refundAmount, cashierEmployeeId } = req.body;
+
+    const [orderRows] = await myWaschenPool.query(
+      'SELECT * FROM tr_transaction WHERE id = ? OR order_no = ? LIMIT 1',
+      [id, id]
+    );
+    if (!orderRows.length) {
+      return res.status(404).json({ success: false, message: 'Nota tidak ditemukan' });
+    }
+
+    const order = orderRows[0];
+    const grandTotal = parseFloat(order.grand_total) || 0;
+    const paidAmount = parseFloat(order.paid_amount) || 0;
+    const autoGap = Math.max(0, Math.round((paidAmount - grandTotal) * 100) / 100);
+    const amount = parseFloat(refundAmount);
+    const resolvedAmount = !Number.isNaN(amount) && amount > 0 ? amount : autoGap;
+
+    if (resolvedAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nominal refund tidak valid. Pastikan ada kelebihan bayar (aktual bayar − wajib bayar).'
+      });
+    }
+
+    if (order.is_refund_requested === 1 && Number(order.refund_approval_status) === 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Nota ${order.order_no} sudah memiliki pengajuan refund yang masih Pending`
+      });
+    }
+
+    await myWaschenPool.query(
+      `UPDATE tr_transaction
+       SET is_refund_requested = 1,
+           refund_approval_status = 0,
+           refund_requested_at = NOW(),
+           refund_reason = ?,
+           refund_amount = ?,
+           change_amount = 0,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [
+        reason || `Pengajuan refund kelebihan bayar nota ${order.order_no} oleh kasir #${cashierEmployeeId || '-'}`,
+        resolvedAmount,
+        order.id
+      ]
+    );
+
+    emitDashboardRefresh('transaction:updated', {
+      outletId: order.outlet_id,
+      orderNo: order.order_no,
+      transactionId: order.id
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Pengajuan refund nota ${order.order_no} berhasil dikirim (Pending Approval)`,
+      data: {
+        orderId: order.id,
+        orderNo: order.order_no,
+        isRefundRequested: 1,
+        refundApprovalStatus: 0,
+        refundAmount: resolvedAmount
+      }
+    });
+  } catch (error) {
+    console.error('Error requesting refund:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal mengajukan refund',
       error: error.message
     });
   }

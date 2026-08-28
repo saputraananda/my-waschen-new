@@ -7,6 +7,7 @@ import {
   updateItemWorkStatus,
   markTransactionAsPaid,
   requestDeleteTransaction,
+  requestRefundTransaction,
   settlePaymentBatch,
   getPaymentBatchByNo,
   uploadPaymentProof
@@ -28,5 +29,6 @@ router.put('/:id/status', updateWorkStatus);
 router.patch('/:id/pay', markTransactionAsPaid);
 router.put('/:id/pay', markTransactionAsPaid);
 router.patch('/:id/request-delete', requestDeleteTransaction);
+router.patch('/:id/request-refund', requestRefundTransaction);
 
 export default router;

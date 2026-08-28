@@ -548,11 +548,11 @@ export default function Payment({
                             Rp {excessAmount.toLocaleString('id-ID')}
                           </span>
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-3 gap-2">
                           <button
                             type="button"
                             onClick={() => setOverpaymentAction('change')}
-                            className={`py-2.5 rounded-xl text-[11px] font-black transition-all cursor-pointer ${
+                            className={`py-2.5 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer ${
                               overpaymentAction === 'change'
                                 ? 'bg-amber-600 text-white'
                                 : 'bg-white text-amber-900 border border-amber-300'
@@ -563,7 +563,7 @@ export default function Payment({
                           <button
                             type="button"
                             onClick={() => setOverpaymentAction('deposit')}
-                            className={`py-2.5 rounded-xl text-[11px] font-black transition-all cursor-pointer ${
+                            className={`py-2.5 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer ${
                               overpaymentAction === 'deposit'
                                 ? 'bg-emerald-600 text-white'
                                 : 'bg-white text-emerald-800 border border-emerald-300'
@@ -571,11 +571,28 @@ export default function Payment({
                           >
                             Simpan ke Saldo
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => setOverpaymentAction('refund')}
+                            className={`py-2.5 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer ${
+                              overpaymentAction === 'refund'
+                                ? 'bg-sky-600 text-white'
+                                : 'bg-white text-sky-800 border border-sky-300'
+                            }`}
+                          >
+                            Refund
+                          </button>
                         </div>
                         {overpaymentAction === 'deposit' && (
                           <p className="text-[10px] text-emerald-800 font-medium">
                             Kelebihan Rp {excessAmount.toLocaleString('id-ID')} masuk saldo member.
                             Saldo baru: Rp {((selectedCustomer?.memberBalance || 0) + excessAmount).toLocaleString('id-ID')}
+                          </p>
+                        )}
+                        {overpaymentAction === 'refund' && (
+                          <p className="text-[10px] text-sky-800 font-medium">
+                            Pengajuan refund Rp {excessAmount.toLocaleString('id-ID')} akan dicatat di Riwayat (Pending Approval).
+                            Gap = aktual bayar − wajib bayar.
                           </p>
                         )}
                       </div>

@@ -1,7 +1,7 @@
 /**
  * Mutasi saldo deposit pelanggan saat pembayaran transaksi.
  * - Saldo Member: potong grand_total (Usage)
- * - Kelebihan bayar: opsional masuk deposit (Topup) atau kembalian tunai
+ * - Kelebihan bayar: deposit (Topup) | kembalian tunai | pengajuan refund (pending approval app lain)
  */
 export async function applyDepositOnPayment(connection, {
   customerId,
@@ -10,12 +10,13 @@ export async function applyDepositOnPayment(connection, {
   paymentMethod,
   paidAmount,
   overpaymentToDeposit = false,
+  overpaymentToRefund = false,
   outletId,
   cashierEmployeeId
 }) {
   const total = parseFloat(grandTotal) || 0;
   if (total <= 0) {
-    return { paidAmount: 0, changeAmount: 0, depositDelta: 0, balanceAfter: null };
+    return { paidAmount: 0, changeAmount: 0, depositDelta: 0, balanceAfter: null, refundAmount: 0 };
   }
 
   const [pmRows] = await connection.query(
@@ -41,6 +42,7 @@ export async function applyDepositOnPayment(connection, {
   let finalPaid = parseFloat(paidAmount);
   let changeAmount = 0;
   let depositDelta = 0;
+  let refundAmount = 0;
 
   if (isMemberBalance) {
     if (balanceBefore < total) {
@@ -78,7 +80,8 @@ export async function applyDepositOnPayment(connection, {
       changeAmount: 0,
       depositDelta,
       balanceAfter,
-      isMemberBalance: true
+      isMemberBalance: true,
+      refundAmount: 0
     };
   }
 
@@ -116,6 +119,10 @@ export async function applyDepositOnPayment(connection, {
         `Kelebihan bayar nota ${orderNo}`
       ]
     );
+  } else if (excess > 0 && overpaymentToRefund) {
+    // Dana kelebihan ditahan sebagai pengajuan refund (approval di app lain)
+    refundAmount = excess;
+    changeAmount = 0;
   } else if (excess > 0) {
     changeAmount = excess;
   }
@@ -125,6 +132,7 @@ export async function applyDepositOnPayment(connection, {
     changeAmount,
     depositDelta,
     balanceAfter: depositDelta > 0 ? balanceAfter : balanceBefore,
-    isMemberBalance: false
+    isMemberBalance: false,
+    refundAmount
   };
 }

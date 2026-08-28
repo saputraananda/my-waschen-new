@@ -227,6 +227,8 @@ export default function TrackingService({
         paymentProofUrl: proofUrl,
         notes: paymentForm.notes || `Pelunasan nota ${paymentModalOrder.id}`,
         overpaymentToDeposit: paymentForm.overpaymentAction === 'deposit',
+        overpaymentToRefund: paymentForm.overpaymentAction === 'refund',
+        overpaymentAction: paymentForm.overpaymentAction,
         cashierEmployeeId: localStorage.getItem('employeeId') || null
       });
 
@@ -906,7 +908,7 @@ export default function TrackingService({
                             <Coins className="h-4 w-4" />
                             Kelebihan bayar: Rp {(parseRupiah(paymentForm.additionalAmount) - (paymentDetail?.remaining || 0)).toLocaleString('id-ID')}
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-3 gap-2">
                             <button
                               type="button"
                               onClick={() => setPaymentForm({ ...paymentForm, overpaymentAction: 'change' })}
@@ -924,6 +926,15 @@ export default function TrackingService({
                               }`}
                             >
                               Simpan ke Saldo
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPaymentForm({ ...paymentForm, overpaymentAction: 'refund' })}
+                              className={`py-2 rounded-lg text-[10px] font-black cursor-pointer ${
+                                paymentForm.overpaymentAction === 'refund' ? 'bg-sky-600 text-white' : 'bg-white border border-sky-300 text-sky-800'
+                              }`}
+                            >
+                              Refund
                             </button>
                           </div>
                         </div>

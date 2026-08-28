@@ -19,7 +19,7 @@ import {
   Coins,
   CreditCard,
   History,
-  Layers,
+  Image,
   Printer,
   Receipt,
   Upload,
@@ -115,11 +115,15 @@ export default function DetailTransaction() {
     specialNotes: raw.special_notes || '-',
     cashierName: raw.cashier_name || raw.cashier_employee_name || (raw.cashier_employee_id ? `Kasir #${raw.cashier_employee_id}` : 'Kasir Waschen'),
     createdAt: formatDateId(raw.order_date),
-    rawDate: raw.order_date
+    createdAtRaw: raw.order_date,
+    rawDate: raw.order_date,
+    generalNotes: raw.special_notes || ''
   });
 
-  const mapItems = (rawItems, headerStatus) => (rawItems || []).map((it) => ({
+  const mapItems = (rawItems) => (rawItems || []).map((it) => ({
     id: it.id,
+    serviceId: it.service_id,
+    serviceCode: it.service_code || null,
     serviceName: it.service_name,
     qty: it.qty,
     unit: it.unit || 'Pcs',
@@ -134,6 +138,8 @@ export default function DetailTransaction() {
     note: it.condition_notes || '-',
     isCleanox: it.is_cleanox === 1,
     isDryClean: it.is_dry_clean === 1 || it.laundry_method_code === 'DC',
+    laundryMethodName: it.laundry_method_name || (it.laundry_method_code === 'DC' ? 'Dry Clean' : 'Wet Clean'),
+    laundryMethodCode: it.laundry_method_code || (it.is_dry_clean === 1 ? 'DC' : 'WC'),
     photoUrl: it.photo_url || null
   }));
 
@@ -150,7 +156,7 @@ export default function DetailTransaction() {
       const raw = res.data.data;
       const mapped = mapOrder(raw);
       setOrder(mapped);
-      setItems(mapItems(raw.items, mapped.workStatus));
+      setItems(mapItems(raw.items));
       setLogs(raw.logs || []);
       document.title = `Detail ${mapped.id} | Waschen Laundry`;
 
@@ -361,6 +367,8 @@ export default function DetailTransaction() {
         paymentProofUrl: proofUrl,
         notes: paymentForm.notes || `Pelunasan nota ${order.id}`,
         overpaymentToDeposit: paymentForm.overpaymentAction === 'deposit',
+        overpaymentToRefund: paymentForm.overpaymentAction === 'refund',
+        overpaymentAction: paymentForm.overpaymentAction,
         cashierEmployeeId: localStorage.getItem('employeeId') || null
       });
 
@@ -400,6 +408,7 @@ export default function DetailTransaction() {
       cashierName: order.cashierName,
       branch: order.branch,
       createdAt: order.createdAt,
+      createdAtRaw: order.createdAtRaw || order.rawDate || order.createdAt,
       perfume: order.perfume,
       isExpress: order.isExpress,
       isDelivery: order.isDelivery,
@@ -410,9 +419,17 @@ export default function DetailTransaction() {
       paymentStatus: order.paymentStatus,
       paymentMethod: order.paymentMethod,
       paymentBatchNo: order.paymentBatchNo,
+      generalNotes: order.generalNotes || order.notes || '',
+      estimatedCompletion: order.estimatedCompletion,
+      estimatedAt: order.estimatedAt,
+      outletPhone: order.outletPhone,
+      outletAddress: order.outletAddress || order.branch,
+      rackNo: order.rackNo,
       items: items.map((it) => ({
         name: it.serviceName,
+        qty: it.qty,
         qtyDisplay: it.qtyDisplay,
+        unitPrice: it.unitPrice,
         effectiveSubtotal: it.subtotal,
         brand: it.brand,
         color: it.color,
@@ -504,157 +521,247 @@ export default function DetailTransaction() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-5">
-                <div className="p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Pelanggan</span>
-                  <span className="font-black text-sm text-[#313030] block mt-0.5">{formatName(order.customerName)}</span>
-                  <span className="text-[11px] font-mono text-emerald-700">{order.customerPhone}</span>
-                  <span className="text-[10px] text-slate-500 block mt-0.5 truncate">{order.customerAddress}</span>
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 mt-5">
+                <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Pelanggan</span>
+                    <span className="font-black text-sm text-[#313030] block mt-0.5">{formatName(order.customerName)}</span>
+                    <span className="text-[11px] font-mono text-emerald-700">{order.customerPhone}</span>
+                    <span className="text-[10px] text-slate-500 block mt-0.5 truncate">{order.customerAddress}</span>
+                  </div>
+                  <div className="p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Layanan</span>
+                    <span className="font-black text-sm text-[#313030] block mt-0.5">{order.serviceType}</span>
+                    <span className="text-[11px] text-pink-700 font-bold">Aroma: {order.perfume}</span>
+                    <span className="text-[10px] text-slate-500 block">{order.isDelivery ? 'Diantar' : 'Ambil di outlet'}</span>
+                  </div>
+                  <div className="p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Tagihan</span>
+                    <span className="font-black text-sm text-[#5f1340] block mt-0.5">Rp {order.grandTotal.toLocaleString('id-ID')}</span>
+                    <span className={`text-[11px] font-extrabold ${
+                      paymentStatus === 'Lunas' ? 'text-emerald-600' : paymentStatus === 'DP' ? 'text-amber-700' : 'text-rose-600'
+                    }`}>
+                      {paymentStatus} ({order.paymentMethod})
+                    </span>
+                    {paymentStatus !== 'Lunas' && (
+                      <span className="text-[10px] text-slate-500 block">Sisa: Rp {remaining.toLocaleString('id-ID')}</span>
+                    )}
+                  </div>
+                  <div className="p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Kasir</span>
+                    <span className="font-black text-sm text-[#313030] block mt-0.5">{formatEmployeeName(order.cashierName)}</span>
+                    <span className="text-[10px] text-slate-500 block">Catatan: {order.specialNotes}</span>
+                  </div>
                 </div>
-                <div className="p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Layanan</span>
-                  <span className="font-black text-sm text-[#313030] block mt-0.5">{order.serviceType}</span>
-                  <span className="text-[11px] text-pink-700 font-bold">Aroma: {order.perfume}</span>
-                  <span className="text-[10px] text-slate-500 block">{order.isDelivery ? 'Diantar' : 'Ambil di outlet'}</span>
-                </div>
-                <div className="p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Tagihan</span>
-                  <span className="font-black text-sm text-[#5f1340] block mt-0.5">Rp {order.grandTotal.toLocaleString('id-ID')}</span>
-                  <span className={`text-[11px] font-extrabold ${
-                    paymentStatus === 'Lunas' ? 'text-emerald-600' : paymentStatus === 'DP' ? 'text-amber-700' : 'text-rose-600'
-                  }`}>
-                    {paymentStatus} ({order.paymentMethod})
-                  </span>
-                  {paymentStatus !== 'Lunas' && (
-                    <span className="text-[10px] text-slate-500 block">Sisa: Rp {remaining.toLocaleString('id-ID')}</span>
-                  )}
-                </div>
-                <div className="p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Kasir</span>
-                  <span className="font-black text-sm text-[#313030] block mt-0.5">{formatEmployeeName(order.cashierName)}</span>
-                  <span className="text-[10px] text-slate-500 block">Catatan: {order.specialNotes}</span>
+
+                <div className="lg:col-span-4">
+                  <TransactionBarcodeCard
+                    orderNo={order.id}
+                    barcodeValue={order.barcode || order.id}
+                    variant="aside"
+                    onPrint={handlePrint}
+                    meta={{
+                      statusLabel: `${paymentStatus}${order.paymentMethod && order.paymentMethod !== '-' ? ` · ${order.paymentMethod}` : ''}`,
+                      statusClass:
+                        paymentStatus === 'Lunas'
+                          ? 'text-emerald-600'
+                          : paymentStatus === 'DP'
+                            ? 'text-amber-700'
+                            : 'text-rose-600',
+                      progressLabel: formatWorkPercentage(order.workStatus)
+                    }}
+                    className="h-full"
+                  />
                 </div>
               </div>
-
-              {/* Barcode & QR Code Card */}
-              <TransactionBarcodeCard
-                orderNo={order.id}
-                barcodeValue={order.barcode || order.id}
-                onPrint={handlePrint}
-                className="mt-4"
-              />
             </div>
 
-            {/* Items */}
+            {/* Item Transaksi — referensi UI card expandable */}
             <div className="bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-2xs">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-black text-[#313030] uppercase tracking-wider flex items-center gap-2">
-                  <Layers className="h-4 w-4 text-[#5f1340]" />
-                  Item Cucian ({items.length})
-                </h2>
-                <span className="text-[10px] text-slate-400">Klik baris untuk detail fisik · ubah status via dropdown</span>
+              <div className="mb-4">
+                <h2 className="text-base font-black text-[#313030]">Item Transaksi</h2>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {items.length} item · klik baris untuk lihat rincian
+                </p>
               </div>
 
-              <div className="border border-[#e0e0e0] rounded-2xl overflow-hidden">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-100/70 border-b border-[#e0e0e0] text-[10px] uppercase font-extrabold text-slate-500 tracking-wider">
-                      <th className="py-2.5 px-4 w-8" />
-                      <th className="py-2.5 px-4">Nama Item / Layanan</th>
-                      <th className="py-2.5 px-4">Qty</th>
-                      <th className="py-2.5 px-4">Status Pengerjaan</th>
-                      <th className="py-2.5 px-4 text-right">Subtotal</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#e0e0e0] text-xs">
-                    {items.map((it) => {
-                      const meta = STATUS_STEPS[it.status] || STATUS_STEPS.Antrean;
-                      const options = workStatusOptions.includes(it.status)
-                        ? workStatusOptions
-                        : [it.status, ...workStatusOptions];
-                      const isOpen = expandedItemId === it.id;
+              <div className="space-y-3">
+                {items.map((it, idx) => {
+                  const meta = STATUS_STEPS[it.status] || STATUS_STEPS.Antrean;
+                  const options = workStatusOptions.includes(it.status)
+                    ? workStatusOptions
+                    : [it.status, ...workStatusOptions];
+                  const isOpen = expandedItemId === it.id;
+                  const isDone = getWorkPercentage(it.status) >= 100;
+                  const methodLabel = it.isDryClean
+                    ? `${it.laundryMethodName || 'Dry Clean'} (DC)`
+                    : `${it.laundryMethodName || 'Wet Clean'} (WC)`;
+                  const codeBadge = it.serviceCode || (it.serviceId ? `SRV-${it.serviceId}` : null);
+                  const noteText = it.note && it.note !== '-' ? it.note : 'Tidak ada catatan kondisi';
+                  const pickupLabel = order.isDelivery ? 'Diantar' : 'Ambil di outlet';
 
-                      return (
-                        <React.Fragment key={it.id}>
-                          <tr className="hover:bg-slate-50">
-                            <td className="py-3 px-3">
-                              <button
-                                type="button"
-                                onClick={() => setExpandedItemId(isOpen ? null : it.id)}
-                                className="p-1 rounded-lg text-slate-400 hover:text-[#5f1340] hover:bg-[#5f1340]/10 cursor-pointer"
-                                title="Lihat detail item"
-                              >
-                                {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                              </button>
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className="font-extrabold text-[#313030] block">{it.serviceName}</span>
-                              <div className="flex items-center gap-1 flex-wrap mt-0.5">
-                                {it.size && it.size !== '-' && (
-                                  <span className="text-[9px] font-bold text-purple-900 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded-full">Ukuran: {it.size}</span>
-                                )}
-                                {it.isDryClean && (
-                                  <span className="text-[9px] font-black text-amber-900 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-full">Dry Clean (DC)</span>
-                                )}
-                                {it.isCleanox && (
-                                  <span className="text-[9px] font-black text-sky-800 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-full">Cleanox</span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 font-bold text-slate-600">{it.qtyDisplay}</td>
-                            <td className="py-3 px-4">
-                              <select
-                                value={it.status}
-                                disabled={updatingItemId === it.id}
-                                onChange={(e) => handleUpdateItemStatus(it, e.target.value)}
-                                className={`w-full min-w-[150px] max-w-[200px] px-2.5 py-1.5 rounded-xl border text-[10px] font-black outline-none cursor-pointer disabled:opacity-60 ${meta.bg} ${meta.text}`}
-                              >
-                                {options.map((s) => (
-                                  <option key={s} value={s}>{getWorkPercentage(s)}% · {s}</option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="py-3 px-4 text-right font-mono font-bold">
-                              Rp {it.subtotal.toLocaleString('id-ID')}
-                            </td>
-                          </tr>
-                          {isOpen && (
-                            <tr className="bg-[#f8f8f8]/80">
-                              <td colSpan={5} className="px-4 py-3">
-                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-[11px]">
-                                  <div>
-                                    <span className="text-slate-400 font-bold block uppercase text-[9px]">Merk</span>
-                                    <span className="font-bold text-[#313030]">{it.brand}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-slate-400 font-bold block uppercase text-[9px]">Warna</span>
-                                    <span className="font-bold text-[#313030]">{it.color}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-slate-400 font-bold block uppercase text-[9px]">Material</span>
-                                    <span className="font-bold text-[#313030]">{it.material}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-slate-400 font-bold block uppercase text-[9px]">Ukuran</span>
-                                    <span className="font-bold text-[#313030]">{it.size}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-slate-400 font-bold block uppercase text-[9px]">Harga / Unit</span>
-                                    <span className="font-bold text-[#313030]">Rp {it.unitPrice.toLocaleString('id-ID')}</span>
-                                  </div>
-                                  <div className="sm:col-span-2 lg:col-span-1">
-                                    <span className="text-slate-400 font-bold block uppercase text-[9px]">Catatan Fisik</span>
-                                    <span className="font-bold text-[#313030]">{it.note}</span>
-                                  </div>
+                  return (
+                    <div
+                      key={it.id}
+                      className={`border rounded-2xl overflow-hidden transition-all ${
+                        isOpen ? 'border-[#5f1340]/25 shadow-xs' : 'border-[#e0e0e0]'
+                      }`}
+                    >
+                      {/* Row header */}
+                      <div className="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3 bg-white">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedItemId(isOpen ? null : it.id)}
+                          className="flex items-start sm:items-center gap-3 min-w-0 flex-1 text-left cursor-pointer group"
+                        >
+                          <span className="shrink-0 h-8 w-8 rounded-full bg-[#5f1340] text-white text-xs font-black flex items-center justify-center shadow-xs">
+                            {idx + 1}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-black text-sm text-[#313030] group-hover:text-[#5f1340] transition-colors truncate">
+                                {it.serviceName}
+                              </span>
+                              {isOpen
+                                ? <ChevronUp className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                : <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                              {codeBadge && (
+                                <span className="text-[9px] font-extrabold text-[#5f1340] bg-[#5f1340]/8 border border-[#5f1340]/20 px-1.5 py-0.5 rounded-md">
+                                  {codeBadge}
+                                </span>
+                              )}
+                              <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-md border ${meta.bg} ${meta.text}`}>
+                                {it.status}
+                              </span>
+                              {it.isCleanox && (
+                                <span className="text-[9px] font-extrabold text-sky-800 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-md">
+                                  Cleanox
+                                </span>
+                              )}
+                              <span className="text-[11px] font-bold text-slate-500">
+                                {it.qtyDisplay} · Rp {it.subtotal.toLocaleString('id-ID')}
+                              </span>
+                            </div>
+                          </div>
+                        </button>
+
+                        <div
+                          className="sm:shrink-0 sm:ml-auto"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <select
+                            value={it.status}
+                            disabled={updatingItemId === it.id}
+                            onChange={(e) => handleUpdateItemStatus(it, e.target.value)}
+                            className={`w-full sm:w-auto min-w-[130px] px-3 py-1.5 rounded-full border text-[11px] font-black outline-none cursor-pointer disabled:opacity-60 ${meta.bg} ${meta.text}`}
+                          >
+                            {options.map((s) => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Expanded detail */}
+                      {isOpen && (
+                        <div className="px-3.5 sm:px-4 pb-4 pt-1 border-t border-[#e0e0e0]/80 bg-[#fafafa]">
+                          <div className="flex flex-col lg:flex-row gap-3">
+                            {/* Photo */}
+                            <div className="shrink-0 w-full lg:w-[120px]">
+                              {it.photoUrl ? (
+                                <img
+                                  src={it.photoUrl}
+                                  alt={it.serviceName}
+                                  className="w-full lg:w-[120px] h-[120px] object-cover rounded-xl border border-[#e0e0e0]"
+                                />
+                              ) : (
+                                <div className="w-full lg:w-[120px] h-[120px] rounded-xl border border-dashed border-slate-300 bg-white flex flex-col items-center justify-center gap-1 text-slate-400">
+                                  <Image className="h-5 w-5" />
+                                  <span className="text-[10px] font-bold">Tidak ada foto</span>
                                 </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                              )}
+                            </div>
+
+                            {/* Specs grid */}
+                            <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
+                              {[
+                                { label: 'Merk / Brand', value: it.brand },
+                                { label: 'Warna', value: it.color },
+                                { label: 'Material', value: it.material },
+                                { label: 'Ukuran', value: it.size },
+                                { label: 'Metode Cuci', value: methodLabel },
+                                { label: 'Pengambilan', value: pickupLabel }
+                              ].map((field) => (
+                                <div
+                                  key={field.label}
+                                  className="bg-white border border-[#e0e0e0] rounded-xl px-2.5 py-2"
+                                >
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                                    {field.label}
+                                  </span>
+                                  <span className="font-bold text-[#313030] mt-0.5 block truncate">
+                                    {field.value || '-'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Pricing row */}
+                          <div className="grid grid-cols-3 gap-2 mt-3">
+                            <div className="bg-white border border-[#e0e0e0] rounded-xl px-2.5 py-2">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Qty</span>
+                              <span className="font-black text-sm text-[#313030]">{it.qtyDisplay}</span>
+                            </div>
+                            <div className="bg-white border border-[#e0e0e0] rounded-xl px-2.5 py-2">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Harga Satuan</span>
+                              <span className="font-black text-sm text-[#313030]">
+                                Rp {it.unitPrice.toLocaleString('id-ID')}
+                              </span>
+                            </div>
+                            <div className="bg-[#5f1340]/[0.06] border border-[#5f1340]/20 rounded-xl px-2.5 py-2">
+                              <span className="text-[9px] font-bold text-[#5f1340]/70 uppercase tracking-wider block">Subtotal</span>
+                              <span className="font-black text-sm text-[#5f1340]">
+                                Rp {it.subtotal.toLocaleString('id-ID')}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Notes + selesai */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
+                            <div className="sm:col-span-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                              <span className="text-[9px] font-bold text-amber-800/70 uppercase tracking-wider block">
+                                Kondisi / Catatan
+                              </span>
+                              <span className="text-[11px] font-bold text-amber-950 mt-0.5 block">
+                                {noteText}
+                              </span>
+                            </div>
+                            <div className="bg-white border border-[#e0e0e0] rounded-xl px-3 py-2.5">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                                Selesai Item
+                              </span>
+                              <span className={`text-[11px] font-black mt-0.5 block ${
+                                isDone ? 'text-emerald-700' : 'text-slate-600'
+                              }`}>
+                                {isDone ? 'Selesai' : 'Belum selesai'}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium">ID item #{it.id}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {items.length === 0 && (
+                  <div className="py-10 text-center text-slate-400 text-xs font-bold border border-dashed border-[#e0e0e0] rounded-2xl">
+                    Tidak ada item pada nota ini
+                  </div>
+                )}
               </div>
             </div>
 
@@ -823,10 +930,14 @@ export default function DetailTransaction() {
                             <Coins className="h-4 w-4" />
                             Kelebihan: Rp {(parseRupiah(paymentForm.additionalAmount) - (paymentDetail?.remaining || remaining || 0)).toLocaleString('id-ID')}
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-3 gap-2">
                             <button type="button" onClick={() => setPaymentForm({ ...paymentForm, overpaymentAction: 'change' })} className={`py-2 rounded-lg text-[10px] font-black cursor-pointer ${paymentForm.overpaymentAction === 'change' ? 'bg-amber-600 text-white' : 'bg-white border border-amber-300 text-amber-900'}`}>Kembalian Tunai</button>
                             <button type="button" onClick={() => setPaymentForm({ ...paymentForm, overpaymentAction: 'deposit' })} className={`py-2 rounded-lg text-[10px] font-black cursor-pointer ${paymentForm.overpaymentAction === 'deposit' ? 'bg-emerald-600 text-white' : 'bg-white border border-emerald-300 text-emerald-800'}`}>Simpan ke Saldo</button>
+                            <button type="button" onClick={() => setPaymentForm({ ...paymentForm, overpaymentAction: 'refund' })} className={`py-2 rounded-lg text-[10px] font-black cursor-pointer ${paymentForm.overpaymentAction === 'refund' ? 'bg-sky-600 text-white' : 'bg-white border border-sky-300 text-sky-800'}`}>Refund</button>
                           </div>
+                          {paymentForm.overpaymentAction === 'refund' && (
+                            <p className="text-[10px] text-sky-800 font-medium">Pengajuan refund kelebihan bayar (Pending Approval).</p>
+                          )}
                         </div>
                       )}
                     </>

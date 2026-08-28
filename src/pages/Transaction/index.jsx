@@ -674,7 +674,8 @@ export default function TransactionPage() {
       ? Math.max(0, paidAmountNum - calculations.grandTotal)
       : 0;
     const overpaymentToDeposit = excessAmount > 0 && overpaymentAction === 'deposit';
-    const changeAmount = excessAmount > 0 && !overpaymentToDeposit ? excessAmount : 0;
+    const overpaymentToRefund = excessAmount > 0 && overpaymentAction === 'refund';
+    const changeAmount = excessAmount > 0 && overpaymentAction === 'change' ? excessAmount : 0;
 
     const resolvedStatus = isOutstanding ? 'Outstanding' : paymentStatus;
     const resolvedPaidAmount = isOutstanding
@@ -728,6 +729,8 @@ export default function TransactionPage() {
       paidAmount: resolvedPaidAmount,
       changeAmount: paymentStatus === 'Lunas' ? changeAmount : 0,
       overpaymentToDeposit: paymentStatus === 'Lunas' ? overpaymentToDeposit : false,
+      overpaymentToRefund: paymentStatus === 'Lunas' ? overpaymentToRefund : false,
+      overpaymentAction: paymentStatus === 'Lunas' && excessAmount > 0 ? overpaymentAction : null,
       isDelivery,
       deliveryAddress: isDelivery ? (selectedCustomer.address || '-') : null,
       deliveryNotes: isDelivery ? generalOrderNotes : null,
@@ -820,7 +823,10 @@ export default function TransactionPage() {
         changeAmount: parseFloat(orderResult?.change_amount) || payloadChange,
         depositAdded: payloadDepositAdded,
         createdAt: new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
-        estimatedCompletion: isExpress ? '1x24 Jam (Besok Selesai)' : '2-3 Hari Kerja'
+        createdAtRaw: new Date().toISOString(),
+        estimatedCompletion: isExpress ? '1x24 Jam (Besok Selesai)' : '2-3 Hari Kerja',
+        outletAddress: orderResult?.outlet_name || activeOutletName,
+        outletPhone: localStorage.getItem('activeOutletPhone') || ''
       };
 
       setPendingOrderPayload(null);

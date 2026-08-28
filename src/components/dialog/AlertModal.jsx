@@ -30,7 +30,7 @@ export default function AlertModal({ open, onClose, title, desc, type = 'warning
 
         <div className="space-y-2">
           <h3 className="text-sm font-bold text-slate-800">{title}</h3>
-          {desc && <p className="text-xs text-slate-400 leading-relaxed">{desc}</p>}
+          {desc && <p className="text-xs text-slate-400 leading-relaxed whitespace-pre-line text-left">{desc}</p>}
         </div>
 
         <button

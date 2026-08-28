@@ -4,11 +4,13 @@ import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav';
 import HistoryTransaction from './components/HistoryTransaction';
 import RequestDeleteTransaction from './components/RequestDeleteTransaction';
+import RequestRefundTransaction from './components/RequestRefundTransaction';
 import { useShift } from '../../context/ShiftContext.jsx';
 import {
   History as HistoryIcon,
   Trash2,
-  ShoppingBag
+  ShoppingBag,
+  RefreshCcw
 } from 'lucide-react';
 
 export default function History() {
@@ -19,7 +21,7 @@ export default function History() {
   const [activeOutletId, setActiveOutletId] = useState(localStorage.getItem('activeOutletId') || '');
   const [outlets, setOutlets] = useState([]);
 
-  // Active Tab State: 'history' | 'request_delete'
+  // Active Tab State: 'history' | 'request_delete' | 'request_refund'
   const [activeTab, setActiveTab] = useState('history');
 
   // Transactions State
@@ -87,7 +89,15 @@ export default function History() {
           isDeleteRequested: t.is_delete_requested === 1 || t.is_delete_requested === true,
           deleteApprovalStatus: t.delete_approval_status,
           deleteRequestedAt: t.delete_requested_at ? new Date(t.delete_requested_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : null,
-          deleteReason: t.delete_reason || null
+          deleteReason: t.delete_reason || null,
+          // Refund Request Fields
+          isRefundRequested: t.is_refund_requested === 1 || t.is_refund_requested === true,
+          refundApprovalStatus: t.refund_approval_status,
+          refundRequestedAt: t.refund_requested_at
+            ? new Date(t.refund_requested_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
+            : null,
+          refundReason: t.refund_reason || null,
+          refundAmount: parseFloat(t.refund_amount) || 0
         }));
         setTransactions(mapped);
       }
@@ -98,6 +108,7 @@ export default function History() {
 
   const activeTransactionsCount = transactions.filter(t => !t.isDeleteRequested).length;
   const deleteRequestsCount = transactions.filter(t => t.isDeleteRequested).length;
+  const refundRequestsCount = transactions.filter(t => t.isRefundRequested).length;
 
   return (
     <div className="min-h-screen bg-[#f8f8f8] text-[#313030] flex flex-col font-sans">
@@ -110,16 +121,16 @@ export default function History() {
         userProfile={userProfile}
       />
 
-      {/* Main Workspace */}
       <main className="max-w-[1500px] w-full mx-auto p-4 sm:p-6 flex-grow flex flex-col gap-6">
-        {/* Top Header Bar */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-2xs">
           <div>
             <h1 className="text-xl sm:text-2xl font-black text-[#313030] tracking-tight flex items-center gap-2.5">
               <HistoryIcon className="h-6 w-6 text-[#5f1340]" />
-              <span>Riwayat Transaksi & Request Delete</span>
+              <span>Riwayat Transaksi, Refund & Delete</span>
             </h1>
-            <p className="text-xs text-slate-400 mt-0.5">Daftar pesanan kasir, cetak ulang struk, dan pengajuan hapus nota (Pending Approval vs Approved)</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Daftar pesanan kasir, cetak ulang struk, pengajuan refund kelebihan bayar, dan hapus nota (Pending vs Approved)
+            </p>
           </div>
 
           <button
@@ -131,12 +142,11 @@ export default function History() {
           </button>
         </div>
 
-        {/* Main Tab Bar Navigation */}
-        <div className="flex border-b border-[#e0e0e0] gap-2">
+        <div className="flex border-b border-[#e0e0e0] gap-2 overflow-x-auto">
           <button
             type="button"
             onClick={() => setActiveTab('history')}
-            className={`px-5 py-3 font-extrabold text-xs rounded-t-2xl border-t border-x transition-all flex items-center gap-2 cursor-pointer ${
+            className={`px-5 py-3 font-extrabold text-xs rounded-t-2xl border-t border-x transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
               activeTab === 'history'
                 ? 'bg-white border-[#e0e0e0] text-[#5f1340] shadow-2xs -mb-px font-black'
                 : 'bg-slate-100/60 border-transparent text-slate-500 hover:text-[#313030]'
@@ -153,8 +163,26 @@ export default function History() {
 
           <button
             type="button"
+            onClick={() => setActiveTab('request_refund')}
+            className={`px-5 py-3 font-extrabold text-xs rounded-t-2xl border-t border-x transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+              activeTab === 'request_refund'
+                ? 'bg-white border-[#e0e0e0] text-sky-700 shadow-2xs -mb-px font-black'
+                : 'bg-slate-100/60 border-transparent text-slate-500 hover:text-sky-600'
+            }`}
+          >
+            <RefreshCcw className="h-4 w-4" />
+            <span>Request Refund</span>
+            {refundRequestsCount > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-sky-600 text-white animate-pulse">
+                {refundRequestsCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('request_delete')}
-            className={`px-5 py-3 font-extrabold text-xs rounded-t-2xl border-t border-x transition-all flex items-center gap-2 cursor-pointer ${
+            className={`px-5 py-3 font-extrabold text-xs rounded-t-2xl border-t border-x transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
               activeTab === 'request_delete'
                 ? 'bg-white border-[#e0e0e0] text-rose-700 shadow-2xs -mb-px font-black'
                 : 'bg-slate-100/60 border-transparent text-slate-500 hover:text-rose-600'
@@ -170,15 +198,18 @@ export default function History() {
           </button>
         </div>
 
-        {/* Tab Content Rendering */}
-        {activeTab === 'history' ? (
+        {activeTab === 'history' && (
           <HistoryTransaction
             transactions={transactions}
             setTransactions={setTransactions}
             outlets={outlets}
             fetchTransactions={fetchTransactions}
           />
-        ) : (
+        )}
+        {activeTab === 'request_refund' && (
+          <RequestRefundTransaction transactions={transactions} />
+        )}
+        {activeTab === 'request_delete' && (
           <RequestDeleteTransaction
             transactions={transactions}
             outlets={outlets}

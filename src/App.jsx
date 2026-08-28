@@ -4,6 +4,7 @@ import ScrollToTop from './components/ScrollToTop.jsx';
 import { ShiftProvider } from './context/ShiftContext.jsx';
 import { AppDialogProvider } from './context/AppDialogContext.jsx';
 import { PWAProvider } from './context/PWAContext.jsx';
+import { ThermalPrinterProvider } from './context/ThermalPrinterContext.jsx';
 import Dashboard from './pages/Dashboard/index.jsx';
 import Transaction from './pages/Transaction/index.jsx';
 import TransactionComplete from './pages/Transaction/components/Complete.jsx';
@@ -15,6 +16,7 @@ import HistoryPage from './pages/History/index.jsx';
 import DetailTransaction from './pages/History/components/DetailTransaction.jsx';
 import LoginPage from './pages/auth/LoginPage.jsx';
 import DailyReport from './pages/DailyReport/index.jsx';
+import PrinterSettings from './pages/Settings/PrinterSettings.jsx';
 
 function App() {
   // Global Modal Backdrop Freeze: Prevents background scrolling across all pages whenever any modal is active
@@ -78,24 +80,27 @@ function App() {
       <ScrollToTop />
       <AppDialogProvider>
         <PWAProvider>
-          <ShiftProvider>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/transaction" element={<Transaction />} />
-              <Route path="/transaction/complete" element={<TransactionComplete />} />
-              <Route path="/customer" element={<Customer />} />
-              <Route path="/membership" element={<Membership />} />
-              <Route path="/riwayat" element={<HistoryPage />} />
-              <Route path="/riwayat/:orderNo" element={<DetailTransaction />} />
-              <Route path="/history" element={<HistoryPage />} />
-              <Route path="/history/:orderNo" element={<DetailTransaction />} />
-              <Route path="/services" element={<Services />} />
-              <Route path="/petty-cash" element={<PettyCash />} />
-              <Route path="/daily-report" element={<DailyReport />} />
-              <Route path="/login" element={<LoginPage />} />
-            </Routes>
-          </ShiftProvider>
+          <ThermalPrinterProvider>
+            <ShiftProvider>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/transaction" element={<Transaction />} />
+                <Route path="/transaction/complete" element={<TransactionComplete />} />
+                <Route path="/customer" element={<Customer />} />
+                <Route path="/membership" element={<Membership />} />
+                <Route path="/riwayat" element={<HistoryPage />} />
+                <Route path="/riwayat/:orderNo" element={<DetailTransaction />} />
+                <Route path="/history" element={<HistoryPage />} />
+                <Route path="/history/:orderNo" element={<DetailTransaction />} />
+                <Route path="/services" element={<Services />} />
+                <Route path="/petty-cash" element={<PettyCash />} />
+                <Route path="/daily-report" element={<DailyReport />} />
+                <Route path="/settings/printer" element={<PrinterSettings />} />
+                <Route path="/login" element={<LoginPage />} />
+              </Routes>
+            </ShiftProvider>
+          </ThermalPrinterProvider>
         </PWAProvider>
       </AppDialogProvider>
     </Router>
