@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, Clock, User, Wallet } from 'lucide-react';
 import { formatEmployeeName } from '../../../utils/FormatName.js';
+import { formatDateId } from '../../../utils/FilterDate.js';
 
 function getMinutesNow() {
   const now = new Date();
@@ -117,7 +118,7 @@ export default function BadgeShift({
             </span>
             <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
               {shift.opened_at
-                ? `Sejak ${new Date(shift.opened_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`
+                ? `Sejak ${formatDateId(shift.opened_at, { dateStyle: 'medium', timeStyle: 'short' })}`
                 : 'Sesi kas outlet aktif'}
               {shift.last_active_name && shift.last_active_name !== shift.opener_name && (
                 <> · terakhir aktif: {lastActiveLabel}</>

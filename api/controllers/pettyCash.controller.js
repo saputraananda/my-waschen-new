@@ -1,9 +1,14 @@
+import path from 'path';
 import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
+import { buildUploadPublicUrl, PETTY_CASH_EVIDENCE_SUBDIR } from '../middleware/upload.js';
+
+const APPROVED_STATUS = 'Disetujui';
+const PENDING_STATUS = 'Pengajuan';
+const REJECTED_STATUS = 'Ditolak';
 
 /**
  * Petty cash / kas laci memakai initial_petty_cash dari shift aktif.
- * initial_cash hanya untuk open/close shift (modal kas tunai), jangan dipakai di sini.
  */
 const getOpenShiftPettyFloat = async (outletId) => {
   let sql = `
@@ -31,13 +36,36 @@ const getOpenShiftPettyFloat = async (outletId) => {
   };
 };
 
+/** Saldo efektif = modal awal + kas masuk disetujui − kas keluar disetujui */
+async function getApprovedBalance(outletId, connection = myWaschenPool) {
+  const oid = parseInt(outletId, 10);
+  if (!oid) return 0;
+
+  const { initialPettyCash } = await getOpenShiftPettyFloat(oid);
+
+  const [rows] = await connection.query(
+    `SELECT type, amount FROM tr_petty_cash
+     WHERE outlet_id = ? AND status = ?
+     ORDER BY id ASC`,
+    [oid, APPROVED_STATUS]
+  );
+
+  if (!rows.length) return initialPettyCash;
+
+  let balance = initialPettyCash;
+  for (const r of rows) {
+    const amt = parseFloat(r.amount) || 0;
+    balance = r.type === 'Masuk' ? balance + amt : balance - amt;
+  }
+  return balance;
+}
+
 /**
  * GET /api/petty-cash
- * Mengambil riwayat mutasi kas kecil kasir outlet
  */
 export const getPettyCashLogs = async (req, res) => {
   try {
-    const { outlet_id, type } = req.query;
+    const { outlet_id, type, status } = req.query;
 
     let sql = 'SELECT * FROM tr_petty_cash WHERE 1=1';
     const params = [];
@@ -52,32 +80,35 @@ export const getPettyCashLogs = async (req, res) => {
       params.push(type);
     }
 
-    sql += ' ORDER BY id DESC LIMIT 50';
+    if (status && status !== 'Semua') {
+      sql += ' AND status = ?';
+      params.push(status);
+    }
+
+    sql += ' ORDER BY id DESC LIMIT 100';
 
     const [rows] = await myWaschenPool.query(sql, params);
 
-    const { initialPettyCash } = await getOpenShiftPettyFloat(outlet_id);
-
-    let balanceSql = 'SELECT balance_after FROM tr_petty_cash WHERE 1=1';
-    const balanceParams = [];
-    if (outlet_id && outlet_id !== 'Semua') {
-      balanceSql += ' AND outlet_id = ?';
-      balanceParams.push(outlet_id);
-    }
-    balanceSql += ' ORDER BY id DESC LIMIT 1';
-
-    const [latestRow] = await myWaschenPool.query(balanceSql, balanceParams);
-    const currentBalance = latestRow.length > 0
-      ? parseFloat(latestRow[0].balance_after || 0)
+    const outletForBalance = outlet_id && outlet_id !== 'Semua' ? outlet_id : rows[0]?.outlet_id;
+    const { initialPettyCash } = await getOpenShiftPettyFloat(outletForBalance);
+    const currentBalance = outletForBalance
+      ? await getApprovedBalance(outletForBalance)
       : initialPettyCash;
+
+    const pendingCount = rows.filter((r) => r.status === PENDING_STATUS).length;
+    const approvedRows = rows.filter((r) => r.status === APPROVED_STATUS);
 
     return res.status(200).json({
       success: true,
       data: rows,
-      /** @deprecated gunakan initialPettyCash */
       initialFloat: initialPettyCash,
       initialPettyCash,
-      currentBalance
+      currentBalance,
+      pendingCount,
+      meta: {
+        approvedIn: approvedRows.filter((r) => r.type === 'Masuk').reduce((s, r) => s + (parseFloat(r.amount) || 0), 0),
+        approvedOut: approvedRows.filter((r) => r.type === 'Keluar').reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+      }
     });
   } catch (error) {
     console.error('Error fetching petty cash logs:', error);
@@ -90,12 +121,54 @@ export const getPettyCashLogs = async (req, res) => {
 };
 
 /**
+ * POST /api/petty-cash/upload-evidence
+ */
+export const uploadPettyCashEvidenceFile = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'File bukti wajib diupload' });
+    }
+    const filename = req.file.filename || path.basename(req.file.path);
+    const relativePath = `${PETTY_CASH_EVIDENCE_SUBDIR}/${filename}`;
+    const publicUrl = buildUploadPublicUrl(relativePath);
+    return res.status(200).json({
+      success: true,
+      message: 'Bukti pengajuan berhasil diupload',
+      url: publicUrl,
+      filename
+    });
+  } catch (error) {
+    console.error('uploadPettyCashEvidenceFile:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal upload bukti pengajuan',
+      error: error.message
+    });
+  }
+};
+
+/**
  * POST /api/petty-cash
- * Catat transaksi kas kecil masuk / keluar
+ * Buat pengajuan — saldo belum berubah sampai disetujui
  */
 export const addPettyCashEntry = async (req, res) => {
   try {
-    const { outletId, cashierEmployeeId, shiftId, type, category, amount, description, receiptPhotoUrl } = req.body;
+    const {
+      outletId,
+      cashierEmployeeId,
+      shiftId,
+      type,
+      category,
+      amount,
+      description,
+      receiptPhotoUrl
+    } = req.body;
+
+    let evidenceUrl = receiptPhotoUrl || null;
+    if (req.file) {
+      const filename = req.file.filename || path.basename(req.file.path);
+      evidenceUrl = buildUploadPublicUrl(`${PETTY_CASH_EVIDENCE_SUBDIR}/${filename}`);
+    }
 
     const numAmount = parseFloat(amount);
     if (!type || !description || isNaN(numAmount) || numAmount <= 0) {
@@ -109,19 +182,12 @@ export const addPettyCashEntry = async (req, res) => {
     const { shiftId: openShiftId, initialPettyCash } = await getOpenShiftPettyFloat(resolvedOutletId);
     const resolvedShiftId = shiftId || openShiftId || null;
 
-    const [latestRow] = await myWaschenPool.query(
-      'SELECT balance_after FROM tr_petty_cash WHERE outlet_id = ? ORDER BY id DESC LIMIT 1',
-      [resolvedOutletId]
-    );
-    const balanceBefore = latestRow.length > 0
-      ? parseFloat(latestRow[0].balance_after || 0)
-      : initialPettyCash;
-    const balanceAfter = type === 'Masuk' ? (balanceBefore + numAmount) : (balanceBefore - numAmount);
+    const balanceSnapshot = await getApprovedBalance(resolvedOutletId);
 
     const [result] = await myWaschenPool.query(
       `INSERT INTO tr_petty_cash 
-       (outlet_id, shift_id, cashier_employee_id, type, category, amount, balance_before, balance_after, description, receipt_photo_url, transaction_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+       (outlet_id, shift_id, cashier_employee_id, type, category, amount, balance_before, balance_after, description, receipt_photo_url, status, transaction_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         resolvedOutletId,
         resolvedShiftId,
@@ -129,10 +195,11 @@ export const addPettyCashEntry = async (req, res) => {
         type,
         category || 'Biaya Operasional',
         numAmount,
-        balanceBefore,
-        balanceAfter,
+        balanceSnapshot,
+        balanceSnapshot,
         description.trim(),
-        receiptPhotoUrl || null
+        evidenceUrl,
+        PENDING_STATUS
       ]
     );
 
@@ -141,30 +208,134 @@ export const addPettyCashEntry = async (req, res) => {
     emitDashboardRefresh('petty-cash:updated', {
       outletId: resolvedOutletId,
       type,
-      amount: numAmount
+      amount: numAmount,
+      status: PENDING_STATUS
     });
 
     return res.status(201).json({
       success: true,
-      message: `Berhasil mencatat kas ${type.toLowerCase()} Rp ${numAmount.toLocaleString('id-ID')}`,
+      message: `Pengajuan kas ${type.toLowerCase()} Rp ${numAmount.toLocaleString('id-ID')} menunggu persetujuan`,
       data: newRow[0],
       initialPettyCash,
-      balanceBefore,
-      balanceAfter
+      currentBalance: balanceSnapshot
     });
   } catch (error) {
     console.error('Error recording petty cash entry:', error);
     return res.status(500).json({
       success: false,
-      message: 'Gagal mencatat transaksi kas kecil',
+      message: 'Gagal mengajukan transaksi kas kecil',
       error: error.message
     });
   }
 };
 
 /**
+ * PATCH /api/petty-cash/:id/review
+ * Body: { action: 'approve' | 'reject', reviewerEmployeeId, rejectedReason? }
+ */
+export const reviewPettyCashEntry = async (req, res) => {
+  const connection = await myWaschenPool.getConnection();
+  try {
+    const { id } = req.params;
+    const { action, rejectedReason, reviewerEmployeeId } = req.body;
+    const reviewerId = parseInt(reviewerEmployeeId, 10)
+      || parseInt(req.body.cashierEmployeeId, 10)
+      || null;
+
+    if (!['approve', 'reject'].includes(action)) {
+      return res.status(400).json({ success: false, message: 'action harus approve atau reject' });
+    }
+
+    await connection.beginTransaction();
+
+    const [rows] = await connection.query(
+      'SELECT * FROM tr_petty_cash WHERE id = ? FOR UPDATE',
+      [id]
+    );
+    if (!rows.length) {
+      await connection.rollback();
+      return res.status(404).json({ success: false, message: 'Pengajuan tidak ditemukan' });
+    }
+
+    const entry = rows[0];
+    if (entry.status !== PENDING_STATUS) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Pengajuan sudah ${entry.status}, tidak bisa diubah`
+      });
+    }
+
+    if (action === 'reject') {
+      await connection.query(
+        `UPDATE tr_petty_cash
+         SET status = ?, rejected_reason = ?, approved_by_employee_id = ?, approved_at = NOW(), updated_at = NOW()
+         WHERE id = ?`,
+        [REJECTED_STATUS, rejectedReason || 'Ditolak', reviewerId, id]
+      );
+      await connection.commit();
+
+      emitDashboardRefresh('petty-cash:updated', { outletId: entry.outlet_id, status: REJECTED_STATUS });
+
+      const [updated] = await myWaschenPool.query('SELECT * FROM tr_petty_cash WHERE id = ?', [id]);
+      return res.status(200).json({
+        success: true,
+        message: 'Pengajuan ditolak',
+        data: updated[0]
+      });
+    }
+
+    const balanceBefore = await getApprovedBalance(entry.outlet_id, connection);
+    const numAmount = parseFloat(entry.amount) || 0;
+    const balanceAfter = entry.type === 'Masuk'
+      ? balanceBefore + numAmount
+      : balanceBefore - numAmount;
+
+    await connection.query(
+      `UPDATE tr_petty_cash
+       SET status = ?,
+           balance_before = ?,
+           balance_after = ?,
+           approved_by_employee_id = ?,
+           approved_at = NOW(),
+           rejected_reason = NULL,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [APPROVED_STATUS, balanceBefore, balanceAfter, reviewerId, id]
+    );
+
+    await connection.commit();
+
+    emitDashboardRefresh('petty-cash:updated', {
+      outletId: entry.outlet_id,
+      type: entry.type,
+      amount: numAmount,
+      status: APPROVED_STATUS
+    });
+
+    const [updated] = await myWaschenPool.query('SELECT * FROM tr_petty_cash WHERE id = ?', [id]);
+    return res.status(200).json({
+      success: true,
+      message: `Pengajuan disetujui — saldo ${entry.type === 'Keluar' ? 'berkurang' : 'bertambah'} Rp ${numAmount.toLocaleString('id-ID')}`,
+      data: updated[0],
+      balanceBefore,
+      balanceAfter
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error('reviewPettyCashEntry:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal memproses pengajuan',
+      error: error.message
+    });
+  } finally {
+    connection.release();
+  }
+};
+
+/**
  * GET /api/petty-cash/shift/current
- * Mengambil data sesi shift kasir aktif
  */
 export const getCurrentShift = async (req, res) => {
   try {
@@ -204,8 +375,6 @@ export const getCurrentShift = async (req, res) => {
 
 /**
  * POST /api/petty-cash/shift/open
- * Legacy — open shift resmi ada di /api/shifts/open (pakai initial_cash + initial_petty_cash terpisah).
- * Endpoint ini tetap ada untuk kompatibilitas; jangan dipakai sebagai sumber float petty cash.
  */
 export const openShift = async (req, res) => {
   try {

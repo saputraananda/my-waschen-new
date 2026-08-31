@@ -14,6 +14,7 @@ import shiftRoutes from './routes/shift.routes.js';
 import masterRoutes from './routes/master.routes.js';
 import historyRoutes from './routes/history.routes.js';
 import printerRoutes from './routes/printer.routes.js';
+import inventoryRoutes from './routes/inventory.routes.js';
 import { getBaseUploadDir, getUploadUrlPrefix, uploadPaymentReceipt, buildUploadPublicUrl } from './middleware/upload.js';
 
 // Load environment variables
@@ -51,5 +52,6 @@ app.use('/api/shifts', shiftRoutes);
 app.use('/api/masters', masterRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/printer-settings', printerRoutes);
+app.use('/api/inventory', inventoryRoutes);
 
 export default app;

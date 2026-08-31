@@ -5,7 +5,8 @@ import {
   Info,
   Users,
   CreditCard,
-  Wallet
+  Wallet,
+  Package
 } from 'lucide-react';
 import { useShiftOptional } from '../../../context/ShiftContext.jsx';
 
@@ -64,6 +65,15 @@ const MENU_ITEMS = [
     icon: Wallet,
     iconWrap: 'bg-amber-50 text-amber-700 group-hover:bg-amber-100/60',
     labelHover: 'group-hover:text-amber-700'
+  },
+  {
+    key: 'inventory',
+    path: '/inventory',
+    label: 'Inventory',
+    hint: 'Stok Warehouse',
+    icon: Package,
+    iconWrap: 'bg-emerald-50 text-emerald-700 group-hover:bg-emerald-100/60',
+    labelHover: 'group-hover:text-emerald-700'
   }
 ];
 
@@ -99,7 +109,7 @@ export default function Menu({ navigate, onOrderClick }) {
           </span>
         )}
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3.5">
         {MENU_ITEMS.map((item) => {
           const Icon = item.icon;
           const locked = showShiftLock;

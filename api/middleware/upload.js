@@ -4,6 +4,8 @@ import multer from 'multer';
 
 /** Subfolder bukti bayar di dalam UPLOAD_BASE_DIR */
 export const PAYMENT_RECEIPT_SUBDIR = 'assets/payment_receipt';
+/** Bukti pengajuan petty cash */
+export const PETTY_CASH_EVIDENCE_SUBDIR = 'evidence-petty-cash';
 
 /**
  * Get base upload directory path from UPLOAD_BASE_DIR environment variable
@@ -130,6 +132,11 @@ export const uploadPaymentReceipt = createUploader(PAYMENT_RECEIPT_SUBDIR, {
   fileTypes: /jpeg|jpg|png|webp|pdf/,
   maxFileSize: 5 * 1024 * 1024
 }).single('proof');
+
+export const uploadPettyCashEvidence = createUploader(PETTY_CASH_EVIDENCE_SUBDIR, {
+  fileTypes: /jpeg|jpg|png|webp|pdf/,
+  maxFileSize: 5 * 1024 * 1024
+}).single('evidence');
 
 export const uploadEvidence = createUploader('assets/evidence');
 

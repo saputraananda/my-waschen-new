@@ -5,6 +5,7 @@ import HeaderNav from '../../components/HeaderNav';
 import DashboardPettyCash from './components/DashboardPettyCash';
 import AddPettyCash from './components/AddPettyCash';
 import { useAppDialog } from '../../context/AppDialogContext.jsx';
+import { isHqUser } from '../../utils/authSession.js';
 import {
   Wallet,
   Plus,
@@ -17,6 +18,8 @@ export const mapCashLogFromApi = (p) => ({
   category: p.category,
   amount: parseFloat(p.amount) || 0,
   desc: p.description || 'Pencatatan kas',
+  status: p.status || 'Disetujui',
+  receiptPhotoUrl: p.receipt_photo_url || null,
   date: new Date(p.transaction_date).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
   createdBy: 'Staff Kasir'
 });
@@ -32,6 +35,9 @@ export default function PettyCash() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [cashLogs, setCashLogs] = useState([]);
   const [initialPettyCashFloat, setInitialPettyCashFloat] = useState(0);
+  const [currentBalance, setCurrentBalance] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
+  const isApprover = isHqUser();
 
   const showToast = (title, message, type = 'success') => {
     showAlert({ title, message, type });
@@ -59,7 +65,7 @@ export default function PettyCash() {
 
     axios.get('/api/masters/outlets')
       .then(res => {
-        if (res.data && res.data.success && res.data.data.length > 0) {
+        if (res.data?.success && res.data.data?.length) {
           setOutlets(res.data.data);
         }
       })
@@ -74,30 +80,33 @@ export default function PettyCash() {
       const res = await axios.get('/api/petty-cash', {
         params: outletId ? { outlet_id: outletId } : undefined
       });
-      if (res.data && res.data.success) {
+      if (res.data?.success) {
         const floatVal = res.data.initialPettyCash ?? res.data.initialFloat;
-        if (typeof floatVal === 'number') {
-          setInitialPettyCashFloat(floatVal);
-        }
-        if (res.data.data && res.data.data.length > 0) {
-          setCashLogs(res.data.data.map(mapCashLogFromApi));
-        } else {
-          setCashLogs([]);
-        }
+        if (typeof floatVal === 'number') setInitialPettyCashFloat(floatVal);
+        const logs = (res.data.data || []).map(mapCashLogFromApi);
+        const approved = logs.filter((l) => l.status === 'Disetujui');
+        const inSum = approved.filter((l) => l.type === 'Masuk').reduce((s, l) => s + l.amount, 0);
+        const outSum = approved.filter((l) => l.type === 'Keluar').reduce((s, l) => s + l.amount, 0);
+        setCurrentBalance((floatVal || 0) + inSum - outSum);
+        setPendingCount(res.data.pendingCount || logs.filter((l) => l.status === 'Pengajuan').length);
+        setCashLogs(logs);
       }
     } catch (err) {
       console.error('Gagal mengambil data kas kecil:', err);
     }
   };
 
+  useEffect(() => {
+    if (activeOutletId) fetchPettyCash();
+  }, [activeOutletId]);
+
   const handleCashLogCreated = (newLog) => {
     setCashLogs(prev => [newLog, ...prev]);
+    setPendingCount((c) => c + 1);
   };
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-    if (document.documentElement) document.documentElement.scrollTop = 0;
-    if (document.body) document.body.scrollTop = 0;
   };
 
   return (
@@ -118,20 +127,15 @@ export default function PettyCash() {
               <Wallet className="h-6 w-6 text-[#5f1340]" />
               <span>Pencatatan Petty Cash (Kas Laci Outlet)</span>
             </h1>
-            <p className="text-xs text-slate-400 mt-0.5">Pengelolaan saldo kas fisik laci, pencatatan pengeluaran operasional, dan suntikan modal kembalian</p>
+            <p className="text-xs text-slate-400 mt-0.5">Pengajuan kas outlet — saldo berubah setelah disetujui</p>
           </div>
 
           <div className="flex items-center gap-2 bg-[#f8f8f8] border border-[#e0e0e0] p-1.5 rounded-2xl w-full sm:w-auto">
             <button
               type="button"
-              onClick={() => {
-                scrollToTop();
-                setActiveTab('dashboard');
-              }}
+              onClick={() => { scrollToTop(); setActiveTab('dashboard'); }}
               className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                activeTab === 'dashboard'
-                  ? 'bg-[#5f1340] text-white shadow-xs'
-                  : 'text-slate-500 hover:text-[#313030]'
+                activeTab === 'dashboard' ? 'bg-[#5f1340] text-white shadow-xs' : 'text-slate-500 hover:text-[#313030]'
               }`}
             >
               <BarChart3 className="h-4 w-4" />
@@ -139,18 +143,13 @@ export default function PettyCash() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                scrollToTop();
-                setActiveTab('add');
-              }}
+              onClick={() => { scrollToTop(); setActiveTab('add'); }}
               className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                activeTab === 'add'
-                  ? 'bg-[#5f1340] text-white shadow-xs'
-                  : 'text-slate-500 hover:text-[#313030]'
+                activeTab === 'add' ? 'bg-[#5f1340] text-white shadow-xs' : 'text-slate-500 hover:text-[#313030]'
               }`}
             >
               <Plus className="h-4 w-4" />
-              <span>Catat Transaksi Kas</span>
+              <span>Ajukan Kas</span>
             </button>
           </div>
         </div>
@@ -159,7 +158,11 @@ export default function PettyCash() {
           <DashboardPettyCash
             cashLogs={cashLogs}
             initialPettyCashFloat={initialPettyCashFloat}
+            currentBalance={currentBalance}
+            pendingCount={pendingCount}
             activeOutletName={activeOutletName}
+            isApprover={isApprover}
+            onRefresh={fetchPettyCash}
           />
         )}
 

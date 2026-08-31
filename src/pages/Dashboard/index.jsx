@@ -168,7 +168,9 @@ export default function Dashboard() {
 
       if (pettyRes.data && pettyRes.data.success) {
         if (pettyRes.data.data) {
-          const mappedLogs = pettyRes.data.data.map(p => ({
+          const mappedLogs = pettyRes.data.data
+            .filter((p) => (p.status || 'Disetujui') === 'Disetujui')
+            .map(p => ({
             id: p.id,
             type: p.type,
             category: p.category,

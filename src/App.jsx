@@ -17,6 +17,7 @@ import DetailTransaction from './pages/History/components/DetailTransaction.jsx'
 import LoginPage from './pages/auth/LoginPage.jsx';
 import DailyReport from './pages/DailyReport/index.jsx';
 import PrinterSettings from './pages/Settings/PrinterSettings.jsx';
+import InventoryPage from './pages/Inventory/index.jsx';
 
 function App() {
   // Global Modal Backdrop Freeze: Prevents background scrolling across all pages whenever any modal is active
@@ -97,6 +98,7 @@ function App() {
                 <Route path="/petty-cash" element={<PettyCash />} />
                 <Route path="/daily-report" element={<DailyReport />} />
                 <Route path="/settings/printer" element={<PrinterSettings />} />
+                <Route path="/inventory" element={<InventoryPage />} />
                 <Route path="/login" element={<LoginPage />} />
               </Routes>
             </ShiftProvider>

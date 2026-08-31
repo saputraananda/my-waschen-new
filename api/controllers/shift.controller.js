@@ -531,7 +531,7 @@ export const closeShift = async (req, res) => {
 
     const [pettyOutRows] = await myWaschenPool.query(
       `SELECT COALESCE(SUM(amount),0) AS total FROM tr_petty_cash
-       WHERE outlet_id = ? AND type = 'Keluar' AND shift_id = ?`,
+       WHERE outlet_id = ? AND type = 'Keluar' AND shift_id = ? AND status = 'Disetujui'`,
       [shift.outlet_id, shiftId]
     );
     const pettyOut = parseFloat(pettyOutRows[0]?.total) || 0;

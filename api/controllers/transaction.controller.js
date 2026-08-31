@@ -4,6 +4,7 @@ import { applyTransactionSpendingUpdate } from '../utils/spendingTier.js';
 import { applyDepositOnPayment } from '../utils/customerDeposit.js';
 import { insertPaymentLog, resolvePaymentStatus, buildPaymentProofUrl } from '../utils/paymentLog.js';
 import { computeAccumulatedWorkPercentage, refreshHeaderWorkPercentage, nextLifecycleStatus, workStatusTabSql } from '../utils/workStatus.js';
+import { consumeServiceBom } from '../utils/inventoryStock.js';
 import path from 'path';
 
 /**
@@ -227,34 +228,64 @@ export const createTransaction = async (req, res) => {
 
     const transactionId = orderResult.insertId;
 
-    // 2. Insert tr_transaction_detail
+    // 2. Insert tr_transaction_detail + potong stok BOM layanan (jika ada)
+    const inventoryUsages = [];
     for (const item of items) {
       const isDryClean = (item.isDryClean || item.is_dry_clean || item.laundryMethodId === 2 || item.laundry_method_id === 2) ? true : false;
       const laundryMethodId = isDryClean ? 2 : (parseInt(item.laundryMethodId || item.laundry_method_id, 10) || 1);
+      const serviceId = item.serviceId || item.serviceDbId || item.id || 1;
+      const lineQty = parseFloat(item.qty) || 1;
+      const fulfillmentType = isDelivery ? 'Delivery_Kurir' : 'Ambil_Di_Outlet';
+      const detailParams = [
+        transactionId,
+        serviceId,
+        item.serviceName || item.name || 'Layanan Laundry',
+        lineQty,
+        item.unit || 'Kg',
+        parseFloat(item.unitPrice || item.price) || 0,
+        parseFloat(item.subtotal || item.effectiveSubtotal || ((item.qty || 1) * (item.price || 0))) || 0,
+        item.isCleanox ? 1 : 0,
+        laundryMethodId,
+        item.brand || null,
+        item.color || null,
+        item.material || null,
+        item.size || null,
+        item.conditionNotes || null,
+        'Antrean',
+        item.photoUrl || null
+      ];
 
-      await connection.query(
-        `INSERT INTO tr_transaction_detail 
-         (transaction_id, service_id, service_name, qty, unit, unit_price, subtotal, is_cleanox, laundry_method_id, brand, color, material, size, condition_notes, item_work_status, photo_url)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
+      try {
+        await connection.query(
+          `INSERT INTO tr_transaction_detail 
+           (transaction_id, service_id, service_name, qty, unit, unit_price, subtotal, is_cleanox, laundry_method_id, brand, color, material, size, condition_notes, item_work_status, photo_url, fulfillment_type)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [...detailParams, fulfillmentType]
+        );
+      } catch (colErr) {
+        if (!/Unknown column|fulfillment_type/i.test(colErr.message || '')) throw colErr;
+        await connection.query(
+          `INSERT INTO tr_transaction_detail 
+           (transaction_id, service_id, service_name, qty, unit, unit_price, subtotal, is_cleanox, laundry_method_id, brand, color, material, size, condition_notes, item_work_status, photo_url)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          detailParams
+        );
+      }
+
+      try {
+        const used = await consumeServiceBom(connection, {
+          outletId: outletId || 2,
+          serviceId,
+          lineQty,
+          employeeId: cashierEmployeeId || 167,
           transactionId,
-          item.serviceId || item.serviceDbId || item.id || 1,
-          item.serviceName || item.name || 'Layanan Laundry',
-          parseFloat(item.qty) || 1,
-          item.unit || 'Kg',
-          parseFloat(item.unitPrice || item.price) || 0,
-          parseFloat(item.subtotal || item.effectiveSubtotal || ((item.qty || 1) * (item.price || 0))) || 0,
-          item.isCleanox ? 1 : 0,
-          laundryMethodId,
-          item.brand || null,
-          item.color || null,
-          item.material || null,
-          item.size || null,
-          item.conditionNotes || null,
-          'Antrean',
-          item.photoUrl || null
-        ]
-      );
+          orderNo
+        });
+        if (used.length) inventoryUsages.push(...used);
+      } catch (invErr) {
+        // Jangan gagalkan transaksi POS hanya karena stok — log & lanjut
+        console.warn('consumeServiceBom skip:', invErr.message);
+      }
     }
 
     // 3. Insert initial status log
@@ -366,6 +397,7 @@ export const createTransaction = async (req, res) => {
       data: {
         ...resultData,
         deposit_delta: depositResult?.depositDelta || 0,
+        inventory_usages: inventoryUsages,
         balance_after: depositResult?.balanceAfter ?? null
       }
     });
