@@ -25,14 +25,14 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
     connected,
     connecting,
     connect,
-    printDualNota
+    printNota
   } = useThermalPrinter();
   const [settings, setSettings] = useState({
     customer: DEFAULT_CUSTOMER_SETTINGS,
     internal: DEFAULT_INTERNAL_SETTINGS
   });
   const [loadingSettings, setLoadingSettings] = useState(true);
-  const [printing, setPrinting] = useState(false);
+  const [printing, setPrinting] = useState(null); // 'internal' | 'customer'
 
   useEffect(() => {
     if (!createdOrderReceipt) return undefined;
@@ -80,7 +80,7 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
     }
   };
 
-  const handlePrint = async () => {
+  const ensureConnected = async () => {
     if (!connected) {
       await showAlert({
         title: 'Printer Belum Terhubung',
@@ -88,18 +88,23 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
         type: 'warning',
         confirmLabel: 'OK'
       });
-      return;
+      return false;
     }
-    setPrinting(true);
+    return true;
+  };
+
+  const handlePrintVariant = async (variant) => {
+    if (!(await ensureConnected())) return;
+    setPrinting(variant);
     try {
-      await printDualNota(createdOrderReceipt, settings.customer, settings.internal);
+      const variantSettings = variant === 'internal' ? settings.internal : settings.customer;
+      await printNota(createdOrderReceipt, variantSettings, variant);
       await showAlert({
         title: 'Struk Dikirim',
-        message: '2 nota (Internal + Customer) berhasil dikirim ke printer thermal.',
+        message: `Nota ${variant === 'internal' ? 'Internal' : 'Customer'} berhasil dikirim ke printer thermal.`,
         type: 'success',
         confirmLabel: 'Selesai'
       });
-      handleClose();
     } catch (err) {
       await showAlert({
         title: 'Gagal Cetak',
@@ -108,9 +113,11 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
         confirmLabel: 'OK'
       });
     } finally {
-      setPrinting(false);
+      setPrinting(null);
     }
   };
+
+  const printDisabled = loadingSettings || !connected || Boolean(printing);
 
   return createPortal(
     <div
@@ -127,7 +134,7 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
               <Printer className="h-5 w-5 text-[#5f1340]" />
               <div>
                 <h3 className="text-sm font-black text-[#313030]">Cetak Nota Thermal 58mm</h3>
-                <p className="text-[10px] text-slate-500 font-bold">2 nota wajib: Internal + Customer</p>
+                <p className="text-[10px] text-slate-500 font-bold">Pilih nota Internal atau Customer untuk dicetak</p>
               </div>
             </div>
             <button
@@ -206,22 +213,38 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
             )}
           </div>
 
-          <div className="shrink-0 p-4 bg-[#f8f8f8] border-t border-[#e0e0e0] rounded-b-3xl">
-            <button
-              type="button"
-              onClick={handlePrint}
-              disabled={loadingSettings || printing || !connected}
-              className="w-full py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-black text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs"
-            >
-              <Printer className="h-4 w-4" />
-              <span>
-                {printing
-                  ? 'Mencetak…'
-                  : connected
-                    ? 'Cetak Kedua Nota (Internal + Customer)'
-                    : 'Hubungkan Printer Dulu untuk Cetak'}
-              </span>
-            </button>
+          <div className="shrink-0 p-4 bg-[#f8f8f8] border-t border-[#e0e0e0] rounded-b-3xl space-y-2">
+            {!connected ? (
+              <button
+                type="button"
+                disabled
+                className="w-full py-2.5 bg-slate-300 text-white rounded-xl font-black text-xs flex items-center justify-center gap-2 cursor-not-allowed"
+              >
+                <Printer className="h-4 w-4" />
+                Hubungkan Printer Dulu untuk Cetak
+              </button>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handlePrintVariant('internal')}
+                  disabled={printDisabled}
+                  className="w-full py-2.5 bg-white border-2 border-[#5f1340] text-[#5f1340] hover:bg-[#5f1340]/5 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-black text-xs flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Printer className="h-4 w-4 shrink-0" />
+                  <span>{printing === 'internal' ? 'Mencetak…' : 'Cetak Nota Internal'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePrintVariant('customer')}
+                  disabled={printDisabled}
+                  className="w-full py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-black text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                >
+                  <Printer className="h-4 w-4 shrink-0" />
+                  <span>{printing === 'customer' ? 'Mencetak…' : 'Cetak Nota Customer'}</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

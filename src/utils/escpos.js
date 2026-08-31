@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QRCodeCanvas } from 'qrcode.react';
-import { buildNotaModel, NOTA_DASH, NOTA_WIDTH } from './notaModel.js';
+import { buildNotaModel, NOTA_DASH, NOTA_WIDTH, wrapNotaText } from './notaModel.js';
 
 const encoder = new TextEncoder();
 
@@ -53,7 +53,7 @@ const BOLD_OFF = cmd(0x1b, 0x45, 0x00);
 const SIZE_TALL = cmd(0x1d, 0x21, 0x01);
 const SIZE_HUGE = cmd(0x1d, 0x21, 0x11);
 const SIZE_NORMAL = cmd(0x1d, 0x21, 0x00);
-const FEED = cmd(0x0a, 0x0a, 0x0a, 0x0a);
+const FEED_BEFORE_CUT = concat(cmd(0x1b, 0x64, 0x08), cmd(0x0a, 0x0a));
 const CUT = cmd(0x1d, 0x56, 0x00);
 
 /** Lebar cetak 58mm ~ 384 dots (203dpi) — harus kelipatan 8 */
@@ -67,6 +67,25 @@ const QR_PRINT_SIZE = 200;
 
 function resetStyle() {
   return concat(SIZE_NORMAL, BOLD_OFF, ALIGN_LEFT);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Pastikan QR canvas benar-benar ter-render sebelum dicetak */
+async function waitForQrPixels(canvas, minDark = 80) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  for (let i = 0; i < 24; i++) {
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let dark = 0;
+    for (let p = 0; p < data.length; p += 16) {
+      if (data[p] < 200) dark += 1;
+    }
+    if (dark >= minDark) return;
+    await sleep(30);
+  }
 }
 
 /**
@@ -89,8 +108,10 @@ async function renderQrCanvas(value, size) {
       }));
       requestAnimationFrame(() => requestAnimationFrame(resolve));
     });
+    await sleep(40);
     const src = host.querySelector('canvas');
     if (!src) throw new Error('QR canvas gagal dibuat');
+    await waitForQrPixels(src);
     const out = document.createElement('canvas');
     out.width = size;
     out.height = size;
@@ -134,24 +155,9 @@ function canvasStripToRaster(canvas) {
   );
 }
 
-/**
- * Kirim raster per-band agar tidak kepotong di buffer printer kecil.
- */
-function canvasToRaster(canvas, bandH = 120) {
-  const parts = [ALIGN_LEFT];
-  const w = canvas.width;
-  const fullH = canvas.height;
-
-  for (let y = 0; y < fullH; y += bandH) {
-    const h = Math.min(bandH, fullH - y);
-    const band = document.createElement('canvas');
-    band.width = w;
-    band.height = h;
-    band.getContext('2d').drawImage(canvas, 0, y, w, h, 0, 0, w, h);
-    parts.push(canvasStripToRaster(band));
-  }
-  parts.push(line(''));
-  return concat(...parts);
+/** Raster header — selalu satu strip utuh (stabil di RPP02N) */
+function canvasToRaster(canvas) {
+  return concat(ALIGN_LEFT, canvasStripToRaster(canvas), line(''));
 }
 
 /**
@@ -182,10 +188,7 @@ async function renderHeaderRaster(row) {
   let textX = pad;
   if (hasQr) {
     const qr = await renderQrCanvas(row.qr, qrSize);
-    // pastikan QR tidak keluar canvas
-    const qx = pad;
-    const qy = pad;
-    ctx.drawImage(qr, qx, qy, qrSize, qrSize);
+    ctx.drawImage(qr, pad, pad, qrSize, qrSize);
     textX = pad + qrSize + gap;
   }
 
@@ -203,7 +206,6 @@ async function renderHeaderRaster(row) {
 }
 
 function renderHeaderFallback(row) {
-  // Fallback teks-only jika canvas gagal
   const parts = [resetStyle()];
   (row.lines || []).forEach((l, i) => {
     if (i === 0) parts.push(BOLD_ON, line(String(l).slice(0, NOTA_WIDTH)), BOLD_OFF);
@@ -212,61 +214,77 @@ function renderHeaderFallback(row) {
   return concat(...parts);
 }
 
-async function renderModel(rows) {
-  const parts = [INIT, resetStyle()];
+function buildTextRowSegment(row) {
+  const parts = [resetStyle()];
 
-  for (const row of rows) {
-    if (row.type === 'blank') {
-      parts.push(line(''));
-      continue;
-    }
-    if (row.type === 'dash') {
-      parts.push(resetStyle(), line(NOTA_DASH));
-      continue;
-    }
-    if (row.type === 'header') {
-      try {
-        parts.push(await renderHeaderRaster(row));
-      } catch (err) {
-        console.warn('Header raster gagal, fallback teks:', err);
-        parts.push(renderHeaderFallback(row));
-      }
-      parts.push(resetStyle());
-      continue;
-    }
+  if (row.align === 'center') parts.push(ALIGN_CENTER);
+  else parts.push(ALIGN_LEFT);
 
-    if (row.align === 'center') parts.push(ALIGN_CENTER);
-    else parts.push(ALIGN_LEFT);
+  if (row.size === 'huge') parts.push(SIZE_HUGE);
+  else if (row.size === 'tall') parts.push(SIZE_TALL);
+  else parts.push(SIZE_NORMAL);
 
-    if (row.size === 'huge') parts.push(SIZE_HUGE);
-    else if (row.size === 'tall') parts.push(SIZE_TALL);
-    else parts.push(SIZE_NORMAL);
+  if (row.bold) parts.push(BOLD_ON);
+  else parts.push(BOLD_OFF);
 
-    if (row.bold) parts.push(BOLD_ON);
-    else parts.push(BOLD_OFF);
+  const raw = String(row.text || '');
+  const maxLen = row.size === 'huge' ? 16 : NOTA_WIDTH;
 
-    const maxLen = row.size === 'huge' ? 16 : NOTA_WIDTH;
-    const raw = String(row.text || '');
-    if (row.size === 'huge' && raw.length > maxLen) {
+  if (row.size === 'huge') {
+    if (raw.length > maxLen) {
       parts.push(line(raw.slice(0, maxLen)));
       parts.push(SIZE_HUGE, row.bold ? BOLD_ON : BOLD_OFF, line(raw.slice(maxLen, maxLen * 2)));
     } else {
       parts.push(line(raw.slice(0, maxLen)));
     }
-    parts.push(resetStyle());
+  } else {
+    for (const ln of wrapNotaText(raw, maxLen)) {
+      parts.push(line(String(ln).slice(0, maxLen)));
+    }
   }
 
-  parts.push(FEED, CUT);
+  parts.push(resetStyle());
   return concat(...parts);
+}
+
+async function renderModel(rows) {
+  const segments = [concat(INIT, resetStyle())];
+
+  for (const row of rows) {
+    if (row.type === 'blank') {
+      segments.push(line(''));
+      continue;
+    }
+    if (row.type === 'dash') {
+      segments.push(concat(resetStyle(), line(NOTA_DASH)));
+      continue;
+    }
+    if (row.type === 'header') {
+      try {
+        segments.push(await renderHeaderRaster(row));
+      } catch (err) {
+        console.warn('Header raster gagal, fallback teks:', err);
+        segments.push(renderHeaderFallback(row));
+      }
+      segments.push(resetStyle());
+      continue;
+    }
+
+    segments.push(buildTextRowSegment(row));
+  }
+
+  segments.push(concat(FEED_BEFORE_CUT, CUT));
+  return segments;
 }
 
 export async function buildEscPosNota(receipt, settings, variant = 'customer') {
   if (!receipt || !settings) return INIT;
-  return renderModel(buildNotaModel(receipt, settings, variant));
+  const segments = await renderModel(buildNotaModel(receipt, settings, variant));
+  return concat(...segments);
 }
 
 export async function buildEscPosDualNota(receipt, customerSettings, internalSettings) {
-  const a = await buildEscPosNota(receipt, internalSettings, 'internal');
-  const b = await buildEscPosNota(receipt, customerSettings, 'customer');
-  return concat(a, b);
+  const internal = await buildEscPosNota(receipt, internalSettings, 'internal');
+  const customer = await buildEscPosNota(receipt, customerSettings, 'customer');
+  return concat(internal, customer);
 }

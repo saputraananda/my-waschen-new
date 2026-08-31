@@ -166,7 +166,7 @@ export default function DailyReport() {
                   <span className="font-black text-[#313030]">Rp {Number(s.actual_cash || 0).toLocaleString('id-ID')}</span>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-xl border border-[#e0e0e0]">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase block">Revenue Dideklarasi</span>
+                  <span className="text-[9px] text-slate-400 font-bold uppercase block">Revenue</span>
                   <span className="font-black text-[#5f1340]">Rp {Number(s.declared_revenue || 0).toLocaleString('id-ID')}</span>
                 </div>
               </div>

@@ -206,17 +206,29 @@ export async function tryReconnectThermalPrinter() {
   }
 }
 
+let writeInProgress = false;
+
 /**
- * Kirim raw ESC/POS bytes ke printer yang sudah terkoneksi.
+ * Kirim ESC/POS utuh — jangan potong 512 byte (penyebab nota korup).
  */
 export async function writeToThermalPrinter(bytes) {
   if (!isPrinterConnected()) {
     throw new Error('Printer belum terhubung. Hubungkan dulu di Setting Printer.');
   }
+  if (writeInProgress) {
+    throw new Error('Printer sedang mencetak. Tunggu selesai dulu.');
+  }
+
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const CHUNK = 512;
-  for (let i = 0; i < data.length; i += CHUNK) {
-    await writer.write(data.subarray(i, Math.min(i + CHUNK, data.length)));
-    await new Promise((r) => setTimeout(r, 20));
+  if (!data.length) return;
+
+  writeInProgress = true;
+  try {
+    await writer.ready;
+    await writer.write(data);
+    await writer.ready;
+    await new Promise((r) => setTimeout(r, 200));
+  } finally {
+    writeInProgress = false;
   }
 }
