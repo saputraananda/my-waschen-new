@@ -4,6 +4,7 @@ import axios from 'axios';
 import OpenShiftModal from '../pages/Shift/OpenShiftModal.jsx';
 import CloseShiftModal from '../pages/Shift/CloseShiftModal.jsx';
 import ResumeShiftModal from '../pages/Shift/ResumeShiftModal.jsx';
+import UploadDepositModal from '../pages/Shift/UploadDepositModal.jsx';
 import {
   clearShiftFromStorage,
   getLoggedInEmployeeId,
@@ -60,6 +61,10 @@ export function ShiftProvider({ children }) {
   const [isCloseShiftOpen, setIsCloseShiftOpen] = useState(false);
   const [pendingNavigatePath, setPendingNavigatePath] = useState(null);
   const [outletId, setOutletId] = useState(localStorage.getItem('activeOutletId') || '2');
+  /** Setoran tunai closing Final sebelumnya yang belum diupload buktinya (gate open/close shift) */
+  const [pendingDeposit, setPendingDeposit] = useState(null);
+  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+  const [depositGateReason, setDepositGateReason] = useState(null); // 'open' | 'close'
   /** Reactive auth flags — di-sync setelah login / ganti route (localStorage tidak trigger re-render) */
   const [mustGateShift, setMustGateShift] = useState(() => requiresShiftGate());
   const [hasToken, setHasToken] = useState(() => !!localStorage.getItem('token'));
@@ -232,13 +237,57 @@ export function ShiftProvider({ children }) {
     return fetchCurrentShift(oid, { soft: options.soft !== false });
   }, [fetchCurrentShift, outletId]);
 
-  const openCloseModal = useCallback(() => setIsCloseShiftOpen(true), []);
+  /** Cek closing Final terlama yang belum diupload bukti setorannya. Return true jika ada (dan modal deposit ditampilkan). */
+  const checkPendingDeposit = useCallback(async (reason) => {
+    const oid = localStorage.getItem('activeOutletId') || outletId || '2';
+    try {
+      const res = await axios.get('/api/shifts/pending-deposit', { params: { outlet_id: oid } });
+      const pending = res.data?.success ? res.data.data : null;
+      if (pending) {
+        setPendingDeposit({ ...pending, _gateReason: reason });
+        setDepositGateReason(reason);
+        setIsDepositModalOpen(true);
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('Gagal cek pending deposit:', err);
+      return false;
+    }
+  }, [outletId]);
 
-  const requestOpenShift = useCallback((options = {}) => {
+  const openCloseModal = useCallback(async () => {
+    const blocked = await checkPendingDeposit('close');
+    if (blocked) return;
+    setIsCloseShiftOpen(true);
+  }, [checkPendingDeposit]);
+
+  const requestOpenShift = useCallback(async (options = {}) => {
     if (options.thenNavigate) {
       setPendingNavigatePath(typeof options.thenNavigate === 'string' ? options.thenNavigate : '/transaction');
     }
+    const blocked = await checkPendingDeposit('open');
+    if (blocked) return;
     setIsOpenShiftModalOpen(true);
+  }, [checkPendingDeposit]);
+
+  const handleDepositUploaded = useCallback(() => {
+    const reason = depositGateReason;
+    setIsDepositModalOpen(false);
+    setPendingDeposit(null);
+    setDepositGateReason(null);
+    // Lanjutkan aksi yang tadi digate (bisa jadi masih ada pending lain — checkPendingDeposit akan cek ulang)
+    if (reason === 'close') {
+      openCloseModal();
+    } else if (reason === 'open') {
+      requestOpenShift();
+    }
+  }, [depositGateReason, openCloseModal, requestOpenShift]);
+
+  const cancelDepositModal = useCallback(() => {
+    setIsDepositModalOpen(false);
+    setPendingDeposit(null);
+    setDepositGateReason(null);
   }, []);
 
   /**
@@ -357,11 +406,13 @@ export function ShiftProvider({ children }) {
     cancelShiftGate,
     mustGateShift,
     isHq,
-    isShiftReady: !mustGateShift || (Boolean(activeShift) && sessionReady)
+    isShiftReady: !mustGateShift || (Boolean(activeShift) && sessionReady),
+    checkPendingDeposit
   }), [
     activeShift,
     applyOpenShift,
     cancelShiftGate,
+    checkPendingDeposit,
     ensureShiftForOrder,
     ensureShiftThenNavigate,
     isCloseShiftOpen,
@@ -405,6 +456,15 @@ export function ShiftProvider({ children }) {
           employeeId={employeeId}
           onClose={() => setIsCloseShiftOpen(false)}
           onClosed={handleShiftClosed}
+        />
+      )}
+
+      {showShiftGate && isDepositModalOpen && pendingDeposit && (
+        <UploadDepositModal
+          pendingDeposit={pendingDeposit}
+          employeeId={employeeId}
+          onUploaded={handleDepositUploaded}
+          onCancel={cancelDepositModal}
         />
       )}
     </ShiftContext.Provider>

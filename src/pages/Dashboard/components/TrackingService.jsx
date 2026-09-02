@@ -21,7 +21,8 @@ import axios from 'axios';
 import { formatName } from '../../../utils/FormatName.js';
 import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
-import { STATUS_STEPS, DEFAULT_WORK_STATUSES, getWorkPercentage, percentageTone, formatWorkPercentage, matchesWorkStatusTab } from '../../../utils/workStatusMeta.js';
+import { STATUS_STEPS, DEFAULT_WORK_STATUSES, getWorkPercentage, percentageTone, formatWorkPercentage } from '../../../utils/workStatusMeta.js';
+import { NOTA_QUEUE_TABS, matchesNotaQueueTab, getNotaQueueLabel } from '../../../utils/notaQueueMeta.js';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import TransactionBarcodeCard from '../../../components/TransactionBarcodeCard.jsx';
 import ModalLacakNota from '../../../components/ModalLacakNota.jsx';
@@ -40,7 +41,6 @@ export default function TrackingService({
   const { showAlert } = useAppDialog();
   const [selectedOrderModal, setSelectedOrderModal] = useState(null);
   const [isLacakModalOpen, setIsLacakModalOpen] = useState(false);
-  const [workStatusTabs, setWorkStatusTabs] = useState([]);
   const [workStatusOptions, setWorkStatusOptions] = useState(DEFAULT_WORK_STATUSES);
   const [updatingItemId, setUpdatingItemId] = useState(null);
   const [outlets, setOutlets] = useState([]);
@@ -68,14 +68,6 @@ export default function TrackingService({
   };
 
   useEffect(() => {
-    axios.get('/api/masters/work-statuses?filter_tabs=1')
-      .then((res) => {
-        if (res.data?.success) {
-          setWorkStatusTabs((res.data.data || []).map((s) => s.label || s.name));
-        }
-      })
-      .catch((err) => console.error('Gagal memuat work status:', err));
-
     axios.get('/api/masters/work-statuses')
       .then((res) => {
         if (res.data?.success && res.data.data?.length) {
@@ -252,43 +244,24 @@ export default function TrackingService({
     }
   };
 
-  // Filter States: Payment Status & Date
-  const [paymentFilter, setPaymentFilter] = useState('Semua');
+  // Filter State: tanggal transaksi
   const [dateFilter, setDateFilter] = useState('');
 
-  // Compute final displayed orders
-  const displayOrders = filteredOrders.filter(order => {
-    if (paymentFilter === 'Lunas' && order.paymentStatus !== 'Lunas') return false;
-    if (paymentFilter === 'DP' && order.paymentStatus !== 'DP') return false;
-    if (paymentFilter === 'Outstanding' && order.paymentStatus !== 'Outstanding' && order.paymentStatus !== 'Belum Lunas') return false;
-    if (paymentFilter === 'Sisa Tagihan' && order.paymentStatus === 'Lunas') return false;
+  const passesDateFilter = (order) => {
+    if (!dateFilter) return true;
+    const orderDateStr = order.rawDate
+      ? new Date(order.rawDate).toISOString().slice(0, 10)
+      : '';
+    return orderDateStr === dateFilter;
+  };
 
-    if (dateFilter) {
-      const orderDateStr = order.rawDate
-        ? new Date(order.rawDate).toISOString().slice(0, 10)
-        : '';
-      if (orderDateStr !== dateFilter) return false;
-    }
+  // filteredOrders sudah difilter tab antrean di Dashboard; di sini hanya filter tanggal
+  const displayOrders = filteredOrders.filter(passesDateFilter);
 
-    return true;
-  });
-
-  // Helper to count orders for each status tab
   const getTabCount = (tabName) => {
-    const baseList = orders.filter(order => {
-      if (paymentFilter === 'Lunas' && order.paymentStatus !== 'Lunas') return false;
-      if (paymentFilter === 'DP' && order.paymentStatus !== 'DP') return false;
-      if (paymentFilter === 'Outstanding' && order.paymentStatus !== 'Outstanding' && order.paymentStatus !== 'Belum Lunas') return false;
-      if (paymentFilter === 'Sisa Tagihan' && order.paymentStatus === 'Lunas') return false;
-      if (dateFilter) {
-        const orderDateStr = order.rawDate ? new Date(order.rawDate).toISOString().slice(0, 10) : '';
-        if (orderDateStr !== dateFilter) return false;
-      }
-      return true;
-    });
-
+    const baseList = orders.filter(passesDateFilter);
     if (tabName === 'Semua') return baseList.length;
-    return baseList.filter((o) => matchesWorkStatusTab(o.workStatus, tabName)).length;
+    return baseList.filter((o) => matchesNotaQueueTab(o, tabName)).length;
   };
 
   return (
@@ -302,7 +275,7 @@ export default function TrackingService({
               {displayOrders.length} Order
             </span>
           </div>
-          <p className="text-xs text-slate-400 font-medium mt-0.5">Klik baris untuk rincian status pengerjaan per item</p>
+          <p className="text-xs text-slate-400 font-medium mt-0.5">Filter berdasarkan progress nota, pembayaran & pengambilan barang</p>
         </div>
 
         {/* Clean Filter Controls Toolbar */}
@@ -343,26 +316,15 @@ export default function TrackingService({
             title="Filter Tanggal Transaksi"
           />
 
-          {/* Payment Status Dropdown Select */}
-          <select
-            value={paymentFilter}
-            onChange={(e) => setPaymentFilter(e.target.value)}
-            className="px-3 py-1.5 border border-[#e0e0e0] bg-white rounded-xl outline-none focus:border-[#5f1340] text-xs font-bold text-[#313030] cursor-pointer"
-          >
-            <option value="Semua">Semua Bayar</option>
-            <option value="Lunas">Lunas Only</option>
-            <option value="DP">DP Only</option>
-            <option value="Outstanding">Outstanding Only</option>
-            <option value="Sisa Tagihan">Sisa Tagihan</option>
-          </select>
+          {/* Payment status sudah digabung di tab antrean di bawah */}
 
-          {/* Reset Filters Button */}
-          {(dateFilter || paymentFilter !== 'Semua') && (
+          {/* Reset date filter */}
+          {dateFilter && (
             <button
               type="button"
-              onClick={() => { setDateFilter(''); setPaymentFilter('Semua'); }}
+              onClick={() => setDateFilter('')}
               className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-all cursor-pointer"
-              title="Reset Filter Tanggal & Bayar"
+              title="Reset filter tanggal"
             >
               <RotateCcw className="h-3.5 w-3.5" />
             </button>
@@ -372,9 +334,10 @@ export default function TrackingService({
 
       {/* Filter Tabs with Live Counters */}
       <div className="px-5 border-b border-[#e0e0e0]/60 flex gap-2 overflow-x-auto py-2.5 bg-slate-50/30 no-scrollbar">
-        {['Semua', ...(workStatusTabs.length ? workStatusTabs : ['Antrean', 'Pencucian', 'Penyetrikaan', 'Pengemasan', 'Siap Diambil / Diantar', 'Selesai'])].map((tab) => {
+        {['Semua', ...NOTA_QUEUE_TABS.map((t) => t.key)].map((tab) => {
           const active = activeFilterTab === tab;
           const count = getTabCount(tab);
+          const label = tab === 'Semua' ? 'Semua' : (NOTA_QUEUE_TABS.find((t) => t.key === tab)?.label || tab);
 
           return (
             <button
@@ -387,7 +350,7 @@ export default function TrackingService({
                   : 'bg-white border border-[#e0e0e0]/70 text-slate-600 hover:border-[#5f1340]/40 hover:text-[#5f1340]'
               }`}
             >
-              <span>{tab}</span>
+              <span>{label}</span>
               <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
                 active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
               }`}>
@@ -458,7 +421,7 @@ export default function TrackingService({
                     {/* Status Pengerjaan */}
                     <td className="py-3.5 px-6 text-center whitespace-nowrap">
                       <span
-                        title={order.workStatus}
+                        title={`${getNotaQueueLabel(order)} · ${formatWorkPercentage(order.workStatus)}`}
                         className={`inline-flex items-center justify-center min-w-[52px] px-3 py-1 rounded-full border text-xs font-black shadow-2xs ${pctTone.bg} ${pctTone.text}`}
                       >
                         {formatWorkPercentage(order.workStatus)}

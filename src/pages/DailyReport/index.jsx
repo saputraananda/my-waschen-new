@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav';
 import { formatEmployeeName } from '../../utils/FormatName.js';
-import { Copy, FileText } from 'lucide-react';
+import { Copy, FileText, Banknote } from 'lucide-react';
 
 export default function DailyReport() {
   const navigate = useNavigate();
@@ -174,6 +174,36 @@ export default function DailyReport() {
               {s.open_imbalance_reason && (
                 <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900">
                   <strong>Alasan imbalance open:</strong> {s.open_imbalance_reason}
+                </div>
+              )}
+
+              {s.close_type === 'Final' && (
+                <div className="p-3 bg-slate-50 border border-[#e0e0e0] rounded-xl text-[11px] space-y-2">
+                  <span className="text-[9px] text-slate-400 font-bold uppercase flex items-center gap-1.5">
+                    <Banknote className="h-3.5 w-3.5" /> Setoran Tunai (diupload hari berikutnya)
+                  </span>
+                  {s.deposit_proof_url ? (
+                    <div className="flex flex-wrap items-start gap-3">
+                      <a
+                        href={s.deposit_proof_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[#5f1340] font-black underline"
+                      >
+                        Lihat Bukti Setoran
+                      </a>
+                      {s.deposit_notes && (
+                        <span className="text-slate-600 font-medium">Catatan: {s.deposit_notes}</span>
+                      )}
+                      {s.deposit_uploaded_at && (
+                        <span className="text-slate-400">
+                          · {new Date(s.deposit_uploaded_at).toLocaleString('id-ID')}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-amber-700 font-bold">Belum diupload</span>
+                  )}
                 </div>
               )}
 

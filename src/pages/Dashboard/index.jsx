@@ -15,7 +15,7 @@ import TrackingService from './components/TrackingService.jsx';
 import ModalLacakNota from '../../components/ModalLacakNota.jsx';
 import BadgeShift from './components/BadgeShift.jsx';
 import { useShift } from '../../context/ShiftContext.jsx';
-import { matchesWorkStatusTab, getWorkPercentage } from '../../utils/workStatusMeta.js';
+import { isNotaWorkComplete, isNotaPickedUp } from '../../utils/notaQueueMeta.js';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -122,6 +122,7 @@ export default function Dashboard() {
           paymentMethod: o.payment_method || '-',
           paymentProofUrl: o.payment_proof_url || null,
           workStatus: o.work_status ?? 10,
+          pickedUpAt: o.picked_up_at || null,
           isDelivery: o.is_delivery === 1,
           rawDate: o.order_date ? new Date(o.order_date) : new Date(),
           createdAt: o.order_date
@@ -335,11 +336,8 @@ export default function Dashboard() {
     .filter(o => o.paymentStatus === 'Lunas')
     .reduce((acc, curr) => acc + curr.totalAmount, 0);
 
-  const activeOrdersCount = orders.filter((o) => {
-    const pct = getWorkPercentage(o.workStatus);
-    return pct > 0 && pct < 100;
-  }).length;
-  const readyOrdersCount = orders.filter((o) => matchesWorkStatusTab(o.workStatus, 'Siap Diambil')).length;
+  const activeOrdersCount = orders.filter((o) => !isNotaWorkComplete(o)).length;
+  const readyOrdersCount = orders.filter((o) => isNotaWorkComplete(o) && !isNotaPickedUp(o)).length;
   const unpaidOrdersCount = orders.filter(o => o.paymentStatus !== 'Lunas').length;
 
   // Cash log sum calculations
@@ -354,7 +352,7 @@ export default function Dashboard() {
       order.serviceType.toLowerCase().includes(searchQuery.toLowerCase());
 
     if (activeFilterTab === 'Semua') return matchesSearch;
-    return matchesSearch && matchesWorkStatusTab(order.workStatus, activeFilterTab);
+    return matchesSearch && matchesNotaQueueTab(order, activeFilterTab);
   });
 
   return (

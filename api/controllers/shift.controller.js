@@ -1,5 +1,7 @@
 import { myWaschenPool, mainPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
+import { buildUploadPublicUrl, DEPOSIT_REPORT_FRONTLINER_SUBDIR } from '../middleware/upload.js';
+import path from 'path';
 
 const formatRp = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
 
@@ -125,6 +127,103 @@ SISA PETTY CASH : ${formatRp(sisaPetty)}
 };
 
 /**
+ * Cari closing Final terlama yang belum diupload bukti setorannya untuk outlet ini.
+ * (FIFO — jika ada beberapa hari libur/terlewat, yang paling lama duluan yang wajib diselesaikan)
+ */
+const findPendingDeposit = async (outletId) => {
+  const [rows] = await myWaschenPool.query(
+    `SELECT id, outlet_id, shift_number, closed_at, declared_revenue
+     FROM tr_cashier_shift
+     WHERE outlet_id = ? AND status = 'Closed' AND close_type = 'Final' AND deposit_proof_url IS NULL
+     ORDER BY closed_at ASC, id ASC
+     LIMIT 1`,
+    [outletId]
+  );
+  if (!rows.length) return null;
+  const [[{ total }]] = await myWaschenPool.query(
+    `SELECT COUNT(*) AS total FROM tr_cashier_shift
+     WHERE outlet_id = ? AND status = 'Closed' AND close_type = 'Final' AND deposit_proof_url IS NULL`,
+    [outletId]
+  );
+  return { ...rows[0], pendingCount: total };
+};
+
+/**
+ * GET /api/shifts/pending-deposit?outlet_id=
+ */
+export const getPendingDeposit = async (req, res) => {
+  try {
+    const outletId = parseInt(req.query.outlet_id) || 2;
+    const pending = await findPendingDeposit(outletId);
+    return res.status(200).json({ success: true, data: pending });
+  } catch (error) {
+    console.error('getPendingDeposit:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * POST /api/shifts/:id/deposit-proof
+ * multipart: proof (file), body: { notes, uploadedBy }
+ * Upload bukti setoran tunai untuk closing Final SEBELUMNYA (id shift kemarin).
+ */
+export const uploadDepositProof = async (req, res) => {
+  try {
+    const shiftId = parseInt(req.params.id);
+    const { notes, uploadedBy } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Bukti setoran wajib diupload' });
+    }
+
+    const [rows] = await myWaschenPool.query(
+      `SELECT id, close_type, status FROM tr_cashier_shift WHERE id = ?`,
+      [shiftId]
+    );
+    if (!rows.length) {
+      return res.status(404).json({ success: false, message: 'Shift tidak ditemukan' });
+    }
+    if (rows[0].status !== 'Closed' || rows[0].close_type !== 'Final') {
+      return res.status(400).json({ success: false, message: 'Bukti setoran hanya berlaku untuk closing Final' });
+    }
+
+    const relativePath = path.posix.join(DEPOSIT_REPORT_FRONTLINER_SUBDIR, req.file.filename);
+    const proofUrl = buildUploadPublicUrl(relativePath);
+
+    await myWaschenPool.query(
+      `UPDATE tr_cashier_shift SET
+         deposit_proof_url = ?,
+         deposit_notes = ?,
+         deposit_uploaded_at = NOW(),
+         deposit_uploaded_by = ?,
+         updated_at = NOW()
+       WHERE id = ?`,
+      [proofUrl, notes || null, parseInt(uploadedBy) || null, shiftId]
+    );
+
+    const [updated] = await myWaschenPool.query(
+      'SELECT * FROM tr_cashier_shift WHERE id = ?',
+      [shiftId]
+    );
+
+    emitDashboardRefresh('shift:updated', {
+      outletId: updated[0]?.outlet_id,
+      shiftId,
+      action: 'deposit-proof'
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Bukti setoran berhasil diupload',
+      data: await enrichShiftRow(updated[0])
+    });
+  } catch (error) {
+    console.error('uploadDepositProof:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
  * GET /api/shifts/current?outlet_id=
  */
 export const getCurrentShift = async (req, res) => {
@@ -211,6 +310,16 @@ export const openShift = async (req, res) => {
     const eid = parseInt(cashierEmployeeId);
     if (!eid) {
       return res.status(400).json({ success: false, message: 'cashierEmployeeId wajib diisi' });
+    }
+
+    const pendingDeposit = await findPendingDeposit(oid);
+    if (pendingDeposit) {
+      return res.status(400).json({
+        success: false,
+        message: 'Masih ada setoran tunai closing sebelumnya yang belum diupload buktinya. Upload dulu sebelum open shift.',
+        requireDeposit: true,
+        data: pendingDeposit
+      });
     }
 
     const [openRows] = await myWaschenPool.query(
@@ -471,6 +580,16 @@ export const closeShift = async (req, res) => {
     const shift = shiftRows[0];
     if (shift.status !== 'Open') {
       return res.status(400).json({ success: false, message: 'Shift sudah ditutup' });
+    }
+
+    const pendingDeposit = await findPendingDeposit(shift.outlet_id);
+    if (pendingDeposit) {
+      return res.status(400).json({
+        success: false,
+        message: 'Masih ada setoran tunai closing sebelumnya yang belum diupload buktinya. Upload dulu sebelum closing.',
+        requireDeposit: true,
+        data: pendingDeposit
+      });
     }
 
     const sn = Number(shift.shift_number);
