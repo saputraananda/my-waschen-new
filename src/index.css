@@ -3,11 +3,42 @@
 @tailwind utilities;
 
 @layer base {
+  :root,
+  html,
+  body {
+    color-scheme: only light;
+    background-color: #f8fafc;
+    color: #0f172a;
+  }
+
+  html {
+    forced-color-adjust: none;
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     font-family: 'Plus Jakarta Sans', 'Poppins', sans-serif;
   }
+
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Plus Jakarta Sans', 'Poppins', sans-serif;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    color-scheme: light;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root,
+  html,
+  body {
+    color-scheme: only light;
+    background-color: #f8fafc;
+    color: #0f172a;
   }
 }
 

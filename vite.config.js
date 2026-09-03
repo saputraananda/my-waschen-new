@@ -8,7 +8,18 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['waschen.webp', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
+      includeAssets: [
+        'waschen.webp',
+        'apple-touch-icon.png',
+        'pwa-192x192.png',
+        'pwa-512x512.png',
+        'splash-2048x2732.png',
+        'splash-2732x2048.png',
+        'splash-1668x2388.png',
+        'splash-2388x1668.png',
+        'splash-1640x2360.png',
+        'splash-2360x1640.png'
+      ],
       manifest: {
         name: 'Waschen Laundry',
         short_name: 'Waschen',
