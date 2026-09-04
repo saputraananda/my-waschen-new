@@ -53,7 +53,7 @@ function ThresholdModal({ row, isAdmin, onClose, onDone }) {
           {isAdmin && (
             <>
               <div>
-                <label className="text-[10px] font-extrabold uppercase block mb-1">Stok Awal</label>
+                <label className="text-[10px] font-extrabold uppercase block mb-1">Stok SO Management</label>
                 <input
                   type="number"
                   step="0.01"
@@ -117,7 +117,7 @@ function AktualModal({ row, usageDate, onClose, onDone }) {
     if (direction === 'subtract' && n > totalHari) {
       await showAlert({
         title: 'Gagal',
-        message: `Maks. kurang ${fmtQty(totalHari)}`,
+        message: `Maks. dikembalikan ${fmtQty(totalHari)}`,
         type: 'warning'
       });
       return;
@@ -158,8 +158,8 @@ function AktualModal({ row, usageDate, onClose, onDone }) {
   };
 
   const tabs = [
-    { id: 'add', label: 'Tambah' },
-    { id: 'subtract', label: 'Kurang' },
+    { id: 'add', label: 'Dipakai' },
+    { id: 'subtract', label: 'Dikembalikan' },
     { id: 'reset', label: 'Reset' }
   ];
 
@@ -234,7 +234,7 @@ function AktualCell({ row, usageDate, onOpen }) {
     <button
       type="button"
       onClick={() => onOpen(row)}
-      title="Klik untuk tambah/kurang pemakaian"
+      title="Klik untuk catat dipakai / dikembalikan"
       className="min-w-[4.5rem] px-3 py-1.5 border border-[#5f1340]/30 rounded-lg text-center text-xs font-black text-[#5f1340] bg-white hover:bg-[#5f1340]/5 cursor-pointer transition-colors"
     >
       {fmtQty(totalHari)}
@@ -354,10 +354,10 @@ export default function StockDashboard({
               <tr className="bg-[#f8f8f8] text-slate-400 font-extrabold uppercase text-[10px] border-b">
                 <th className="py-3 px-3">Item</th>
                 <th className="py-3 px-3">Satuan</th>
-                <th className="py-3 px-3 text-center">Stok Awal</th>
+                <th className="py-3 px-3 text-center">Stok SO Management</th>
                 <th className="py-3 px-3 text-center">Min</th>
                 <th className="py-3 px-3 text-center">Seharusnya</th>
-                <th className="py-3 px-3 text-center">Aktual</th>
+                <th className="py-3 px-3 text-center">SO Outlet</th>
                 <th className="py-3 px-3 text-center">Sisa</th>
                 <th className="py-3 px-3 text-center">Selisih</th>
                 <th className="py-3 px-3 text-center w-16">Aksi</th>

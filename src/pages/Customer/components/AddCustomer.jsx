@@ -382,7 +382,23 @@ export default function AddCustomer({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="flex flex-col gap-1">
                       <label className={labelCls}>Tanggal Lahir</label>
-                      <input className={fieldCls} type="date" value={form.birthDate} onChange={(e) => patch({ birthDate: e.target.value })} />
+                      <div className="relative">
+                        {!form.birthDate && (
+                          <span
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-y-0 left-2.5 z-[1] flex items-center text-xs font-semibold text-slate-400"
+                          >
+                            dd/mm/yyyy
+                          </span>
+                        )}
+                        <input
+                          className={`${fieldCls} w-full ${!form.birthDate ? 'text-transparent [&::-webkit-datetime-edit]:text-transparent [&::-webkit-calendar-picker-indicator]:opacity-100' : ''}`}
+                          type="date"
+                          value={form.birthDate}
+                          onChange={(e) => patch({ birthDate: e.target.value })}
+                          aria-label="Tanggal lahir"
+                        />
+                      </div>
                     </div>
                     <div className="flex flex-col gap-1">
                       <label className={labelCls}>Pekerjaan</label>
@@ -515,7 +531,7 @@ export default function AddCustomer({
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className={labelCls}>Kota</label>
-                    <input className={fieldCls} value={form.city} onChange={(e) => patch({ city: e.target.value })} />
+                    <input className={fieldCls} placeholder="Jakarta Timur" value={form.city} onChange={(e) => patch({ city: e.target.value })} />
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className={labelCls}>Kode POS</label>
