@@ -15,7 +15,7 @@ import TrackingService from './components/TrackingService.jsx';
 import ModalLacakNota from '../../components/ModalLacakNota.jsx';
 import BadgeShift from './components/BadgeShift.jsx';
 import { useShift } from '../../context/ShiftContext.jsx';
-import { isNotaWorkComplete, isNotaPickedUp } from '../../utils/notaQueueMeta.js';
+import { isNotaWorkComplete, isNotaPickedUp, matchesNotaQueueTab } from '../../utils/notaQueueMeta.js';
 
 export default function Dashboard() {
   const navigate = useNavigate();
