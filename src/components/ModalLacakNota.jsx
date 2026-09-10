@@ -28,10 +28,46 @@ import {
 
 const SCANNER_ELEMENT_ID = 'waschen-nota-scanner';
 
+/**
+ * Ambil nomor nota dari hasil scan QR/barcode.
+ * QR nota POS berisi URL: `{origin}/dashboard?trackingNo=WLCG202608310001`
+ * Fallback: plain order_no / barcode / pola legacy WS-...
+ */
 const extractOrderNo = (raw) => {
   const text = String(raw || '').trim();
+  if (!text) return '';
+
+  try {
+    const url = new URL(text);
+    const tracking =
+      url.searchParams.get('trackingNo') ||
+      url.searchParams.get('tracking_no') ||
+      url.searchParams.get('orderNo') ||
+      url.searchParams.get('order_no') ||
+      url.searchParams.get('nota') ||
+      url.searchParams.get('barcode');
+    if (tracking) return decodeURIComponent(tracking).trim();
+  } catch {
+    // bukan URL absolut
+  }
+
+  const qsMatch = text.match(
+    /[?&#](?:trackingNo|tracking_no|orderNo|order_no|nota|barcode)=([^&#]+)/i
+  );
+  if (qsMatch?.[1]) {
+    try {
+      return decodeURIComponent(qsMatch[1]).trim();
+    } catch {
+      return qsMatch[1].trim();
+    }
+  }
+
   const wsMatch = text.match(/WS-\d+/i);
   if (wsMatch) return wsMatch[0].toUpperCase();
+
+  const wlMatch = text.match(/\bWL[A-Z]{0,4}\d{8,}\b/i);
+  if (wlMatch) return wlMatch[0].toUpperCase();
+
   return text;
 };
 
@@ -55,7 +91,7 @@ const STATUS_ICONS = {
   Dibatalkan: AlertCircle
 };
 
-export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' }) {
+export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '', autoOpenScanner = false }) {
   const [searchKey, setSearchKey] = useState(initialOrderNo || '');
   const [trackedOrder, setTrackedOrder] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -66,6 +102,7 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
   const [scannerError, setScannerError] = useState('');
   const scannerRef = useRef(null);
   const searchHandlerRef = useRef(null);
+  const scanHandledRef = useRef(false);
 
   useEffect(() => {
     axios.get('/api/masters/work-statuses?filter_tabs=1')
@@ -89,11 +126,15 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
         setSearchKey(initialOrderNo);
         handleSearchOrder(initialOrderNo);
       }
+      if (autoOpenScanner) {
+        setScannerError('');
+        setIsScannerOpen(true);
+      }
       axios.get('/api/transactions?limit=6')
         .then(res => {
           if (res.data && res.data.success && res.data.data) {
             setRecentOrders(res.data.data);
-            if (!initialOrderNo && res.data.data.length > 0) {
+            if (!initialOrderNo && !autoOpenScanner && res.data.data.length > 0) {
               const firstNo = res.data.data[0].order_no;
               setSearchKey(firstNo);
               handleSearchOrder(firstNo);
@@ -101,11 +142,14 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
           }
         })
         .catch(err => console.error('Failed to fetch recent orders:', err));
+    } else {
+      setIsScannerOpen(false);
+      setScannerError('');
     }
-  }, [isOpen, initialOrderNo]);
+  }, [isOpen, initialOrderNo, autoOpenScanner]);
 
   const handleSearchOrder = useCallback(async (queryKey) => {
-    const targetKey = queryKey || searchKey;
+    const targetKey = extractOrderNo(queryKey || searchKey);
     if (!targetKey || !targetKey.trim()) {
       setErrorMessage('Harap masukkan nomor nota!');
       return;
@@ -114,9 +158,10 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
     setIsLoading(true);
     setErrorMessage('');
     try {
-      const res = await axios.get(`/api/transactions/${targetKey.trim()}`);
+      const res = await axios.get(`/api/transactions/${encodeURIComponent(targetKey.trim())}`);
       if (res.data && res.data.success && res.data.data) {
         setTrackedOrder(res.data.data);
+        setSearchKey(res.data.data.order_no || targetKey.trim());
       } else {
         setTrackedOrder(null);
         setErrorMessage(`Nota dengan nomor "${targetKey}" tidak ditemukan.`);
@@ -160,10 +205,14 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
     if (!isScannerOpen) return undefined;
 
     let cancelled = false;
+    scanHandledRef.current = false;
 
     const startScanner = async () => {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 200));
       if (cancelled) return;
+
+      const el = document.getElementById(SCANNER_ELEMENT_ID);
+      if (el) el.innerHTML = '';
 
       const scanner = new Html5Qrcode(SCANNER_ELEMENT_ID, {
         verbose: false,
@@ -179,9 +228,19 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
       try {
         await scanner.start(
           { facingMode: 'environment' },
-          { fps: 10, qrbox: { width: 260, height: 260 }, aspectRatio: 1.0 },
+          {
+            fps: 12,
+            qrbox: (viewW, viewH) => {
+              const side = Math.floor(Math.min(viewW, viewH) * 0.72);
+              return { width: Math.max(180, side), height: Math.max(180, side) };
+            },
+            aspectRatio: 1.0
+          },
           (decodedText) => {
+            if (cancelled || scanHandledRef.current) return;
             const orderNo = extractOrderNo(decodedText);
+            if (!orderNo) return;
+            scanHandledRef.current = true;
             stopScanner().then(() => {
               setSearchKey(orderNo);
               searchHandlerRef.current?.(orderNo);
@@ -189,15 +248,17 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
           },
           () => {}
         );
-        setScannerError('');
+        if (!cancelled) setScannerError('');
       } catch (err) {
         console.error('Scanner error:', err);
         scannerRef.current = null;
-        setScannerError(
-          err?.message?.includes('NotAllowed')
-            ? 'Akses kamera ditolak. Izinkan kamera di browser lalu coba lagi.'
-            : (err?.message || 'Tidak dapat membuka kamera. Pastikan perangkat memiliki kamera dan browser mendukung HTTPS/localhost.')
-        );
+        if (!cancelled) {
+          setScannerError(
+            err?.message?.includes('NotAllowed')
+              ? 'Akses kamera ditolak. Izinkan kamera di browser lalu coba lagi.'
+              : (err?.message || 'Tidak dapat membuka kamera. Pastikan perangkat memiliki kamera dan browser mendukung HTTPS/localhost.')
+          );
+        }
       }
     };
 
@@ -208,7 +269,9 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
       const scanner = scannerRef.current;
       scannerRef.current = null;
       if (scanner?.isScanning) {
-        scanner.stop().catch(() => {}).finally(() => scanner.clear());
+        scanner.stop().catch(() => {}).finally(() => {
+          try { scanner.clear(); } catch { /* ignore */ }
+        });
       }
     };
   }, [isScannerOpen, stopScanner]);
@@ -592,7 +655,7 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '' })
                 <Camera className="h-4 w-4 text-[#5f1340]" />
                 <div>
                   <h4 className="text-sm font-black text-[#313030]">Scan Barcode / QR Nota</h4>
-                  <p className="text-[10px] text-slate-400">Arahkan kamera ke struk nota (WS-...)</p>
+                  <p className="text-[10px] text-slate-400">Arahkan kamera ke QR tracking / barcode struk</p>
                 </div>
               </div>
               <button

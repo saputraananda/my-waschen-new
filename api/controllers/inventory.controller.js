@@ -1,4 +1,4 @@
-import { myWaschenPool, mainPool } from '../db/pool.js';
+import { myWaschenPool } from '../db/pool.js';
 import { applyStockMovement, ensureStockRow, recalcStockSisa } from '../utils/inventoryStock.js';
 
 function todayYmd() {
@@ -14,11 +14,13 @@ async function resolveEmployeeNames(employeeIds = []) {
   const ids = [...new Set(employeeIds.filter(Boolean).map((id) => parseInt(id, 10)).filter(Boolean))];
   if (!ids.length) return new Map();
   try {
-    const [rows] = await mainPool.query(
-      `SELECT employee_id, full_name FROM mst_employee WHERE employee_id IN (?)`,
+    const [rows] = await myWaschenPool.query(
+      `SELECT employee_id, employee_name FROM mst_role
+       WHERE employee_id IN (?)
+         AND employee_name IS NOT NULL AND TRIM(employee_name) != ''`,
       [ids]
     );
-    return new Map(rows.map((r) => [r.employee_id, r.full_name || null]));
+    return new Map(rows.map((r) => [Number(r.employee_id), r.employee_name || null]));
   } catch (err) {
     console.warn('resolveEmployeeNames inventory:', err.message);
     return new Map();
@@ -672,7 +674,9 @@ export const listInventoryLogs = async (req, res) => {
 
     const data = rows.map((r) => ({
       ...r,
-      employee_name: nameMap.get(r.employee_id) || (r.employee_id ? `Karyawan #${r.employee_id}` : '-')
+      employee_name:
+        nameMap.get(Number(r.employee_id)) ||
+        (r.employee_id ? `Karyawan #${r.employee_id}` : '-')
     }));
 
     return res.status(200).json({ success: true, data });

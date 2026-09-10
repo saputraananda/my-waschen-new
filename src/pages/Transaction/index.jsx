@@ -759,6 +759,16 @@ export default function TransactionPage() {
 
   const submitOrderWithCashier = async (cashierEmployeeId, cashierFullName) => {
     if (!pendingOrderPayload) return;
+    const resolvedCashierId = Number(cashierEmployeeId);
+    if (!resolvedCashierId) {
+      showAlert({
+        title: 'PIN Tidak Valid',
+        message: 'Identitas kasir dari PIN tidak ditemukan. Coba masukkan ulang PIN frontliner.',
+        type: 'error'
+      });
+      return;
+    }
+
     setShowPinModal(false);
     setIsSavingOrder(true);
     const proofFile = paymentProofFile;
@@ -766,7 +776,7 @@ export default function TransactionPage() {
     try {
       const res = await axios.post('/api/transactions', {
         ...pendingOrderPayload,
-        cashierEmployeeId
+        cashierEmployeeId: resolvedCashierId
       });
 
       const orderResult = res.data?.data;
@@ -795,6 +805,12 @@ export default function TransactionPage() {
         )));
       }
 
+      // Nama kasir wajib dari pemilik PIN / response API — jangan fallback ke user login shift
+      const pinCashierName =
+        orderResult?.cashier_name ||
+        cashierFullName ||
+        null;
+
       const receiptData = {
         id: orderId,
         customerId: orderResult?.customer_id || selectedCustomer.dbId,
@@ -805,8 +821,9 @@ export default function TransactionPage() {
         customerTier: orderResult?.customer_tier || selectedCustomer.tier,
         customerBalance: newMemberBalance,
         branch: orderResult?.outlet_name || activeOutletName,
-        cashierName: formatEmployeeName(cashierFullName || userProfile?.fullName, 'Staff Kasir'),
-        cashierFullName: cashierFullName || userProfile?.fullName || 'Staff Kasir',
+        cashierEmployeeId: orderResult?.cashier_employee_id || resolvedCashierId,
+        cashierName: formatEmployeeName(pinCashierName, 'Frontliner'),
+        cashierFullName: pinCashierName || `Karyawan #${resolvedCashierId}`,
         items: cartItems,
         perfume: selectedPerfume,
         isExpress,
@@ -1129,7 +1146,7 @@ export default function TransactionPage() {
       {showPinModal && (
         <PinVerifyModal
           outletId={activeOutletId}
-          defaultEmployeeId={localStorage.getItem('employeeId')}
+          mode="pin"
           onCancel={() => {
             setShowPinModal(false);
             setPendingOrderPayload(null);

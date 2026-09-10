@@ -160,6 +160,7 @@ export default function CloseShiftModal({
       <PinVerifyModal
         outletId={shift?.outlet_id}
         defaultEmployeeId={employeeId}
+        mode="employee"
         title="PIN Closing Shift"
         description={`Shift dibuka oleh ${openerLabel}. Masukkan PIN Anda untuk menutup shift sebagai kasir pengganti.`}
         submitLabel="Verifikasi & Lanjut Closing"

@@ -1,4 +1,4 @@
-import { myWaschenPool, mainPool } from '../db/pool.js';
+import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 import { buildUploadPublicUrl, DEPOSIT_REPORT_FRONTLINER_SUBDIR } from '../middleware/upload.js';
 import path from 'path';
@@ -9,14 +9,19 @@ const getEmployeeNames = async (employeeIds = []) => {
   const ids = [...new Set(employeeIds.filter(Boolean).map(Number))];
   if (!ids.length) return {};
   try {
-    const [rows] = await mainPool.query(
-      `SELECT employee_id, full_name FROM mst_employee
-       WHERE employee_id IN (${ids.map(() => '?').join(',')})`,
+    const [roleRows] = await myWaschenPool.query(
+      `SELECT employee_id, employee_name FROM mst_role
+       WHERE employee_id IN (${ids.map(() => '?').join(',')})
+         AND employee_name IS NOT NULL AND TRIM(employee_name) != ''`,
       ids
     );
-    return Object.fromEntries(
-      rows.map((r) => [r.employee_id, r.full_name || null]).filter(([, name]) => name)
-    );
+    const map = {};
+    for (const r of roleRows) {
+      const id = Number(r.employee_id);
+      map[id] = r.employee_name;
+      map[String(id)] = r.employee_name;
+    }
+    return map;
   } catch (err) {
     console.error('getEmployeeNames:', err.message);
     return {};
@@ -783,42 +788,75 @@ export const getDailyReport = async (req, res) => {
 
 /**
  * POST /api/shifts/verify-pin
- * body: { employeeId, codePin } OR { codePin } (lookup any frontliner at outlet)
+ * body: { codePin, outletId?, employeeId?, mode? }
+ *
+ * mode:
+ *  - 'pin' (default): identitas = pemilik PIN (atribusi kasir nota)
+ *  - 'employee': cocokkan employeeId + PIN dulu, lalu fallback cari PIN
+ *
+ * Catatan: filter outlet hanya prioritas, BUKAN penolak — frontliner
+ * boleh atribusi nota di outlet lain dengan PIN miliknya.
  */
 export const verifyPin = async (req, res) => {
   try {
     const { employeeId, codePin, outletId } = req.body;
-    if (!codePin) {
+    const mode = String(req.body.mode || 'pin').toLowerCase();
+    const pin = String(codePin || '').trim().replace(/\D/g, '');
+
+    if (!pin) {
       return res.status(400).json({ success: false, message: 'codePin wajib diisi' });
     }
-    if (String(codePin).trim().length !== 8) {
+    if (pin.length !== 8) {
       return res.status(400).json({ success: false, message: 'PIN harus 8 digit angka' });
     }
 
-    let rows;
-    if (employeeId) {
-      [rows] = await myWaschenPool.query(
-        `SELECT employee_id, role, outlet_id, code_pin FROM mst_role
-         WHERE employee_id = ? AND code_pin = ? LIMIT 1`,
-        [employeeId, String(codePin).trim()]
-      );
-    } else {
-      // Backup operator: match PIN at outlet
-      [rows] = await myWaschenPool.query(
-        `SELECT employee_id, role, outlet_id, code_pin FROM mst_role
-         WHERE code_pin = ? AND role = 'Frontliner'
-           AND (? IS NULL OR outlet_id = ? OR outlet_id IS NULL)
+    const outletFilter = outletId != null && outletId !== '' && !Number.isNaN(Number(outletId))
+      ? Number(outletId)
+      : null;
+    let rows = [];
+
+    // 1) Mode employee: coba cocokkan employeeId + PIN
+    if (mode === 'employee' && employeeId) {
+      const [matched] = await myWaschenPool.query(
+        `SELECT employee_id, employee_name, role, outlet_id, code_pin FROM mst_role
+         WHERE employee_id = ?
+           AND TRIM(CAST(code_pin AS CHAR)) = ?
          LIMIT 1`,
-        [String(codePin).trim(), outletId || null, outletId || null]
+        [Number(employeeId), pin]
       );
+      rows = matched;
+    }
+
+    // 2) Resolve by PIN — utamakan outlet aktif, jangan tolak jika beda outlet
+    if (!rows.length) {
+      const [byPin] = await myWaschenPool.query(
+        `SELECT employee_id, employee_name, role, outlet_id, code_pin FROM mst_role
+         WHERE TRIM(CAST(code_pin AS CHAR)) = ?
+         ORDER BY
+           CASE
+             WHEN ? IS NOT NULL AND outlet_id = ? THEN 0
+             WHEN role = 'Frontliner' THEN 1
+             WHEN outlet_id IS NULL THEN 2
+             ELSE 3
+           END,
+           employee_id ASC
+         LIMIT 1`,
+        [pin, outletFilter, outletFilter]
+      );
+      rows = byPin;
     }
 
     if (!rows.length) {
-      return res.status(401).json({ success: false, message: 'PIN tidak valid' });
+      return res.status(401).json({
+        success: false,
+        message: 'PIN tidak ditemukan. Pastikan 8 digit PIN frontliner sudah terdaftar di sistem.'
+      });
     }
 
-    const employeeIdResolved = rows[0].employee_id;
-    const nameMap = await getEmployeeNames([employeeIdResolved]);
+    const employeeIdResolved = Number(rows[0].employee_id);
+    const fullName =
+      (rows[0].employee_name ? String(rows[0].employee_name).trim() : '') ||
+      `Karyawan #${employeeIdResolved}`;
 
     return res.status(200).json({
       success: true,
@@ -827,7 +865,7 @@ export const verifyPin = async (req, res) => {
         employeeId: employeeIdResolved,
         role: rows[0].role,
         outletId: rows[0].outlet_id,
-        fullName: nameMap[employeeIdResolved] || null
+        fullName
       }
     });
   } catch (error) {

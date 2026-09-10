@@ -3,12 +3,17 @@ import axios from 'axios';
 import { Lock, X } from 'lucide-react';
 
 /**
- * Modal PIN sebelum create transaksi.
+ * Modal PIN sebelum create transaksi / closing shift.
  * verify via POST /api/shifts/verify-pin
+ *
+ * mode:
+ *  - 'pin' (default): identitas = pemilik PIN (atribusi kasir nota)
+ *  - 'employee': coba cocokkan defaultEmployeeId dulu, lalu fallback PIN
  */
 export default function PinVerifyModal({
   outletId,
   defaultEmployeeId,
+  mode = 'pin',
   onCancel,
   onVerified,
   title = 'Konfirmasi PIN Kasir',
@@ -21,46 +26,52 @@ export default function PinVerifyModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!pin.trim()) {
+    const cleanPin = String(pin || '').replace(/\D/g, '');
+    if (!cleanPin) {
       setError('PIN wajib diisi');
       return;
     }
-    if (pin.trim().length !== 8) {
+    if (cleanPin.length !== 8) {
       setError('PIN harus 8 digit angka');
       return;
     }
     setLoading(true);
     setError('');
     try {
-      // Coba PIN milik user login dulu; jika gagal, cari frontliner lain di outlet (backup)
-      let res;
-      try {
-        res = await axios.post('/api/shifts/verify-pin', {
-          employeeId: defaultEmployeeId ? parseInt(defaultEmployeeId) : undefined,
-          codePin: pin.trim(),
-          outletId: outletId ? parseInt(outletId) : undefined
-        });
-      } catch (firstErr) {
-        if (firstErr.response?.status === 401 && defaultEmployeeId) {
-          res = await axios.post('/api/shifts/verify-pin', {
-            codePin: pin.trim(),
-            outletId: outletId ? parseInt(outletId) : undefined
-          });
-        } else {
-          throw firstErr;
-        }
+      const payload = {
+        codePin: cleanPin,
+        mode
+      };
+      if (outletId != null && outletId !== '' && !Number.isNaN(Number(outletId))) {
+        payload.outletId = Number(outletId);
+      }
+      if (mode === 'employee' && defaultEmployeeId) {
+        payload.employeeId = parseInt(defaultEmployeeId, 10);
       }
 
+      const res = await axios.post('/api/shifts/verify-pin', payload);
+
       if (res.data?.success) {
+        const data = res.data.data || {};
+        if (!data.employeeId) {
+          setError('PIN valid tetapi identitas kasir tidak ditemukan');
+          return;
+        }
         onVerified({
-          employeeId: res.data.data.employeeId,
-          role: res.data.data.role
+          employeeId: Number(data.employeeId),
+          role: data.role,
+          fullName: data.fullName || null,
+          outletId: data.outletId ?? null
         });
       } else {
         setError(res.data?.message || 'PIN tidak valid');
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'PIN tidak valid');
+      if (!err.response) {
+        setError('Server tidak merespons. Coba lagi beberapa detik.');
+      } else {
+        setError(err.response?.data?.message || 'PIN tidak valid');
+      }
     } finally {
       setLoading(false);
     }

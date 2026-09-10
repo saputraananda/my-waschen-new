@@ -1,4 +1,4 @@
-import { myWaschenPool, mainPool } from '../db/pool.js';
+import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 import { applyTransactionSpendingUpdate } from '../utils/spendingTier.js';
 import { applyDepositOnPayment } from '../utils/customerDeposit.js';
@@ -6,6 +6,24 @@ import { insertPaymentLog, resolvePaymentStatus, buildPaymentProofUrl } from '..
 import { computeAccumulatedWorkPercentage, refreshHeaderWorkPercentage, nextLifecycleStatus, workStatusTabSql } from '../utils/workStatus.js';
 import { consumeServiceBom } from '../utils/inventoryStock.js';
 import path from 'path';
+
+const resolveCashierName = async (employeeId) => {
+  const id = Number(employeeId);
+  if (!id) return null;
+  try {
+    const [roleRows] = await myWaschenPool.query(
+      `SELECT employee_name FROM mst_role
+       WHERE employee_id = ?
+         AND employee_name IS NOT NULL AND TRIM(employee_name) != ''
+       LIMIT 1`,
+      [id]
+    );
+    return roleRows[0]?.employee_name || null;
+  } catch (err) {
+    console.warn('resolveCashierName:', err.message);
+    return null;
+  }
+};
 
 /**
  * Helper to generate order number (nota):
@@ -132,6 +150,16 @@ export const createTransaction = async (req, res) => {
       });
     }
 
+    const resolvedCashierId = Number(cashierEmployeeId);
+    if (!resolvedCashierId || Number.isNaN(resolvedCashierId)) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'cashierEmployeeId wajib diisi dari verifikasi PIN frontliner'
+      });
+    }
+    const cashierNameResolved = await resolveCashierName(resolvedCashierId);
+
     const orderNo = await generateOrderNo(outletId);
     const grandTotalNum = parseFloat(grandTotal) || 0;
     const isOutstanding = paymentStatus === 'Outstanding';
@@ -165,7 +193,7 @@ export const createTransaction = async (req, res) => {
         overpaymentToDeposit: Boolean(overpaymentToDeposit) && !wantRefundOverpayment,
         overpaymentToRefund: wantRefundOverpayment,
         outletId: outletId || 2,
-        cashierEmployeeId: cashierEmployeeId || 167
+        cashierEmployeeId: resolvedCashierId
       });
       resolvedPaidAmount = depositResult.paidAmount;
       resolvedChangeAmount = depositResult.changeAmount;
@@ -201,7 +229,7 @@ export const createTransaction = async (req, res) => {
         orderNo,
         resolvedCustomerId,
         outletId || 2,
-        cashierEmployeeId || 167,
+        resolvedCashierId,
         shiftId || null,
         orderCategory || 'Kiloan',
         parseFloat(totalWeightKg) || 0,
@@ -277,7 +305,7 @@ export const createTransaction = async (req, res) => {
           outletId: outletId || 2,
           serviceId,
           lineQty,
-          employeeId: cashierEmployeeId || 167,
+          employeeId: resolvedCashierId,
           transactionId,
           orderNo
         });
@@ -293,7 +321,7 @@ export const createTransaction = async (req, res) => {
       `INSERT INTO tr_transaction_status_log 
        (transaction_id, status, employee_id, notes)
        VALUES (?, 'Antrean', ?, 'Cetak Nota Diterima oleh Kasir')`,
-      [transactionId, cashierEmployeeId || 167]
+      [transactionId, resolvedCashierId]
     );
 
     if (!isOutstanding) {
@@ -304,7 +332,7 @@ export const createTransaction = async (req, res) => {
         paymentMethod: paymentMethod || 'Tunai',
         paymentProofUrl: paymentProofUrl || null,
         notes: resolvedStatus === 'DP' ? `DP nota ${orderNo}` : `Pembayaran lunas nota ${orderNo}`,
-        cashierEmployeeId: cashierEmployeeId || 167
+        cashierEmployeeId: resolvedCashierId
       });
     } else {
       await insertPaymentLog(connection, {
@@ -314,7 +342,7 @@ export const createTransaction = async (req, res) => {
         paymentMethod: null,
         paymentProofUrl: null,
         notes: `Nota outstanding — pelanggan taruh cucian & pergi (${orderNo})`,
-        cashierEmployeeId: cashierEmployeeId || 167
+        cashierEmployeeId: resolvedCashierId
       });
     }
 
@@ -384,6 +412,8 @@ export const createTransaction = async (req, res) => {
 
     const resultData = fullOrder[0];
     resultData.items = orderItems;
+    resultData.cashier_employee_id = resolvedCashierId;
+    resultData.cashier_name = cashierNameResolved || `Karyawan #${resolvedCashierId}`;
 
     emitDashboardRefresh('transaction:created', {
       outletId: resultData.outlet_id,
@@ -437,7 +467,7 @@ export const getTransactions = async (req, res) => {
              COALESCE(o.full_name, o.name, c.home_branch, 'Outlet Waschen') as outlet_name,
              sp.name as speed_name,
              p.name as parfume_name,
-             COALESCE(e.full_name, CONCAT('Kasir #', t.cashier_employee_id)) as cashier_name,
+             COALESCE(NULLIF(TRIM(r.employee_name), ''), CONCAT('Kasir #', t.cashier_employee_id)) as cashier_name,
              (
                SELECT b.batch_no
                FROM tr_payment_batch_item bi
@@ -460,7 +490,7 @@ export const getTransactions = async (req, res) => {
       LEFT JOIN mst_outlet o ON o.id = t.outlet_id
       LEFT JOIN mst_service_speed sp ON t.speed_id = sp.id
       LEFT JOIN mst_parfume p ON t.parfume_id = p.id
-      LEFT JOIN waschen.mst_employee e ON t.cashier_employee_id = e.employee_id
+      LEFT JOIN mst_role r ON r.employee_id = t.cashier_employee_id
       WHERE 1=1
     `;
     const params = [];
@@ -566,7 +596,7 @@ export const getTransactionDetail = async (req, res) => {
               COALESCE(o.full_name, o.name, c.home_branch, 'Outlet Waschen') as outlet_name,
               sp.name as speed_name,
               p.name as parfume_name,
-              COALESCE(e.full_name, CONCAT('Kasir #', t.cashier_employee_id)) as cashier_name,
+              COALESCE(NULLIF(TRIM(r.employee_name), ''), CONCAT('Kasir #', t.cashier_employee_id)) as cashier_name,
               (
                 SELECT b.batch_no
                 FROM tr_payment_batch_item bi
@@ -589,11 +619,15 @@ export const getTransactionDetail = async (req, res) => {
        LEFT JOIN mst_outlet o ON o.id = t.outlet_id
        LEFT JOIN mst_service_speed sp ON t.speed_id = sp.id
        LEFT JOIN mst_parfume p ON t.parfume_id = p.id
-       LEFT JOIN waschen.mst_employee e ON t.cashier_employee_id = e.employee_id
-       WHERE t.order_no = ? OR t.id = ?
-       ORDER BY CASE WHEN t.order_no = ? THEN 0 ELSE 1 END, t.id DESC
+       LEFT JOIN mst_role r ON r.employee_id = t.cashier_employee_id
+       WHERE t.order_no = ? OR t.barcode = ? OR t.id = ?
+       ORDER BY CASE
+         WHEN t.order_no = ? THEN 0
+         WHEN t.barcode = ? THEN 1
+         ELSE 2
+       END, t.id DESC
        LIMIT 1`,
-      [key, key, key]
+      [key, key, key, key, key]
     );
 
     if (orderRows.length === 0) {
@@ -1266,11 +1300,11 @@ export const getPaymentBatchByNo = async (req, res) => {
               c.name as customer_name, 
               c.phone as customer_phone, 
               o.full_name as outlet_name,
-              COALESCE(e.full_name, CONCAT('Kasir #', b.cashier_employee_id)) as cashier_name
+              COALESCE(NULLIF(TRIM(r.employee_name), ''), CONCAT('Kasir #', b.cashier_employee_id)) as cashier_name
        FROM tr_payment_batch b
        LEFT JOIN mst_customer c ON c.id = b.customer_id
        LEFT JOIN mst_outlet o ON o.id = b.outlet_id
-       LEFT JOIN waschen.mst_employee e ON e.employee_id = b.cashier_employee_id
+       LEFT JOIN mst_role r ON r.employee_id = b.cashier_employee_id
        WHERE b.batch_no = ? OR b.id = ?`,
       [batchNo, batchNo]
     );

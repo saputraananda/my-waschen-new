@@ -936,6 +936,7 @@ export default function TrackingService({
       <ModalLacakNota
         isOpen={isLacakModalOpen}
         onClose={() => setIsLacakModalOpen(false)}
+        autoOpenScanner
       />
     </div>
   );
