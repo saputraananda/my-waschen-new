@@ -27,8 +27,13 @@ import {
   X,
   UserCheck,
   Building2,
-  ArrowRightLeft
+  ArrowRightLeft,
+  MessageCircle
 } from 'lucide-react';
+import {
+  sendCustomerNotaWhatsAppFromOrder,
+  describeCustomerNotaWaResult
+} from '../../../utils/customerNotaWhatsApp.js';
 
 const normalizePaymentStatus = (status) => {
   if (status === 'Belum Lunas') return 'Outstanding';
@@ -79,6 +84,7 @@ export default function DetailTransaction() {
   const [proofFile, setProofFile] = useState(null);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
+  const [sendingNotaWa, setSendingNotaWa] = useState(false);
 
   const showToast = (title, message, type = 'success') => {
     showAlert({ title, message, type });
@@ -439,6 +445,39 @@ export default function DetailTransaction() {
     });
   };
 
+  const handleKirimNotaDigital = async () => {
+    if (!order || sendingNotaWa) return;
+    setSendingNotaWa(true);
+    try {
+      const result = await sendCustomerNotaWhatsAppFromOrder(order, {
+        items: items.map((it) => ({
+          name: it.serviceName,
+          qty: it.qty,
+          qtyDisplay: it.qtyDisplay,
+          unitPrice: it.unitPrice,
+          subtotal: it.subtotal,
+          brand: it.brand,
+          color: it.color,
+          note: it.note,
+          isCleanox: it.isCleanox
+        })),
+        fetchDetail: false
+      });
+      const info = describeCustomerNotaWaResult(result);
+      if (info) showToast(info.title, info.message, info.type);
+    } catch (err) {
+      showToast(
+        'Gagal Kirim Nota',
+        err?.code === 'NO_PHONE'
+          ? 'Nomor WhatsApp pelanggan kosong.'
+          : (err?.message || 'Tidak bisa membuka WhatsApp'),
+        'error'
+      );
+    } finally {
+      setSendingNotaWa(false);
+    }
+  };
+
   const paymentStatus = normalizePaymentStatus(order?.paymentStatus);
   const remaining = Math.max(0, (order?.grandTotal || 0) - (order?.paidAmount || 0));
 
@@ -517,6 +556,16 @@ export default function DetailTransaction() {
                   >
                     <Printer className="h-4 w-4" />
                     Cetak Nota
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleKirimNotaDigital}
+                    disabled={sendingNotaWa || !order.customerPhone || order.customerPhone === '-'}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-black rounded-xl cursor-pointer inline-flex items-center gap-1.5"
+                    title="Kirim nota digital + QR ke WhatsApp pelanggan"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    {sendingNotaWa ? 'Menyiapkan…' : 'Kirim Nota Digital'}
                   </button>
                 </div>
               </div>

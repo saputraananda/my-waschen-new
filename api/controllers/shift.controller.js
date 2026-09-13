@@ -154,6 +154,36 @@ const findPendingDeposit = async (outletId) => {
 };
 
 /**
+ * Klaim nota yatim (shift_id NULL) ke shift yang baru dibuka.
+ *
+ * Delivery Staff boleh buat nota di rumah customer tanpa open shift, jadi notanya
+ * lahir tanpa shift_id. Frontliner yang open shift berikutnya mengambil alih
+ * tanggung jawab revenue-nya. Uang tunainya diserahkan kurir ke frontliner secara
+ * fisik (di luar sistem); checklist nota saat closing yang jadi bukti serah terima.
+ *
+ * Batas bawah = closed_at Final terakhir outlet ini. Nota yang dibuat setelah Final
+ * (termasuk dini hari) masuk ke shift berikutnya, bukan hari yang sudah ditutup.
+ */
+const adoptOrphanTransactions = async (outletId, shiftId) => {
+  const [lastFinal] = await myWaschenPool.query(
+    `SELECT closed_at FROM tr_cashier_shift
+     WHERE outlet_id = ? AND status = 'Closed' AND close_type = 'Final' AND closed_at IS NOT NULL
+     ORDER BY closed_at DESC LIMIT 1`,
+    [outletId]
+  );
+
+  const since = lastFinal[0]?.closed_at || null;
+  const [result] = await myWaschenPool.query(
+    `UPDATE tr_transaction
+     SET shift_id = ?
+     WHERE outlet_id = ? AND shift_id IS NULL${since ? ' AND order_date > ?' : ''}`,
+    since ? [shiftId, outletId, since] : [shiftId, outletId]
+  );
+
+  return result.affectedRows || 0;
+};
+
+/**
  * GET /api/shifts/pending-deposit?outlet_id=
  */
 export const getPendingDeposit = async (req, res) => {
@@ -400,6 +430,11 @@ export const openShift = async (req, res) => {
       [eid, result.insertId]
     );
 
+    // Adopsi nota yatim (dibuat Delivery Staff tanpa shift) ke shift yang baru dibuka.
+    // Batas bawah = closed_at Final terakhir, supaya nota dini hari ikut terjaring
+    // tapi tidak menyedot nota dari hari-hari sebelumnya.
+    const adoptedCount = await adoptOrphanTransactions(oid, result.insertId);
+
     const [created] = await myWaschenPool.query(
       'SELECT * FROM tr_cashier_shift WHERE id = ?',
       [result.insertId]
@@ -413,7 +448,10 @@ export const openShift = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: `Shift ${sn === 1 ? 'Pagi' : 'Siang'} berhasil dibuka`,
+      message: adoptedCount > 0
+        ? `Shift ${sn === 1 ? 'Pagi' : 'Siang'} dibuka. ${adoptedCount} nota delivery masuk ke tanggung jawab shift ini.`
+        : `Shift ${sn === 1 ? 'Pagi' : 'Siang'} berhasil dibuka`,
+      adoptedTransactions: adoptedCount,
       data: await enrichShiftRow(created[0])
     });
   } catch (error) {
@@ -488,12 +526,10 @@ export const getShiftTransactions = async (req, res) => {
        FROM tr_transaction t
        LEFT JOIN mst_customer c ON t.customer_id = c.id
        LEFT JOIN tr_shift_txn_verify v ON v.transaction_id = t.id AND v.shift_id = ?
-       WHERE t.outlet_id = ?
+       WHERE t.shift_id = ?
          AND t.is_delete_requested = 0
-         AND t.order_date >= ?
-         AND (t.shift_id = ? OR (t.shift_id IS NULL AND t.order_date >= ?))
        ORDER BY t.order_date ASC`,
-      [shiftId, shift.outlet_id, shift.opened_at, shiftId, shift.opened_at]
+      [shiftId, shiftId]
     );
 
     const cashierIds = [...new Set(txns.map((t) => t.cashier_employee_id).filter(Boolean))];
@@ -615,14 +651,13 @@ export const closeShift = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Shift Siang harus close bertipe Final' });
     }
 
-    // Load transactions for this shift window
+    // Nota milik shift ini. Nota delivery sudah diklaim saat open shift
+    // (lihat adoptOrphanTransactions), jadi cukup filter shift_id.
     const [txns] = await myWaschenPool.query(
       `SELECT t.* FROM tr_transaction t
-       WHERE t.outlet_id = ?
-         AND t.is_delete_requested = 0
-         AND t.order_date >= ?
-         AND (t.shift_id = ? OR (t.shift_id IS NULL AND t.order_date >= ?))`,
-      [shift.outlet_id, shift.opened_at, shiftId, shift.opened_at]
+       WHERE t.shift_id = ?
+         AND t.is_delete_requested = 0`,
+      [shiftId]
     );
 
     const [verified] = await myWaschenPool.query(
@@ -653,6 +688,8 @@ export const closeShift = async (req, res) => {
       .filter((t) => t.payment_status === 'Lunas')
       .reduce((s, t) => s + (parseFloat(t.grand_total) || 0), 0);
 
+    // Pengeluaran petty cash — hanya untuk report, TIDAK mengurangi cash modal.
+    // Cash modal (kembalian) dan petty cash (belanja outlet) adalah dua laci terpisah.
     const [pettyOutRows] = await myWaschenPool.query(
       `SELECT COALESCE(SUM(amount),0) AS total FROM tr_petty_cash
        WHERE outlet_id = ? AND type = 'Keluar' AND shift_id = ? AND status = 'Disetujui'`,
@@ -660,7 +697,9 @@ export const closeShift = async (req, res) => {
     );
     const pettyOut = parseFloat(pettyOutRows[0]?.total) || 0;
 
-    const expected = parseFloat(shift.initial_cash) + systemRevenue - pettyOut;
+    // expected_cash = modal kembalian yang diisi saat open shift, jangan ditimpa.
+    // Revenue transaksi & petty cash tidak mengalir ke laci kembalian.
+    const expected = parseFloat(shift.expected_cash ?? shift.initial_cash) || 0;
     const difference = cash - expected;
 
     const closedShiftPreview = {

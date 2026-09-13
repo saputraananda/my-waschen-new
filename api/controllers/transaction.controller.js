@@ -158,6 +158,34 @@ export const createTransaction = async (req, res) => {
         message: 'cashierEmployeeId wajib diisi dari verifikasi PIN frontliner'
       });
     }
+
+    // Gate shift — jangan percaya shiftId dari client, tentukan sendiri di server.
+    // Delivery Staff bebas buat nota tanpa shift; notanya diklaim frontliner
+    // saat open shift berikutnya (lihat adoptOrphanTransactions di shift.controller.js).
+    const resolvedOutletId = parseInt(outletId, 10) || 2;
+    const [roleRows] = await connection.query(
+      'SELECT role FROM mst_role WHERE employee_id = ? LIMIT 1',
+      [resolvedCashierId]
+    );
+    const isDeliveryStaff = roleRows[0]?.role === 'Delivery Staff';
+
+    let resolvedShiftId = null;
+    if (!isDeliveryStaff) {
+      const [openShiftRows] = await connection.query(
+        `SELECT id FROM tr_cashier_shift WHERE outlet_id = ? AND status = 'Open' ORDER BY id DESC LIMIT 1`,
+        [resolvedOutletId]
+      );
+      if (!openShiftRows.length) {
+        await connection.rollback();
+        return res.status(409).json({
+          success: false,
+          message: 'Belum ada shift yang dibuka di outlet ini. Buka shift dulu sebelum membuat transaksi.',
+          requireOpenShift: true
+        });
+      }
+      resolvedShiftId = openShiftRows[0].id;
+    }
+
     const cashierNameResolved = await resolveCashierName(resolvedCashierId);
 
     const orderNo = await generateOrderNo(outletId);
@@ -228,9 +256,9 @@ export const createTransaction = async (req, res) => {
         orderNo,
         orderNo,
         resolvedCustomerId,
-        outletId || 2,
+        resolvedOutletId,
         resolvedCashierId,
-        shiftId || null,
+        resolvedShiftId,
         orderCategory || 'Kiloan',
         parseFloat(totalWeightKg) || 0,
         parseInt(totalPcs) || 0,

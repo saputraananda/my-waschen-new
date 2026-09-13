@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav';
@@ -85,6 +85,8 @@ export default function TransactionPage() {
 
   // Step 1: Customer State (Pure live from database)
   const [customers, setCustomers] = useState([]);
+  const [customersLoading, setCustomersLoading] = useState(true);
+  const [customersError, setCustomersError] = useState('');
   const [selectedCustId, setSelectedCustId] = useState('');
   const [addressModalCustomer, setAddressModalCustomer] = useState(null);
   const [customerSearch, setCustomerSearch] = useState('');
@@ -92,44 +94,65 @@ export default function TransactionPage() {
   const [selectedBranchFilter, setSelectedBranchFilter] = useState('Semua');
   const [custCurrentPage, setCustCurrentPage] = useState(1);
   const custItemsPerPage = 9;
+  const customersReqRef = useRef(0);
 
-  const loadCustomers = () => {
-    axios.get('/api/customers')
-      .then(res => {
-        if (res.data && res.data.success && Array.isArray(res.data.data)) {
-          const mapped = res.data.data.map(c => ({
-            id: c.customer_code || `CUST-${String(c.id).padStart(3, '0')}`,
-            dbId: c.id,
-            name: c.name || '',
-            phone: c.phone || '',
-            address: c.full_address || c.address || '-',
-            fullAddress: c.full_address || '',
-            block: c.block || '',
-            houseNumber: c.house_number || '',
-            notes: c.notes || '',
-            city: c.city || 'Bekasi',
-            landmark: c.landmark || '-',
-            homeBranch: c.home_branch || 'Waschen Laundry Citra Gran',
-            branch: c.home_branch || 'Waschen Laundry Citra Gran',
-            tier: c.tier || 'Reguler',
-            totalSpending: parseFloat(c.total_spent) || 0,
-            totalTrx: parseInt(c.total_orders) || 0,
-            memberBalance: parseFloat(c.deposit_balance) || 0,
-            lastOrder: c.updated_at ? new Date(c.updated_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }) : 'Hari ini',
-            frequentServices: ['k1', 's1', 's2']
-          }));
-          setCustomers(mapped);
+  const loadCustomers = useCallback(async () => {
+    const reqId = ++customersReqRef.current;
+    setCustomersLoading(true);
+    setCustomersError('');
+    try {
+      const res = await axios.get('/api/customers');
+      // Abaikan response lama jika ada request lebih baru (hindari race double-fetch)
+      if (reqId !== customersReqRef.current) return;
+      if (res.data?.success && Array.isArray(res.data.data)) {
+        const mapped = res.data.data.map((c) => ({
+          id: c.customer_code || `CUST-${String(c.id).padStart(3, '0')}`,
+          dbId: c.id,
+          name: c.name || '',
+          phone: c.phone || '',
+          address: c.full_address || c.address || '-',
+          fullAddress: c.full_address || '',
+          block: c.block || '',
+          houseNumber: c.house_number || '',
+          notes: c.notes || '',
+          city: c.city || 'Bekasi',
+          landmark: c.landmark || '-',
+          homeBranch: c.home_branch || 'Waschen Laundry Citra Gran',
+          branch: c.home_branch || 'Waschen Laundry Citra Gran',
+          tier: c.tier || c.tier_label || 'Reguler',
+          totalSpending: parseFloat(c.total_spent) || 0,
+          totalTrx: parseInt(c.total_orders, 10) || 0,
+          memberBalance: parseFloat(c.deposit_balance) || 0,
+          lastOrder: c.updated_at
+            ? new Date(c.updated_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })
+            : 'Hari ini',
+          frequentServices: ['k1', 's1', 's2']
+        }));
+        setCustomers(mapped);
+        if (mapped.length === 0) {
+          setCustomersError('Belum ada data pelanggan aktif.');
         }
-      })
-      .catch(err => console.error('Gagal mengambil data pelanggan dari API:', err));
-  };
+      } else {
+        setCustomers([]);
+        setCustomersError(res.data?.message || 'Respons pelanggan tidak valid');
+      }
+    } catch (err) {
+      if (reqId !== customersReqRef.current) return;
+      console.error('Gagal mengambil data pelanggan dari API:', err);
+      setCustomersError(err.response?.data?.message || err.message || 'Gagal memuat pelanggan');
+    } finally {
+      if (reqId === customersReqRef.current) {
+        setCustomersLoading(false);
+      }
+    }
+  }, []);
 
-  // Re-fetch customers whenever returning to Step 1 (Select Customer)
+  // Fetch pelanggan hanya saat Step 1 (hindari double-call di mount + auth effect)
   useEffect(() => {
     if (currentStep === 1) {
       loadCustomers();
     }
-  }, [currentStep]);
+  }, [currentStep, loadCustomers]);
 
   // Step 2: Layanan State (Pure live from database)
   const [servicesList, setServicesList] = useState([]);
@@ -245,9 +268,6 @@ export default function TransactionPage() {
       })
       .catch(err => console.error('Gagal mengambil data master:', err));
 
-    // Initial customer load
-    loadCustomers();
-
     // Fetch live catalog services from myWaschen
     axios.get('/api/services')
       .then(res => {
@@ -298,30 +318,41 @@ export default function TransactionPage() {
   };
 
   // Filtered and Tier-Prioritized Customer List
-  const tierRank = { 'VIP': 1, 'Gold': 2, 'Reguler': 3, 'One-Time': 4 };
+  const tierRank = { VIP: 1, Gold: 2, Reguler: 3, 'One-Time': 4, OneTime: 4 };
   const filteredCustomers = useMemo(() => {
     if (!customers || !Array.isArray(customers)) return [];
     const searchLower = (customerSearch || '').toLowerCase().trim();
+    const tierFilter = (selectedTierFilter || 'Semua').trim();
+    const branchFilter = (selectedBranchFilter || 'Semua').trim();
+    const isAllTier = !tierFilter || tierFilter.toLowerCase() === 'semua';
+    const isAllBranches = !branchFilter || branchFilter.toLowerCase() === 'semua';
 
     return customers
-      .filter(c => {
+      .filter((c) => {
         const cName = (c.name || '').toLowerCase();
         const cPhone = String(c.phone || '');
         const cAddress = (c.address || '').toLowerCase();
-        const matchesSearch = !searchLower ||
-          cName.includes(searchLower) ||
-          cPhone.includes(searchLower) ||
-          cAddress.includes(searchLower);
+        const matchesSearch = !searchLower
+          || cName.includes(searchLower)
+          || cPhone.includes(searchLower)
+          || cAddress.includes(searchLower);
 
-        const matchesTier = !selectedTierFilter || selectedTierFilter === 'Semua' || c.tier === selectedTierFilter;
-        
+        const custTier = String(c.tier || 'Reguler').trim();
+        const matchesTier = isAllTier
+          || custTier.toLowerCase() === tierFilter.toLowerCase()
+          || custTier.replace(/\s+/g, '-').toLowerCase() === tierFilter.replace(/\s+/g, '-').toLowerCase();
+
         let matchesBranch = true;
-        if (selectedBranchFilter && selectedBranchFilter !== 'Semua') {
-          const filterClean = selectedBranchFilter.toLowerCase().replace('waschen laundry ', '').replace('outlet ', '').trim();
-          const custBranchClean = (c.homeBranch || c.branch || '').toLowerCase().replace('waschen laundry ', '').replace('outlet ', '').trim();
-          matchesBranch = !c.homeBranch ||
-            c.homeBranch === selectedBranchFilter ||
-            (custBranchClean.length > 0 && filterClean.length > 0 && (
+        if (!isAllBranches) {
+          const filterClean = branchFilter.toLowerCase().replace('waschen laundry ', '').replace('outlet ', '').trim();
+          const custBranchClean = (c.homeBranch || c.branch || '')
+            .toLowerCase()
+            .replace('waschen laundry ', '')
+            .replace('outlet ', '')
+            .trim();
+          matchesBranch = !c.homeBranch
+            || c.homeBranch === branchFilter
+            || (custBranchClean.length > 0 && filterClean.length > 0 && (
               custBranchClean.includes(filterClean) || filterClean.includes(custBranchClean)
             ));
         }
@@ -1008,6 +1039,10 @@ export default function TransactionPage() {
             custCurrentPage={custCurrentPage}
             setCustCurrentPage={setCustCurrentPage}
             filteredCustomers={filteredCustomers}
+            customersCount={customers.length}
+            customersLoading={customersLoading}
+            customersError={customersError}
+            onReloadCustomers={loadCustomers}
             navigate={navigate}
           />
         )}

@@ -5,12 +5,8 @@ import {
     User,
     Lock,
     ArrowRight,
-    AlertCircle,
     Eye,
     EyeOff,
-    Sparkles,
-    Layers,
-    X
 } from 'lucide-react';
 import { formatEmployeeName } from '../../utils/FormatName.js';
 
@@ -193,9 +189,8 @@ export default function LoginPage() {
                             className="h-36 w-auto object-contain mb-4 drop-shadow-[0_8px_16px_rgba(0,0,0,0.2)] select-none animate-bounce-short"
                         />
 
-                        <h3 className="text-base font-bold text-emerald-650 mb-2 font-sans flex items-center gap-1.5 justify-center">
+                        <h3 className="text-base font-bold text-emerald-650 mb-2 font-sans">
                             Login Successful!
-                            <Sparkles className="h-4.5 w-4.5 text-yellow-500 animate-pulse" />
                         </h3>
 
                         <div className="text-sm text-slate-600 mb-5 font-sans text-center px-4 w-full">
@@ -277,30 +272,41 @@ export default function LoginPage() {
             </div>
 
             {/* RIGHT PANEL: Form Login (Mobile & Desktop, 45% Visual Weight) */}
-            <div className="w-full lg:w-[45%] flex flex-col justify-center px-6 sm:px-16 lg:px-14 xl:px-20 py-12 relative bg-[#f8f8f8]">
-                {/* Centered Brand Header above the form (visible on both mobile and desktop) */}
-                {/* <div className="flex justify-center mb-8 w-full max-w-md mx-auto">
-                    <img src={waschenLogo} alt="Waschen Laundry Logo" className="h-20 w-auto object-contain" />
-                </div> */}
+            <div className="w-full lg:w-[45%] flex flex-col lg:justify-center lg:px-14 xl:px-20 lg:py-12 relative bg-[#f8f8f8] overflow-y-auto">
 
-                {/* Form Header (Aligned with input width) */}
-                <div className="mb-6 w-full max-w-md mx-auto text-left">
-                    <h2 className="text-xl font-bold text-[#313030] tracking-tight flex items-center gap-2">
-                        Welcome To My Waschen
-                        <Sparkles className="h-4 w-4 text-[#5f1340] animate-pulse" />
-                    </h2>
-                    <p className="text-xs text-slate-500 mt-1">
-                        Aplikasi Point of Sale Waschen Laundry
-                    </p>
+                {/* Hero brand — mobile only, desktop sudah punya panel kiri */}
+                <div className="lg:hidden relative h-56 shrink-0 overflow-hidden bg-[#3d0728]">
+                    <img src={img1} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover opacity-45" />
+                    <div className="absolute inset-0 bg-gradient-to-b from-[#3d0728]/70 via-[#5f1340]/75 to-[#f8f8f8]" />
+                    <div className="relative h-full flex flex-col justify-center px-6 pt-[env(safe-area-inset-top)] pb-10">
+                        <img src={waschenLogoWhite} alt="Waschen Laundry" className="h-11 w-auto object-contain drop-shadow-lg" />
+                    </div>
                 </div>
 
+                {/* Kartu form — mengambang di atas hero pada mobile */}
+                <div className="relative z-10 -mt-8 lg:mt-0 grow lg:grow-0 flex flex-col px-4 sm:px-6 lg:px-0 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:pb-0">
+                    <div className="w-full max-w-md mx-auto bg-white lg:bg-transparent rounded-3xl lg:rounded-none border border-[#e0e0e0] lg:border-0 shadow-xl lg:shadow-none p-6 sm:p-7 lg:p-0">
+
+                        {/* Form Header (Aligned with input width) */}
+                        <div className="mb-6 text-left">
+                            <span className="inline-block text-[10px] font-black text-[#5f1340] bg-[#5f1340]/[0.08] border border-[#5f1340]/15 rounded-md px-2 py-0.5 uppercase tracking-wider mb-2.5">
+                                Point of Sale
+                            </span>
+                            <h2 className="text-2xl lg:text-xl font-bold text-[#313030] tracking-tight">
+                                Welcome To My Waschen
+                            </h2>
+                            <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                                Aplikasi Point of Sale Waschen Laundry — khusus untuk karyawan outlet.
+                            </p>
+                        </div>
 
 
-                {/* Form Container */}
-                <form onSubmit={handleLogin} className="w-full max-w-md mx-auto space-y-5">
+
+                        {/* Form Container */}
+                        <form onSubmit={handleLogin} className="space-y-5">
                     {/* Username Input */}
                     <div>
-                        <label className="block text-[10px] font-bold text-[#313030] uppercase tracking-wider mb-1.5">
+                        <label htmlFor="login-username" className="block text-[10px] font-bold text-[#313030] uppercase tracking-wider mb-1.5">
                             Username or Email
                         </label>
                         <div className="relative group">
@@ -308,12 +314,18 @@ export default function LoginPage() {
                                 <User className="h-4.5 w-4.5" />
                             </div>
                             <input
+                                id="login-username"
+                                name="username"
                                 type="text"
                                 required
+                                autoComplete="username"
+                                autoCapitalize="none"
+                                autoCorrect="off"
+                                spellCheck={false}
                                 value={username}
                                 onChange={(e) => setUsername(e.target.value)}
                                 placeholder="Enter your username"
-                                className="w-full pl-11 pr-4 py-2.5 bg-white border border-[#e0e0e0] rounded-lg text-[#313030] placeholder-slate-400 focus:outline-none focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340] transition-all duration-200 text-sm shadow-sm"
+                                className="w-full pl-11 pr-4 py-3 sm:py-2.5 bg-white border border-[#e0e0e0] rounded-lg text-[#313030] placeholder-slate-400 focus:outline-none focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340] transition-all duration-200 text-base sm:text-sm shadow-sm"
                             />
                         </div>
                     </div>
@@ -321,7 +333,7 @@ export default function LoginPage() {
                     {/* Password Input */}
                     <div>
                         <div className="flex justify-between items-center mb-1.5">
-                            <label className="block text-[10px] font-bold text-[#313030] uppercase tracking-wider">
+                            <label htmlFor="login-password" className="block text-[10px] font-bold text-[#313030] uppercase tracking-wider">
                                 Password
                             </label>
                         </div>
@@ -330,17 +342,21 @@ export default function LoginPage() {
                                 <Lock className="h-4.5 w-4.5" />
                             </div>
                             <input
+                                id="login-password"
+                                name="password"
                                 type={showPassword ? 'text' : 'password'}
                                 required
+                                autoComplete="current-password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 placeholder="Enter your password"
-                                className="w-full pl-11 pr-10 py-2.5 bg-white border border-[#e0e0e0] rounded-lg text-[#313030] placeholder-slate-400 focus:outline-none focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340] transition-all duration-200 text-sm shadow-sm"
+                                className="w-full pl-11 pr-11 py-3 sm:py-2.5 bg-white border border-[#e0e0e0] rounded-lg text-[#313030] placeholder-slate-400 focus:outline-none focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340] transition-all duration-200 text-base sm:text-sm shadow-sm"
                             />
                             <button
                                 type="button"
                                 onClick={() => setShowPassword(!showPassword)}
-                                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-650 transition-colors"
+                                aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+                                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-650 transition-colors cursor-pointer"
                             >
                                 {showPassword ? <EyeOff className="h-4.5 w-4.5" /> : <Eye className="h-4.5 w-4.5" />}
                             </button>
@@ -351,11 +367,8 @@ export default function LoginPage() {
                     <button
                         type="submit"
                         disabled={isLoading}
-                        className="w-full relative py-2.5 px-4 bg-[#5f1340] hover:bg-[#4a0d31] disabled:bg-slate-400 text-white rounded-lg font-semibold shadow-md flex items-center justify-center gap-2 group transition-all duration-300 overflow-hidden"
+                        className="w-full relative py-3 sm:py-2.5 px-4 bg-[#5f1340] hover:bg-[#4a0d31] active:scale-[0.99] disabled:bg-slate-400 disabled:active:scale-100 text-white rounded-lg font-semibold shadow-md flex items-center justify-center gap-2 group transition-all duration-200 overflow-hidden cursor-pointer"
                     >
-                        {/* Shimmer effect */}
-                        <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-shimmer"></span>
-
                         {isLoading ? (
                             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                         ) : (
@@ -365,12 +378,14 @@ export default function LoginPage() {
                             </>
                         )}
                     </button>
-                </form>
+                        </form>
+                    </div>
 
-                {/* Footer info (Copyright & Registration) */}
-                <div className="w-full max-w-md mx-auto text-center">
-                    <div className="mt-8 text-[10px] text-slate-400">
-                        &copy; {new Date().getFullYear()} PT Waschen Alora Indonesia. All rights reserved.
+                    {/* Footer info (Copyright) — beri ruang agar tak tertutup maskot di mobile */}
+                    <div className="w-full max-w-md mx-auto text-center mt-8 pb-20 lg:pb-0">
+                        <p className="text-[10px] text-slate-400">
+                            &copy; {new Date().getFullYear()} PT Waschen Alora Indonesia. All rights reserved.
+                        </p>
                     </div>
                 </div>
             </div>

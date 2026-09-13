@@ -83,9 +83,19 @@ export function isHqUser() {
   return localStorage.getItem('companyId') === '1';
 }
 
-/** Karyawan outlet Waschen (company_id = 5) wajib buka shift sebelum akses menu POS. */
+export const DELIVERY_ROLE = 'Delivery Staff';
+
+/** Delivery buat nota di rumah customer, jadi tidak wajib open shift. */
+export function isDeliveryStaff() {
+  return localStorage.getItem('activeRole') === DELIVERY_ROLE;
+}
+
+/**
+ * Karyawan outlet Waschen (company_id = 5) wajib buka shift sebelum akses menu POS.
+ * Delivery dikecualikan — notanya diklaim frontliner saat open shift berikutnya.
+ */
 export function requiresShiftGate() {
-  return localStorage.getItem('companyId') === '5';
+  return localStorage.getItem('companyId') === '5' && !isDeliveryStaff();
 }
 
 export function getCompanyId() {

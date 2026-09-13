@@ -373,38 +373,6 @@ export const getCurrentShift = async (req, res) => {
   }
 };
 
-/**
- * POST /api/petty-cash/shift/open
- */
-export const openShift = async (req, res) => {
-  try {
-    const { outletId, cashierEmployeeId, initialCash, initialPettyCash, shiftNumber } = req.body;
-
-    const cash = parseFloat(initialCash) || 0;
-    const petty = parseFloat(initialPettyCash ?? initialCash) || 0;
-
-    const [result] = await myWaschenPool.query(
-      `INSERT INTO tr_cashier_shift 
-       (outlet_id, cashier_employee_id, shift_number, opened_at, initial_cash, initial_petty_cash, expected_cash, status)
-       VALUES (?, ?, ?, NOW(), ?, ?, ?, 'Open')`,
-      [outletId || 2, cashierEmployeeId || 167, shiftNumber || 1, cash, petty, cash]
-    );
-
-    return res.status(201).json({
-      success: true,
-      message: 'Shift kasir berhasil dibuka',
-      data: {
-        shiftId: result.insertId,
-        initialCash: cash,
-        initialPettyCash: petty
-      }
-    });
-  } catch (error) {
-    console.error('Error opening shift:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Gagal membuka shift kasir',
-      error: error.message
-    });
-  }
-};
+// openShift dihapus dari sini — duplikat tanpa validasi.
+// Gunakan POST /api/shifts/open (shift.controller.js) yang punya cek shift ganda,
+// gate setoran, dan validasi saldo.

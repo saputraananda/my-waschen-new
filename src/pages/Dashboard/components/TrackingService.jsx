@@ -15,7 +15,8 @@ import {
   Coins,
   History,
   ExternalLink,
-  QrCode
+  QrCode,
+  MessageCircle
 } from 'lucide-react';
 import axios from 'axios';
 import { formatName } from '../../../utils/FormatName.js';
@@ -26,6 +27,10 @@ import { NOTA_QUEUE_TABS, matchesNotaQueueTab, getNotaQueueLabel } from '../../.
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import TransactionBarcodeCard from '../../../components/TransactionBarcodeCard.jsx';
 import ModalLacakNota from '../../../components/ModalLacakNota.jsx';
+import {
+  sendCustomerNotaWhatsAppFromOrder,
+  describeCustomerNotaWaResult
+} from '../../../utils/customerNotaWhatsApp.js';
 
 export default function TrackingService({
   filteredOrders,
@@ -61,6 +66,7 @@ export default function TrackingService({
   const [proofFile, setProofFile] = useState(null);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
+  const [sendingNotaWa, setSendingNotaWa] = useState(false);
 
   const normalizePaymentStatus = (status) => {
     if (status === 'Belum Lunas') return 'Outstanding';
@@ -77,7 +83,7 @@ export default function TrackingService({
       .catch(() => setWorkStatusOptions(DEFAULT_WORK_STATUSES));
   }, []);
 
-  // WhatsApp Helper
+  // WhatsApp Helper (update status singkat)
   const handleOpenWA = (e, order) => {
     if (e) e.stopPropagation();
     let rawPhone = (order.customerPhone || '').replace(/[^0-9]/g, '');
@@ -87,6 +93,28 @@ export default function TrackingService({
     if (!rawPhone) rawPhone = '628123456789';
     const message = encodeURIComponent(`Halo Kak ${order.customerName || 'Pelanggan'}, update status pengerjaan nota ${order.id} Anda saat ini: ${formatWorkPercentage(order.workStatus)}. Terima kasih telah mempercayakan Waschen Laundry! 😊`);
     window.open(`https://wa.me/${rawPhone}?text=${message}`, '_blank');
+  };
+
+  const handleKirimNotaDigital = async (e, order) => {
+    if (e) e.stopPropagation();
+    const target = order || selectedOrderModal;
+    if (!target?.id || sendingNotaWa) return;
+    setSendingNotaWa(true);
+    try {
+      const result = await sendCustomerNotaWhatsAppFromOrder(target, { fetchDetail: true });
+      const info = describeCustomerNotaWaResult(result);
+      if (info) showAlert(info);
+    } catch (err) {
+      showAlert({
+        title: 'Gagal Kirim Nota',
+        message: err?.code === 'NO_PHONE'
+          ? 'Nomor WhatsApp pelanggan kosong.'
+          : (err?.message || 'Tidak bisa membuka WhatsApp'),
+        type: 'error'
+      });
+    } finally {
+      setSendingNotaWa(false);
+    }
   };
 
   const openOrderModal = (order) => {
@@ -465,17 +493,28 @@ export default function TrackingService({
 
                     {/* Aksi Kasir */}
                     <td className="py-3.5 px-6 text-center whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePrintNota(order);
-                        }}
-                        className="p-2 rounded-xl border border-[#e0e0e0] bg-white hover:bg-[#5f1340] hover:text-white text-slate-700 transition-all cursor-pointer shadow-2xs inline-flex items-center justify-center group/print"
-                        title="Cetak Struk Nota Bluetooth"
-                      >
-                        <Printer className="h-4 w-4" />
-                      </button>
+                      <div className="inline-flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePrintNota(order);
+                          }}
+                          className="p-2 rounded-xl border border-[#e0e0e0] bg-white hover:bg-[#5f1340] hover:text-white text-slate-700 transition-all cursor-pointer shadow-2xs inline-flex items-center justify-center group/print"
+                          title="Cetak Struk Nota Bluetooth"
+                        >
+                          <Printer className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleKirimNotaDigital(e, order)}
+                          disabled={sendingNotaWa || !order.customerPhone || order.customerPhone === '-'}
+                          className="p-2 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 transition-all cursor-pointer shadow-2xs inline-flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="Kirim Nota Digital ke WhatsApp"
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -666,7 +705,17 @@ export default function TrackingService({
                   </button>
                 </div>
 
-                <div className="flex gap-2 w-full sm:w-auto justify-end">
+                <div className="flex gap-2 w-full sm:w-auto justify-end flex-wrap">
+                  <button
+                    type="button"
+                    onClick={(e) => handleKirimNotaDigital(e, selectedOrderModal)}
+                    disabled={sendingNotaWa || !selectedOrderModal.customerPhone || selectedOrderModal.customerPhone === '-'}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-black rounded-xl cursor-pointer flex items-center gap-1.5"
+                    title="Kirim nota digital + QR ke WhatsApp"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    <span>{sendingNotaWa ? 'Menyiapkan…' : 'Kirim Nota Digital'}</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {

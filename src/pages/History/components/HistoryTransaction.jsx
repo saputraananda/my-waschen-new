@@ -19,10 +19,15 @@ import {
   Wallet,
   Coins,
   History,
-  QrCode
+  QrCode,
+  MessageCircle
 } from 'lucide-react';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import ModalLacakNota from '../../../components/ModalLacakNota.jsx';
+import {
+  sendCustomerNotaWhatsAppFromOrder,
+  describeCustomerNotaWaResult
+} from '../../../utils/customerNotaWhatsApp.js';
 
 export default function HistoryTransaction({
   transactions,
@@ -74,6 +79,7 @@ export default function HistoryTransaction({
   const [proofFile, setProofFile] = useState(null);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
+  const [sendingNotaWaId, setSendingNotaWaId] = useState(null);
 
   const normalizePaymentStatus = (status) => {
     if (status === 'Belum Lunas') return 'Outstanding';
@@ -90,7 +96,7 @@ export default function HistoryTransaction({
     return true;
   };
 
-  // WhatsApp Helper
+  // WhatsApp Helper (update status singkat — beda dari kirim nota digital)
   const handleOpenWA = (e, order) => {
     if (e) e.stopPropagation();
     let rawPhone = (order.customerPhone || '').replace(/[^0-9]/g, '');
@@ -100,6 +106,27 @@ export default function HistoryTransaction({
     if (!rawPhone) rawPhone = '628123456789';
     const message = encodeURIComponent(`Halo Kak ${order.customerName || 'Pelanggan'}, update status pengerjaan nota ${order.id} Anda saat ini: ${formatWorkPercentage(order.progressStatus ?? order.workStatus)}. Terima kasih telah mempercayakan Waschen Laundry! 😊`);
     window.open(`https://wa.me/${rawPhone}?text=${message}`, '_blank');
+  };
+
+  const handleKirimNotaDigital = async (e, order) => {
+    if (e) e.stopPropagation();
+    if (!order?.id || sendingNotaWaId) return;
+    setSendingNotaWaId(order.id);
+    try {
+      const result = await sendCustomerNotaWhatsAppFromOrder(order, { fetchDetail: true });
+      const info = describeCustomerNotaWaResult(result);
+      if (info) showAlert(info);
+    } catch (err) {
+      showAlert({
+        title: 'Gagal Kirim Nota',
+        message: err?.code === 'NO_PHONE'
+          ? 'Nomor WhatsApp pelanggan kosong.'
+          : (err?.message || 'Tidak bisa membuka WhatsApp'),
+        type: 'error'
+      });
+    } finally {
+      setSendingNotaWaId(null);
+    }
   };
 
   const openPaymentModal = async (order, e) => {
@@ -568,6 +595,16 @@ export default function HistoryTransaction({
 
                         <button
                           type="button"
+                          onClick={(e) => handleKirimNotaDigital(e, order)}
+                          disabled={sendingNotaWaId === order.id || !order.customerPhone || order.customerPhone === '-'}
+                          className="p-2 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 transition-all cursor-pointer shadow-2xs inline-flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                          title="Kirim Nota Digital ke WhatsApp"
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             setDeleteModalOrder(order);
@@ -734,7 +771,7 @@ export default function HistoryTransaction({
               </div>
             </div>
 
-            <div className="p-4 bg-[#f8f8f8] flex gap-2">
+            <div className="p-4 bg-[#f8f8f8] flex flex-wrap gap-2">
               {normalizePaymentStatus(selectedReceipt.paymentStatus) !== 'Lunas' && (
                 <button
                   onClick={() => {
@@ -747,6 +784,15 @@ export default function HistoryTransaction({
                   <span>Bayar / Pelunasan</span>
                 </button>
               )}
+              <button
+                type="button"
+                onClick={(e) => handleKirimNotaDigital(e, selectedReceipt)}
+                disabled={sendingNotaWaId === selectedReceipt.id || !selectedReceipt.customerPhone || selectedReceipt.customerPhone === '-'}
+                className="px-3 py-2.5 bg-emerald-50 border border-emerald-200 hover:bg-emerald-600 hover:text-white text-emerald-700 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <MessageCircle className="h-4 w-4" />
+                <span>{sendingNotaWaId === selectedReceipt.id ? 'Menyiapkan…' : 'Kirim Nota Digital'}</span>
+              </button>
               <button
                 onClick={async () => {
                   await showAlert({

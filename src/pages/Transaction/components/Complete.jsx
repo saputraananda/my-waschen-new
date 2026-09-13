@@ -9,12 +9,15 @@ import {
   Receipt,
   User,
   CreditCard,
-  Clock
+  Clock,
+  MessageCircle
 } from 'lucide-react';
 import HeaderNav from '../../../components/HeaderNav';
 import ThermalNota from '../../../components/ThermalNota.jsx';
 import { formatName, formatEmployeeName } from '../../../utils/FormatName.js';
 import { useShift } from '../../../context/ShiftContext.jsx';
+import { useAppDialog } from '../../../context/AppDialogContext.jsx';
+import { sendCustomerNotaWhatsApp, describeCustomerNotaWaResult } from '../../../utils/customerNotaWhatsApp.js';
 
 const paymentBadge = (status) => {
   if (status === 'Lunas') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
@@ -26,6 +29,7 @@ export default function Complete() {
   const navigate = useNavigate();
   const location = useLocation();
   const { startOrderFlow } = useShift();
+  const { showAlert } = useAppDialog();
   const receipt = location.state?.receipt;
 
   const [userProfile, setUserProfile] = useState(null);
@@ -33,6 +37,7 @@ export default function Complete() {
   const [activeOutletId, setActiveOutletId] = useState(localStorage.getItem('activeOutletId') || '2');
   const [outlets, setOutlets] = useState([]);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [sendingWa, setSendingWa] = useState(false);
 
   useEffect(() => {
     document.title = 'Transaksi Berhasil | Waschen Laundry';
@@ -64,6 +69,26 @@ export default function Complete() {
   const cashierDisplay = formatEmployeeName(receipt.cashierFullName || receipt.cashierName, 'Frontliner');
   const isUnpaid = ps === 'Outstanding';
   const isDP = ps === 'DP';
+
+  const handleKirimNotaWa = async () => {
+    if (sendingWa) return;
+    setSendingWa(true);
+    try {
+      const result = await sendCustomerNotaWhatsApp(receipt);
+      const info = describeCustomerNotaWaResult(result);
+      if (info) showAlert(info);
+    } catch (err) {
+      showAlert({
+        title: 'Gagal Kirim Nota',
+        message: err?.code === 'NO_PHONE'
+          ? 'Nomor WhatsApp pelanggan kosong. Lengkapi data pelanggan dulu.'
+          : (err?.message || 'Tidak bisa membuka WhatsApp'),
+        type: 'error'
+      });
+    } finally {
+      setSendingWa(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#f8f8f8] text-[#313030] flex flex-col font-sans">
@@ -155,6 +180,16 @@ export default function Complete() {
             >
               <Printer className="h-5 w-5" />
               <span>Cetak Struk Nota POS</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleKirimNotaWa}
+              disabled={sendingWa || !receipt.customerPhone}
+              className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-black text-sm shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2.5 cursor-pointer transition-all active:scale-98"
+            >
+              <MessageCircle className="h-5 w-5" />
+              <span>{sendingWa ? 'Menyiapkan…' : 'Kirim Nota Ke Customer'}</span>
             </button>
 
             <div className="grid grid-cols-2 gap-3">

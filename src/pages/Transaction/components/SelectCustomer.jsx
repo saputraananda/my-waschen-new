@@ -1,5 +1,5 @@
 import React from 'react';
-import { Users, Plus, Search, MapPin, ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users, Plus, Search, MapPin, ArrowRight, ChevronLeft, ChevronRight, RefreshCw, Loader2 } from 'lucide-react';
 
 export default function SelectCustomer({
   customerSearch,
@@ -21,8 +21,37 @@ export default function SelectCustomer({
   custCurrentPage,
   setCustCurrentPage,
   filteredCustomers,
+  customersCount = 0,
+  customersLoading = false,
+  customersError = '',
+  onReloadCustomers,
   navigate
 }) {
+  const resetFilters = () => {
+    setCustomerSearch('');
+    setSelectedTierFilter('Semua');
+    setSelectedBranchFilter('Semua');
+    setCustCurrentPage(1);
+  };
+
+  const handleTierClick = (tier) => {
+    setSelectedTierFilter(tier);
+    setCustCurrentPage(1);
+    // Kalau data kosong (fetch gagal / belum masuk), klik "Semua" = muat ulang
+    if (tier === 'Semua' && customersCount === 0 && typeof onReloadCustomers === 'function') {
+      onReloadCustomers();
+    }
+  };
+
+  const handleResetAndReload = () => {
+    resetFilters();
+    if (typeof onReloadCustomers === 'function') onReloadCustomers();
+  };
+
+  const showInitialLoading = customersLoading && customersCount === 0;
+  const showLoadIssue = !customersLoading && customersCount === 0;
+  const showFilterEmpty = !customersLoading && customersCount > 0 && paginatedCustomers.length === 0;
+
   return (
     <div className="flex flex-col gap-5">
       {/* Top Toolbar: Search, Filters & Add Customer */}
@@ -36,14 +65,26 @@ export default function SelectCustomer({
             <p className="text-xs text-slate-400 mt-0.5">Prioritas member VIP & Gold ditampilkan terlebih dahulu untuk kemudahan kasir</p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => navigate('/customer', { state: { tab: 'add', from: '/transaction' } })}
-            className="px-4 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] text-white font-black text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer self-stretch sm:self-auto justify-center"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Registrasi Pelanggan Baru</span>
-          </button>
+          <div className="flex items-center gap-2 self-stretch sm:self-auto">
+            <button
+              type="button"
+              onClick={() => onReloadCustomers?.()}
+              disabled={customersLoading}
+              title="Muat ulang daftar pelanggan"
+              className="px-3 py-2.5 bg-white border border-[#e0e0e0] hover:border-[#5f1340]/40 text-[#313030] font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 text-[#5f1340] ${customersLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/customer', { state: { tab: 'add', from: '/transaction' } })}
+              className="px-4 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] text-white font-black text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer flex-1 sm:flex-none justify-center"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Registrasi Pelanggan Baru</span>
+            </button>
+          </div>
         </div>
 
         {/* Filter Row: Search, Branch, Tier */}
@@ -66,18 +107,18 @@ export default function SelectCustomer({
               className="w-full h-10 px-3 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl text-xs font-semibold text-[#313030] outline-none focus:bg-white focus:border-[#5f1340] cursor-pointer"
             >
               <option value="Semua">Semua Cabang Outlet</option>
-              {(outlets || []).map(o => (
+              {(outlets || []).map((o) => (
                 <option key={o.id} value={o.full_name || o.name}>{o.full_name || o.name}</option>
               ))}
             </select>
           </div>
 
           <div className="md:col-span-3 flex items-center gap-1 overflow-x-auto no-scrollbar">
-            {['Semua', ...customerTiers.map(t => t.name)].map(t => (
+            {['Semua', ...customerTiers.map((t) => t.name)].map((t) => (
               <button
                 key={t}
                 type="button"
-                onClick={() => setSelectedTierFilter(t)}
+                onClick={() => handleTierClick(t)}
                 className={`flex-1 h-10 px-2 rounded-xl text-[10px] font-black transition-all cursor-pointer whitespace-nowrap ${
                   selectedTierFilter === t
                     ? 'bg-[#5f1340] text-white shadow-xs'
@@ -93,8 +134,14 @@ export default function SelectCustomer({
 
       {/* Customer Cards Grid (3x3 Paginated) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {paginatedCustomers.length > 0 ? (
-          paginatedCustomers.map(c => {
+        {showInitialLoading ? (
+          <div className="col-span-full py-16 bg-white border border-[#e0e0e0] rounded-3xl text-center text-slate-400">
+            <Loader2 className="h-10 w-10 mx-auto text-[#5f1340] mb-3 animate-spin" />
+            <p className="font-bold text-xs text-[#313030]">Memuat daftar pelanggan…</p>
+            <p className="text-[11px] mt-0.5">Mohon tunggu sebentar</p>
+          </div>
+        ) : paginatedCustomers.length > 0 ? (
+          paginatedCustomers.map((c) => {
             const isCross = c.homeBranch !== activeOutletName;
             return (
               <div
@@ -109,7 +156,6 @@ export default function SelectCustomer({
                 }}
                 className="bg-white border border-[#e0e0e0] hover:border-[#5f1340]/50 hover:shadow-md rounded-3xl p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between group relative overflow-hidden"
               >
-                {/* Top Row: Avatar, Name, Tier */}
                 <div className="flex items-start gap-3.5">
                   <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-[#5f1340] to-[#7d1956] text-white font-black text-base flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform">
                     {c.name.charAt(0).toUpperCase()}
@@ -125,7 +171,6 @@ export default function SelectCustomer({
                   </div>
                 </div>
 
-                {/* Middle: Address & Branch info */}
                 <div className="my-3 py-2.5 border-t border-b border-[#e0e0e0]/70 text-xs text-slate-500 space-y-1">
                   <div className="flex items-start gap-1.5">
                     <MapPin className="h-3.5 w-3.5 text-slate-400 mt-0.5 shrink-0" />
@@ -141,7 +186,6 @@ export default function SelectCustomer({
                   </div>
                 </div>
 
-                {/* Bottom: Member Card Balance & Action */}
                 <div className="flex items-center justify-between text-xs pt-1">
                   <div>
                     <span className="text-[10px] text-slate-400 block font-medium">Saldo Kartu:</span>
@@ -156,29 +200,42 @@ export default function SelectCustomer({
               </div>
             );
           })
-        ) : (
+        ) : showLoadIssue ? (
           <div className="col-span-full py-16 bg-white border border-[#e0e0e0] rounded-3xl text-center text-slate-400">
             <Users className="h-10 w-10 mx-auto text-slate-300 mb-2" />
-            <p className="font-bold text-xs text-[#313030]">Tidak ada pelanggan yang sesuai dengan pencarian atau filter cabang</p>
+            <p className="font-bold text-xs text-[#313030]">
+              {customersError || 'Daftar pelanggan belum termuat'}
+            </p>
+            <p className="text-[11px] mt-0.5 mb-3">
+              Ini biasanya bukan karena filter &quot;Semua&quot; — coba muat ulang data.
+            </p>
+            <button
+              type="button"
+              onClick={handleResetAndReload}
+              className="px-4 py-2 bg-[#5f1340] hover:bg-[#4d0f33] text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              <span>Muat Ulang Pelanggan</span>
+            </button>
+          </div>
+        ) : showFilterEmpty ? (
+          <div className="col-span-full py-16 bg-white border border-[#e0e0e0] rounded-3xl text-center text-slate-400">
+            <Users className="h-10 w-10 mx-auto text-slate-300 mb-2" />
+            <p className="font-bold text-xs text-[#313030]">Tidak ada pelanggan yang sesuai dengan pencarian atau filter</p>
             <p className="text-[11px] mt-0.5 mb-3">Silakan reset filter untuk menampilkan seluruh pelanggan</p>
             <button
               type="button"
-              onClick={() => {
-                setCustomerSearch('');
-                setSelectedTierFilter('Semua');
-                setSelectedBranchFilter('Semua');
-                setCustCurrentPage(1);
-              }}
+              onClick={resetFilters}
               className="px-4 py-2 bg-[#5f1340] hover:bg-[#4d0f33] text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer inline-flex items-center gap-1.5"
             >
               <span>Reset Semua Filter</span>
             </button>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Customer Pagination Controls */}
-      {totalCustPages > 1 && (
+      {totalCustPages > 1 && !customersLoading && (
         <div className="bg-white border border-[#e0e0e0] rounded-2xl p-3 shadow-xs flex items-center justify-between text-xs">
           <span className="text-slate-400 font-medium">
             Menampilkan {paginatedCustomers.length} dari {filteredCustomers.length} pelanggan (Halaman {custCurrentPage} / {totalCustPages})
@@ -188,13 +245,13 @@ export default function SelectCustomer({
             <button
               type="button"
               disabled={custCurrentPage === 1}
-              onClick={() => setCustCurrentPage(prev => Math.max(1, prev - 1))}
+              onClick={() => setCustCurrentPage((prev) => Math.max(1, prev - 1))}
               className="p-2 rounded-xl border border-[#e0e0e0] disabled:opacity-40 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
 
-            {Array.from({ length: totalCustPages }, (_, i) => i + 1).map(pageNum => (
+            {Array.from({ length: totalCustPages }, (_, i) => i + 1).map((pageNum) => (
               <button
                 key={pageNum}
                 type="button"
@@ -212,7 +269,7 @@ export default function SelectCustomer({
             <button
               type="button"
               disabled={custCurrentPage === totalCustPages}
-              onClick={() => setCustCurrentPage(prev => Math.min(totalCustPages, prev + 1))}
+              onClick={() => setCustCurrentPage((prev) => Math.min(totalCustPages, prev + 1))}
               className="p-2 rounded-xl border border-[#e0e0e0] disabled:opacity-40 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <ChevronRight className="h-4 w-4" />

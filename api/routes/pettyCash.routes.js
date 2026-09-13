@@ -4,8 +4,7 @@ import {
   addPettyCashEntry,
   reviewPettyCashEntry,
   uploadPettyCashEvidenceFile,
-  getCurrentShift,
-  openShift
+  getCurrentShift
 } from '../controllers/pettyCash.controller.js';
 import { uploadPettyCashEvidence } from '../middleware/upload.js';
 
@@ -16,6 +15,5 @@ router.post('/upload-evidence', uploadPettyCashEvidence, uploadPettyCashEvidence
 router.post('/', uploadPettyCashEvidence, addPettyCashEntry);
 router.patch('/:id/review', reviewPettyCashEntry);
 router.get('/shift/current', getCurrentShift);
-router.post('/shift/open', openShift);
 
 export default router;
