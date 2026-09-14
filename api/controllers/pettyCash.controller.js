@@ -7,6 +7,17 @@ const APPROVED_STATUS = 'Disetujui';
 const PENDING_STATUS = 'Pengajuan';
 const REJECTED_STATUS = 'Ditolak';
 
+/** 1 = pakai saldo petty cash; 0 = Central Cash (approval saja). */
+function parseIsPettyCash(value, fallback = 1) {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (value === false || value === 'false' || value === '0' || value === 0) return 0;
+  return 1;
+}
+
+function usesPettyCashBalance(row) {
+  return parseIsPettyCash(row?.is_petty_cash, 1) === 1;
+}
+
 /**
  * Petty cash / kas laci memakai initial_petty_cash dari shift aktif.
  */
@@ -45,7 +56,7 @@ async function getApprovedBalance(outletId, connection = myWaschenPool) {
 
   const [rows] = await connection.query(
     `SELECT type, amount FROM tr_petty_cash
-     WHERE outlet_id = ? AND status = ?
+     WHERE outlet_id = ? AND status = ? AND COALESCE(is_petty_cash, 1) = 1
      ORDER BY id ASC`,
     [oid, APPROVED_STATUS]
   );
@@ -96,7 +107,7 @@ export const getPettyCashLogs = async (req, res) => {
       : initialPettyCash;
 
     const pendingCount = rows.filter((r) => r.status === PENDING_STATUS).length;
-    const approvedRows = rows.filter((r) => r.status === APPROVED_STATUS);
+    const approvedRows = rows.filter((r) => r.status === APPROVED_STATUS && usesPettyCashBalance(r));
 
     return res.status(200).json({
       success: true,
@@ -161,7 +172,8 @@ export const addPettyCashEntry = async (req, res) => {
       category,
       amount,
       description,
-      receiptPhotoUrl
+      receiptPhotoUrl,
+      isPettyCash
     } = req.body;
 
     let evidenceUrl = receiptPhotoUrl || null;
@@ -183,17 +195,19 @@ export const addPettyCashEntry = async (req, res) => {
     const resolvedShiftId = shiftId || openShiftId || null;
 
     const balanceSnapshot = await getApprovedBalance(resolvedOutletId);
+    const isPetty = parseIsPettyCash(isPettyCash, 1);
 
     const [result] = await myWaschenPool.query(
       `INSERT INTO tr_petty_cash 
-       (outlet_id, shift_id, cashier_employee_id, type, category, amount, balance_before, balance_after, description, receipt_photo_url, status, transaction_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+       (outlet_id, shift_id, cashier_employee_id, type, category, is_petty_cash, amount, balance_before, balance_after, description, receipt_photo_url, status, transaction_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         resolvedOutletId,
         resolvedShiftId,
         cashierEmployeeId || 167,
         type,
         category || 'Biaya Operasional',
+        isPetty,
         numAmount,
         balanceSnapshot,
         balanceSnapshot,
@@ -287,9 +301,12 @@ export const reviewPettyCashEntry = async (req, res) => {
 
     const balanceBefore = await getApprovedBalance(entry.outlet_id, connection);
     const numAmount = parseFloat(entry.amount) || 0;
-    const balanceAfter = entry.type === 'Masuk'
-      ? balanceBefore + numAmount
-      : balanceBefore - numAmount;
+    const applyToBalance = usesPettyCashBalance(entry);
+    const balanceAfter = !applyToBalance
+      ? balanceBefore
+      : entry.type === 'Masuk'
+        ? balanceBefore + numAmount
+        : balanceBefore - numAmount;
 
     await connection.query(
       `UPDATE tr_petty_cash
@@ -316,7 +333,9 @@ export const reviewPettyCashEntry = async (req, res) => {
     const [updated] = await myWaschenPool.query('SELECT * FROM tr_petty_cash WHERE id = ?', [id]);
     return res.status(200).json({
       success: true,
-      message: `Pengajuan disetujui — saldo ${entry.type === 'Keluar' ? 'berkurang' : 'bertambah'} Rp ${numAmount.toLocaleString('id-ID')}`,
+      message: applyToBalance
+        ? `Pengajuan disetujui — saldo ${entry.type === 'Keluar' ? 'berkurang' : 'bertambah'} Rp ${numAmount.toLocaleString('id-ID')}`
+        : 'Pengajuan disetujui — Central Cash, saldo kas laci tidak berubah',
       data: updated[0],
       balanceBefore,
       balanceAfter

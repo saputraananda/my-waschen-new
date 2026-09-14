@@ -19,6 +19,7 @@ export const mapCashLogFromApi = (p) => ({
   amount: parseFloat(p.amount) || 0,
   desc: p.description || 'Pencatatan kas',
   status: p.status || 'Disetujui',
+  isPettyCash: Number(p.is_petty_cash ?? p.isPettyCash ?? 1) !== 0,
   receiptPhotoUrl: p.receipt_photo_url || null,
   date: new Date(p.transaction_date).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
   createdBy: 'Staff Kasir'
@@ -84,7 +85,7 @@ export default function PettyCash() {
         const floatVal = res.data.initialPettyCash ?? res.data.initialFloat;
         if (typeof floatVal === 'number') setInitialPettyCashFloat(floatVal);
         const logs = (res.data.data || []).map(mapCashLogFromApi);
-        const approved = logs.filter((l) => l.status === 'Disetujui');
+        const approved = logs.filter((l) => l.status === 'Disetujui' && l.isPettyCash);
         const inSum = approved.filter((l) => l.type === 'Masuk').reduce((s, l) => s + l.amount, 0);
         const outSum = approved.filter((l) => l.type === 'Keluar').reduce((s, l) => s + l.amount, 0);
         setCurrentBalance((floatVal || 0) + inSum - outSum);

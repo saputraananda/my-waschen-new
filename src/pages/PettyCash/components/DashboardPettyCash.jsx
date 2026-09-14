@@ -25,7 +25,7 @@ export default function DashboardPettyCash({
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('Semua');
   const [reviewingId, setReviewingId] = useState(null);
 
-  const approvedLogs = cashLogs.filter((c) => c.status === 'Disetujui');
+  const approvedLogs = cashLogs.filter((c) => c.status === 'Disetujui' && c.isPettyCash !== false);
   const totalCashIn = approvedLogs.filter(c => c.type === 'Masuk').reduce((acc, c) => acc + c.amount, 0);
   const totalCashOut = approvedLogs.filter(c => c.type === 'Keluar').reduce((acc, c) => acc + c.amount, 0);
   const netCashInDrawer = initialPettyCashFloat + totalCashIn - totalCashOut;
@@ -158,6 +158,7 @@ export default function DashboardPettyCash({
                 <th className="py-3.5 px-4">Status</th>
                 <th className="py-3.5 px-4">Tipe & Waktu</th>
                 <th className="py-3.5 px-4">Kategori</th>
+                <th className="py-3.5 px-4">Sumber</th>
                 <th className="py-3.5 px-4">Keterangan</th>
                 <th className="py-3.5 px-4 text-center">Bukti</th>
                 <th className="py-3.5 px-4 text-right">Nominal</th>
@@ -182,6 +183,15 @@ export default function DashboardPettyCash({
                     <td className="py-3.5 px-4">
                       <span className="px-2.5 py-0.5 bg-slate-100 text-slate-700 rounded-md font-bold text-[10px]">
                         {log.category}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className={`px-2.5 py-0.5 rounded-md font-bold text-[10px] ${
+                        log.isPettyCash === false
+                          ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                          : 'bg-[#5f1340]/8 text-[#5f1340]'
+                      }`}>
+                        {log.isPettyCash === false ? 'Central Cash' : 'Petty Cash'}
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-slate-700 font-extrabold max-w-[200px]">
@@ -238,7 +248,7 @@ export default function DashboardPettyCash({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={isApprover ? 7 : 6} className="py-12 text-center text-slate-400 font-bold">
+                  <td colSpan={isApprover ? 8 : 7} className="py-12 text-center text-slate-400 font-bold">
                     Tidak ada data transaksi kas.
                   </td>
                 </tr>

@@ -692,7 +692,8 @@ export const closeShift = async (req, res) => {
     // Cash modal (kembalian) dan petty cash (belanja outlet) adalah dua laci terpisah.
     const [pettyOutRows] = await myWaschenPool.query(
       `SELECT COALESCE(SUM(amount),0) AS total FROM tr_petty_cash
-       WHERE outlet_id = ? AND type = 'Keluar' AND shift_id = ? AND status = 'Disetujui'`,
+       WHERE outlet_id = ? AND type = 'Keluar' AND shift_id = ? AND status = 'Disetujui'
+         AND COALESCE(is_petty_cash, 1) = 1`,
       [shift.outlet_id, shiftId]
     );
     const pettyOut = parseFloat(pettyOutRows[0]?.total) || 0;

@@ -177,6 +177,7 @@ export default function Dashboard() {
             category: p.category,
             amount: parseFloat(p.amount) || 0,
             desc: p.description || 'Pencatatan kas',
+            isPettyCash: Number(p.is_petty_cash ?? p.isPettyCash ?? 1) !== 0,
             time: new Date(p.transaction_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
           }));
           setCashLogs(mappedLogs);
@@ -341,8 +342,9 @@ export default function Dashboard() {
   const unpaidOrdersCount = orders.filter(o => o.paymentStatus !== 'Lunas').length;
 
   // Cash log sum calculations
-  const totalCashIn = cashLogs.filter(c => c.type === 'Masuk').reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
-  const totalCashOut = cashLogs.filter(c => c.type === 'Keluar').reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
+  const balanceLogs = cashLogs.filter((c) => c.isPettyCash !== false);
+  const totalCashIn = balanceLogs.filter(c => c.type === 'Masuk').reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
+  const totalCashOut = balanceLogs.filter(c => c.type === 'Keluar').reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
   const netCashInDrawer = initialPettyCashFloat + totalCashIn - totalCashOut;
 
   // Filter and search orders list

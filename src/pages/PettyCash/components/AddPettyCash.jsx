@@ -10,7 +10,8 @@ const getDefaultForm = (categoryId = '') => ({
   type: 'Keluar',
   categoryId,
   amount: '',
-  desc: ''
+  desc: '',
+  isPettyCash: true
 });
 
 export default function AddPettyCash({
@@ -103,6 +104,7 @@ export default function AddPettyCash({
       fd.append('category', selectedCategory?.label || selectedCategory?.name || '');
       fd.append('amount', String(numAmount));
       fd.append('description', logForm.desc || 'Pengajuan kas outlet');
+      fd.append('isPettyCash', logForm.isPettyCash ? '1' : '0');
       if (evidenceFile) fd.append('evidence', evidenceFile);
 
       const res = await axios.post('/api/petty-cash', fd, {
@@ -118,6 +120,7 @@ export default function AddPettyCash({
           amount: parseFloat(created.amount) || numAmount,
           desc: created.description || 'Pengajuan kas outlet',
           status: created.status || 'Pengajuan',
+          isPettyCash: Number(created.is_petty_cash ?? created.isPettyCash ?? 1) !== 0,
           receiptPhotoUrl: created.receipt_photo_url || null,
           date: 'Baru saja',
           createdBy: formatEmployeeName(userProfile?.fullName, 'Staff Kasir')
@@ -184,7 +187,40 @@ export default function AddPettyCash({
           </div>
 
           <div className="p-5 border border-[#e0e0e0] rounded-2xl bg-[#f8f8f8]/50 flex flex-col gap-4">
-            <span className="text-[10px] font-black text-[#5f1340] uppercase tracking-wider">2. Kategori</span>
+            <span className="text-[10px] font-black text-[#5f1340] uppercase tracking-wider">2. Sumber Dana</span>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setLogForm({ ...logForm, isPettyCash: true })}
+                className={`py-3 px-3 rounded-2xl text-xs font-black transition-all cursor-pointer border-2 ${
+                  logForm.isPettyCash
+                    ? 'border-[#5f1340] bg-[#5f1340]/5 text-[#5f1340] shadow-xs'
+                    : 'border-[#e0e0e0] bg-white text-slate-500 hover:border-[#5f1340]/30'
+                }`}
+              >
+                Petty Cash
+              </button>
+              <button
+                type="button"
+                onClick={() => setLogForm({ ...logForm, isPettyCash: false })}
+                className={`py-3 px-3 rounded-2xl text-xs font-black transition-all cursor-pointer border-2 ${
+                  !logForm.isPettyCash
+                    ? 'border-amber-500 bg-amber-50 text-amber-800 shadow-xs'
+                    : 'border-[#e0e0e0] bg-white text-slate-500 hover:border-amber-200'
+                }`}
+              >
+                Central Cash
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+              {logForm.isPettyCash
+                ? 'Jika disetujui, nominal ini mengubah saldo kas laci.'
+                : 'Tidak memakai uang petty cash. Tetap butuh approval admin, saldo kas laci tidak berubah.'}
+            </p>
+          </div>
+
+          <div className="p-5 border border-[#e0e0e0] rounded-2xl bg-[#f8f8f8]/50 flex flex-col gap-4">
+            <span className="text-[10px] font-black text-[#5f1340] uppercase tracking-wider">3. Kategori</span>
             {visibleCategories.length === 0 ? (
               <p className="text-xs text-slate-400 font-medium">Tidak ada kategori untuk tipe ini.</p>
             ) : (
@@ -208,7 +244,7 @@ export default function AddPettyCash({
           </div>
 
           <div className="p-5 border border-[#e0e0e0] rounded-2xl bg-[#f8f8f8]/50 flex flex-col gap-4">
-            <span className="text-[10px] font-black text-[#5f1340] uppercase tracking-wider">3. Nominal</span>
+            <span className="text-[10px] font-black text-[#5f1340] uppercase tracking-wider">4. Nominal</span>
             <input
               type="text"
               required
@@ -238,7 +274,7 @@ export default function AddPettyCash({
 
         <div className="flex flex-col gap-5">
           <div className="p-5 border border-[#e0e0e0] rounded-2xl bg-[#f8f8f8]/50 flex flex-col gap-4 flex-1">
-            <span className="text-[10px] font-black text-[#5f1340] uppercase tracking-wider">4. Keterangan</span>
+            <span className="text-[10px] font-black text-[#5f1340] uppercase tracking-wider">5. Keterangan</span>
             <textarea
               rows={5}
               required
@@ -250,7 +286,7 @@ export default function AddPettyCash({
           </div>
 
           <div className="p-5 border border-[#e0e0e0] rounded-2xl bg-[#f8f8f8]/50 flex flex-col gap-3">
-            <span className="text-[10px] font-black text-[#5f1340] uppercase tracking-wider">5. Bukti Pengajuan</span>
+            <span className="text-[10px] font-black text-[#5f1340] uppercase tracking-wider">6. Bukti Pengajuan</span>
             {evidenceFile ? (
               <div className="flex items-center gap-3 p-3 bg-white border border-[#e0e0e0] rounded-xl">
                 {evidencePreview ? (
