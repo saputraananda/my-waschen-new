@@ -169,12 +169,15 @@ export default function TrackingService({
 
   const openPaymentModal = async (order, e) => {
     if (e) e.stopPropagation();
+    const initialBalance = parseFloat(
+      order.memberBalance ?? order.member_balance ?? order.customerBalance ?? order.deposit_balance ?? order.customer_deposit_balance ?? 0
+    ) || 0;
     const modalOrder = {
       ...order,
       grandTotal: order.grandTotal ?? order.totalAmount ?? 0,
       paidAmount: order.paidAmount ?? 0,
-      memberBalance: parseFloat(order.memberBalance || order.member_balance || order.customerBalance || order.deposit_balance || order.customer_deposit_balance || 0),
-      customerBalance: parseFloat(order.memberBalance || order.member_balance || order.customerBalance || order.deposit_balance || order.customer_deposit_balance || 0)
+      memberBalance: initialBalance,
+      customerBalance: initialBalance
     };
     setPaymentModalOrder(modalOrder);
     setMainCategory('Tunai');
@@ -193,7 +196,22 @@ export default function TrackingService({
         axios.get(`/api/history/transactions/${order.dbId || order.id}/payments`),
         axios.get('/api/masters/payment-methods')
       ]);
-      if (logsRes.data?.success) setPaymentDetail(logsRes.data.data);
+      if (logsRes.data?.success) {
+        const detail = logsRes.data.data;
+        setPaymentDetail(detail);
+        // Saldo member diambil fresh dari join mst_customer di endpoint payments
+        const freshBal = parseFloat(
+          detail?.order?.member_balance ?? detail?.order?.customer_deposit_balance ?? initialBalance
+        ) || 0;
+        setPaymentModalOrder((prev) => (prev ? {
+          ...prev,
+          memberBalance: freshBal,
+          customerBalance: freshBal,
+          grandTotal: detail?.grandTotal ?? prev.grandTotal,
+          paidAmount: detail?.paidAmount ?? prev.paidAmount,
+          paymentStatus: detail?.order?.payment_status || prev.paymentStatus
+        } : prev));
+      }
       if (methodsRes.data?.success) {
         setPaymentMethods(methodsRes.data.data || []);
       }

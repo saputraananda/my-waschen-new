@@ -333,7 +333,18 @@ export default function DetailTransaction() {
         axios.get(`/api/history/transactions/${order.dbId}/payments`),
         axios.get('/api/masters/payment-methods')
       ]);
-      if (logsRes.data?.success) setPaymentDetail(logsRes.data.data);
+      if (logsRes.data?.success) {
+        const detail = logsRes.data.data;
+        setPaymentDetail(detail);
+        const freshBal = parseFloat(
+          detail?.order?.member_balance ?? detail?.order?.customer_deposit_balance ?? order.memberBalance ?? 0
+        ) || 0;
+        setOrder((prev) => (prev ? {
+          ...prev,
+          memberBalance: freshBal,
+          customerBalance: freshBal
+        } : prev));
+      }
       if (methodsRes.data?.success) {
         setPaymentMethods(methodsRes.data.data || []);
       }

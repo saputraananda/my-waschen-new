@@ -69,6 +69,8 @@ export default function History() {
           customerPhone: t.customer_phone || '-',
           customerTier: t.customer_tier || 'Reguler',
           customerAddress: t.customer_address || '-',
+          memberBalance: parseFloat(t.member_balance ?? t.customer_deposit_balance ?? t.deposit_balance ?? 0) || 0,
+          customerBalance: parseFloat(t.member_balance ?? t.customer_deposit_balance ?? t.deposit_balance ?? 0) || 0,
           branch: t.outlet_name || t.home_branch || 'Waschen Laundry Citra Gran',
           serviceType: t.speed_name ? `${t.order_category} - ${t.speed_name}` : t.order_category,
           category: t.order_category,

@@ -110,6 +110,8 @@ export default function Dashboard() {
           customerName: o.customer_name || 'Pelanggan',
           customerPhone: o.customer_phone || '-',
           customerType: o.customer_tier || 'Regular',
+          memberBalance: parseFloat(o.member_balance ?? o.customer_deposit_balance ?? o.deposit_balance ?? 0) || 0,
+          customerBalance: parseFloat(o.member_balance ?? o.customer_deposit_balance ?? o.deposit_balance ?? 0) || 0,
           branch: o.outlet_name || o.home_branch || activeOutletName,
           serviceType: o.speed_name ? `${o.order_category} - ${o.speed_name}` : o.order_category,
           category: o.order_category,
