@@ -18,30 +18,42 @@ export function isNotaPaid(order) {
   return normalizePaymentStatus(order?.paymentStatus ?? order?.payment_status) === 'Lunas';
 }
 
+/**
+ * Cucian sudah siap / selesai proses (≥90%):
+ * Siap Diambil, Siap Diantar, Sedang Diantar, atau Selesai.
+ */
 export function isNotaWorkComplete(order) {
-  return getWorkPercentage(order?.workStatus ?? order?.work_status) >= 100;
+  return getWorkPercentage(order?.workStatus ?? order?.work_status) >= 90;
 }
 
-/** Barang sudah diambil pelanggan (header picked_up_at). */
+/**
+ * Sudah diserahkan ke customer:
+ * - header picked_up_at terisi, ATAU
+ * - progress header ≥100% (semua item Selesai / sudah diantar).
+ */
 export function isNotaPickedUp(order) {
-  return Boolean(order?.pickedUpAt ?? order?.picked_up_at);
+  if (order?.pickedUpAt ?? order?.picked_up_at) return true;
+  return getWorkPercentage(order?.workStatus ?? order?.work_status) >= 100;
 }
 
 /**
  * Klasifikasi nota ke salah satu bucket antrean.
- * Selesai + diambil + lunas → selesai_diambil_sudah_bayar (biasanya tidak perlu tindakan).
+ *
+ * Di Ruko  = siap (≥90%) tapi belum diserahkan (<100% / belum picked_up)
+ * Diambil  = sudah diserahkan (≥100% atau picked_up_at)
+ * Selesai · Diambil · Sudah Bayar biasanya tidak ditampilkan di tab utama.
  */
 export function getNotaQueueCategory(order) {
-  const complete = isNotaWorkComplete(order);
+  const ready = isNotaWorkComplete(order);
   const paid = isNotaPaid(order);
   const picked = isNotaPickedUp(order);
 
-  if (!complete && !paid) return 'proses_belum_bayar';
-  if (!complete && paid) return 'proses_sudah_bayar';
-  if (complete && !picked && !paid) return 'selesai_ruko_belum_bayar';
-  if (complete && !picked && paid) return 'selesai_ruko_sudah_bayar';
-  if (complete && picked && !paid) return 'selesai_diambil_belum_bayar';
-  if (complete && picked && paid) return 'selesai_diambil_sudah_bayar';
+  if (!ready && !paid) return 'proses_belum_bayar';
+  if (!ready && paid) return 'proses_sudah_bayar';
+  if (ready && !picked && !paid) return 'selesai_ruko_belum_bayar';
+  if (ready && !picked && paid) return 'selesai_ruko_sudah_bayar';
+  if (ready && picked && !paid) return 'selesai_diambil_belum_bayar';
+  if (ready && picked && paid) return 'selesai_diambil_sudah_bayar';
   return 'proses_belum_bayar';
 }
 

@@ -846,9 +846,6 @@ export const verifyPin = async (req, res) => {
     if (!pin) {
       return res.status(400).json({ success: false, message: 'codePin wajib diisi' });
     }
-    if (pin.length !== 8) {
-      return res.status(400).json({ success: false, message: 'PIN harus 8 digit angka' });
-    }
 
     const outletFilter = outletId != null && outletId !== '' && !Number.isNaN(Number(outletId))
       ? Number(outletId)
@@ -889,7 +886,7 @@ export const verifyPin = async (req, res) => {
     if (!rows.length) {
       return res.status(401).json({
         success: false,
-        message: 'PIN tidak ditemukan. Pastikan 8 digit PIN frontliner sudah terdaftar di sistem.'
+        message: 'PIN tidak ditemukan. Pastikan PIN frontliner sudah terdaftar di sistem.'
       });
     }
 

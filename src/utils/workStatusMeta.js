@@ -21,6 +21,7 @@ export const STATUS_STEPS = {
   'Siap Diambil': { text: 'text-amber-700', bg: 'bg-amber-50 border-amber-200', icon: PackageCheck, percentage: 90 },
   'Siap Diantar': { text: 'text-blue-700', bg: 'bg-blue-50 border-blue-200', icon: Truck, percentage: 90 },
   Delivery: { text: 'text-blue-700', bg: 'bg-blue-50 border-blue-200', icon: Truck, percentage: 90 },
+  'Sedang Diantar': { text: 'text-cyan-700', bg: 'bg-cyan-50 border-cyan-200', icon: Truck, percentage: 95 },
   Selesai: { text: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200', icon: CheckCircle2, percentage: 100 },
   Dibatalkan: { text: 'text-rose-700', bg: 'bg-rose-50 border-rose-200', icon: Clock, percentage: 0 }
 };
@@ -32,6 +33,7 @@ export const DEFAULT_WORK_STATUSES = [
   'Pengemasan',
   'Siap Diambil',
   'Siap Diantar',
+  'Sedang Diantar',
   'Selesai'
 ];
 
@@ -56,16 +58,18 @@ export function matchesWorkStatusTab(workStatus, tabName) {
   if (tabName === 'Pencucian' || tabName === 'Proses Cuci') return pct > 17.5 && pct <= 37.5;
   if (tabName === 'Penyetrikaan' || tabName === 'Proses Setrika') return pct > 37.5 && pct <= 62.5;
   if (tabName === 'Pengemasan' || tabName === 'Proses Packing') return pct > 62.5 && pct <= 82.5;
+  // Siap Diambil / Siap Diantar (90%) — pisah dari Sedang Diantar (95%)
   if (
     tabName === 'Siap Diambil / Diantar' ||
     tabName === 'Siap Diambil' ||
     tabName === 'Siap Diantar' ||
     tabName === 'Delivery'
   ) {
-    return pct > 82.5 && pct < 100;
+    return pct > 82.5 && pct < 92.5;
   }
+  if (tabName === 'Sedang Diantar') return pct >= 92.5 && pct < 100;
   if (tabName === 'Selesai') return pct >= 100;
-  return true;
+  return false;
 }
 
 export function percentageTone(pct) {

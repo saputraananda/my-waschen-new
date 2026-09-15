@@ -27,6 +27,8 @@ import { NOTA_QUEUE_TABS, matchesNotaQueueTab, getNotaQueueLabel } from '../../.
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import TransactionBarcodeCard from '../../../components/TransactionBarcodeCard.jsx';
 import ModalLacakNota from '../../../components/ModalLacakNota.jsx';
+import ChangeFulfillmentModal from '../../../components/ChangeFulfillmentModal.jsx';
+import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
 import {
   sendCustomerNotaWhatsAppFromOrder,
   describeCustomerNotaWaResult
@@ -67,6 +69,8 @@ export default function TrackingService({
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
   const [sendingNotaWa, setSendingNotaWa] = useState(false);
+  const [fulfillmentModalOpen, setFulfillmentModalOpen] = useState(false);
+  const [showPayPinModal, setShowPayPinModal] = useState(false);
 
   const normalizePaymentStatus = (status) => {
     if (status === 'Belum Lunas') return 'Outstanding';
@@ -201,10 +205,37 @@ export default function TrackingService({
     }
   };
 
-  const handleSubmitPaymentUpdate = async () => {
+  const requestSubmitPaymentUpdate = () => {
+    if (!paymentModalOrder) return;
+    if (normalizePaymentStatus(paymentModalOrder.paymentStatus) === 'Lunas') {
+      showAlert({ title: 'Sudah Lunas', message: 'Nota ini sudah lunas.', type: 'error' });
+      return;
+    }
+    const addAmount = parseRupiah(paymentForm.additionalAmount);
+    if (addAmount <= 0) {
+      showAlert({
+        title: 'Nominal Kosong',
+        message: 'Nominal bayar wajib diisi sebelum menyimpan pembayaran.',
+        type: 'warning'
+      });
+      return;
+    }
+    setShowPayPinModal(true);
+  };
+
+  const handleSubmitPaymentUpdate = async (cashierEmployeeId) => {
     if (!paymentModalOrder) return;
     const remaining = paymentDetail?.remaining ?? Math.max(0, (paymentModalOrder.grandTotal || 0) - (paymentModalOrder.paidAmount || 0));
     const addAmount = parseRupiah(paymentForm.additionalAmount);
+    const resolvedCashierId = Number(cashierEmployeeId);
+    if (!resolvedCashierId) {
+      showAlert({
+        title: 'PIN Tidak Valid',
+        message: 'Identitas kasir dari PIN tidak ditemukan.',
+        type: 'error'
+      });
+      return;
+    }
 
     if (normalizePaymentStatus(paymentModalOrder.paymentStatus) === 'Lunas') {
       showAlert({ title: 'Sudah Lunas', message: 'Nota ini sudah lunas.', type: 'error' });
@@ -229,6 +260,7 @@ export default function TrackingService({
       outlets
     });
 
+    setShowPayPinModal(false);
     setIsSubmittingPayment(true);
     try {
       const txnId = paymentModalOrder.dbId || paymentModalOrder.id;
@@ -249,7 +281,7 @@ export default function TrackingService({
         overpaymentToDeposit: paymentForm.overpaymentAction === 'deposit',
         overpaymentToRefund: paymentForm.overpaymentAction === 'refund',
         overpaymentAction: paymentForm.overpaymentAction,
-        cashierEmployeeId: localStorage.getItem('employeeId') || null
+        cashierEmployeeId: resolvedCashierId
       });
 
       const updated = res.data?.data;
@@ -573,6 +605,23 @@ export default function TrackingService({
                   <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Kategori & Parfum</span>
                   <span className="font-extrabold text-[#313030] mt-0.5 block">{selectedOrderModal.serviceType}</span>
                   <span className="text-[10px] text-pink-700 font-bold block">Aroma: {selectedOrderModal.perfume || 'Standar'}</span>
+                  <div className="mt-1 flex items-center gap-2 flex-wrap">
+                    <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full border ${
+                      selectedOrderModal.isDelivery
+                        ? 'bg-orange-50 text-orange-700 border-orange-200'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}>
+                      {selectedOrderModal.isDelivery ? 'Diantar' : 'Ambil di outlet'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setFulfillmentModalOpen(true)}
+                      className="text-[10px] font-black text-[#5f1340] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <Truck className="h-3 w-3" />
+                      Ubah pengambilan
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Tagihan & Bayar</span>
@@ -681,64 +730,99 @@ export default function TrackingService({
               </div>
 
               {/* Action Buttons Inside Modal */}
-              <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-3 border-t border-[#e0e0e0] mt-2">
-                <div className="flex gap-2 w-full sm:w-auto flex-wrap">
-                  {selectedOrderModal.paymentStatus !== 'Lunas' && (
-                    <button
-                      type="button"
-                      onClick={() => openPaymentModal(selectedOrderModal)}
-                      className="flex-1 sm:flex-initial px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl shadow-xs cursor-pointer"
-                    >
-                      Bayar Pelunasan
-                    </button>
-                  )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pt-3 border-t border-[#e0e0e0] mt-2">
+                {selectedOrderModal.paymentStatus !== 'Lunas' && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setSelectedOrderModal(null);
-                      navigate(`/riwayat/${selectedOrderModal.id}`, { state: { from: '/dashboard' } });
-                    }}
-                    className="flex-1 sm:flex-initial px-4 py-2 border border-[#5f1340]/30 bg-[#5f1340]/5 hover:bg-[#5f1340] hover:text-white text-[#5f1340] text-xs font-black rounded-xl cursor-pointer inline-flex items-center justify-center gap-1.5"
+                    onClick={() => openPaymentModal(selectedOrderModal)}
+                    className="w-full px-3 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl shadow-xs cursor-pointer inline-flex items-center justify-center gap-1.5"
                   >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    <span>Detail Lengkap</span>
+                    Bayar Pelunasan
                   </button>
-                </div>
-
-                <div className="flex gap-2 w-full sm:w-auto justify-end flex-wrap">
-                  <button
-                    type="button"
-                    onClick={(e) => handleKirimNotaDigital(e, selectedOrderModal)}
-                    disabled={sendingNotaWa || !selectedOrderModal.customerPhone || selectedOrderModal.customerPhone === '-'}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-black rounded-xl cursor-pointer flex items-center gap-1.5"
-                    title="Kirim nota digital + QR ke WhatsApp"
-                  >
-                    <MessageCircle className="h-4 w-4" />
-                    <span>{sendingNotaWa ? 'Menyiapkan…' : 'Kirim Nota Digital'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handlePrintNota(selectedOrderModal);
-                    }}
-                    className="px-4 py-2 border border-[#e0e0e0] bg-white hover:bg-slate-800 hover:text-white text-slate-700 text-xs font-bold rounded-xl cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Printer className="h-4 w-4" />
-                    <span>Cetak Struk</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedOrderModal(null)}
-                    className="px-4 py-2 border border-[#e0e0e0] bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
-                  >
-                    Tutup
-                  </button>
-                </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedOrderModal(null);
+                    navigate(`/riwayat/${selectedOrderModal.id}`, { state: { from: '/dashboard' } });
+                  }}
+                  className="w-full px-3 py-2.5 border border-[#5f1340]/30 bg-[#5f1340]/5 hover:bg-[#5f1340] hover:text-white text-[#5f1340] text-xs font-black rounded-xl cursor-pointer inline-flex items-center justify-center gap-1.5"
+                >
+                  <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">Detail Lengkap</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleKirimNotaDigital(e, selectedOrderModal)}
+                  disabled={sendingNotaWa || !selectedOrderModal.customerPhone || selectedOrderModal.customerPhone === '-'}
+                  className="w-full px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-black rounded-xl cursor-pointer inline-flex items-center justify-center gap-1.5"
+                  title="Kirim nota digital + QR ke WhatsApp"
+                >
+                  <MessageCircle className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{sendingNotaWa ? 'Menyiapkan…' : 'Kirim Nota Digital'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handlePrintNota(selectedOrderModal);
+                  }}
+                  className="w-full px-3 py-2.5 border border-[#e0e0e0] bg-white hover:bg-slate-800 hover:text-white text-slate-700 text-xs font-bold rounded-xl cursor-pointer inline-flex items-center justify-center gap-1.5"
+                >
+                  <Printer className="h-4 w-4 shrink-0" />
+                  <span className="truncate">Cetak Struk</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrderModal(null)}
+                  className="w-full sm:col-span-2 lg:col-span-1 px-3 py-2.5 border border-[#e0e0e0] bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+                >
+                  Tutup
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      <ChangeFulfillmentModal
+        open={fulfillmentModalOpen && !!selectedOrderModal}
+        onClose={() => setFulfillmentModalOpen(false)}
+        order={selectedOrderModal ? {
+          ...selectedOrderModal,
+          dbId: selectedOrderModal.dbId,
+          id: selectedOrderModal.id,
+          isDelivery: selectedOrderModal.isDelivery,
+          customerAddress: selectedOrderModal.customerAddress,
+          deliveryAddress: selectedOrderModal.deliveryAddress,
+          deliveryNotes: selectedOrderModal.deliveryNotes
+        } : null}
+        items={selectedOrderModal?.items || []}
+        showAlert={showAlert}
+        onSuccess={(data) => {
+          setSelectedOrderModal((prev) => {
+            if (!prev) return prev;
+            const updatedIds = new Set(data?.updatedItemIds || []);
+            const nextType = data?.isDelivery ? 'Delivery_Kurir' : 'Ambil_Di_Outlet';
+            return {
+              ...prev,
+              isDelivery: !!data?.isDelivery,
+              deliveryAddress: data?.deliveryAddress || prev.deliveryAddress,
+              deliveryNotes: data?.deliveryNotes || prev.deliveryNotes,
+              workStatus: data?.workStatus ?? prev.workStatus,
+              items: (prev.items || []).map((it) => {
+                if (!updatedIds.has(it.id)) return it;
+                const row = (data?.items || []).find((x) => x.id === it.id);
+                return {
+                  ...it,
+                  fulfillmentType: row?.fulfillment_type || nextType,
+                  status: row?.item_work_status || it.status
+                };
+              })
+            };
+          });
+          if (typeof fetchLiveDashboardData === 'function') fetchLiveDashboardData();
+        }}
+      />
 
       {/* MODAL: UPDATE PEMBAYARAN / PELUNASAN */}
       {paymentModalOrder && (
@@ -969,7 +1053,7 @@ export default function TrackingService({
                 <button
                   type="button"
                   disabled={isSubmittingPayment}
-                  onClick={handleSubmitPaymentUpdate}
+                  onClick={requestSubmitPaymentUpdate}
                   className="flex-1 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 text-white font-black rounded-xl text-xs cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <CheckCircle2 className="h-4 w-4" />
@@ -987,6 +1071,18 @@ export default function TrackingService({
         onClose={() => setIsLacakModalOpen(false)}
         autoOpenScanner
       />
+
+      {showPayPinModal && (
+        <PinVerifyModal
+          outletId={localStorage.getItem('activeOutletId') || paymentModalOrder?.outletId}
+          mode="pin"
+          title="PIN Pelunasan Nota"
+          description="Masukkan PIN frontliner yang menerima pelunasan (jumlah digit bebas)."
+          submitLabel="Lanjut Simpan Pembayaran"
+          onCancel={() => setShowPayPinModal(false)}
+          onVerified={({ employeeId }) => handleSubmitPaymentUpdate(employeeId)}
+        />
+      )}
     </div>
   );
 }

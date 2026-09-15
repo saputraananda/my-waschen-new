@@ -124,6 +124,9 @@ export default function Dashboard() {
           workStatus: o.work_status ?? 10,
           pickedUpAt: o.picked_up_at || null,
           isDelivery: o.is_delivery === 1,
+          deliveryAddress: o.delivery_address || '',
+          deliveryNotes: o.delivery_notes || '',
+          customerAddress: o.customer_address || '-',
           rawDate: o.order_date ? new Date(o.order_date) : new Date(),
           createdAt: o.order_date
             ? new Date(o.order_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
@@ -141,7 +144,8 @@ export default function Dashboard() {
             material: it.material,
             size: it.size,
             conditionNotes: it.condition_notes,
-            isCleanox: it.is_cleanox === 1
+            isCleanox: it.is_cleanox === 1,
+            fulfillmentType: it.fulfillment_type || (o.is_delivery === 1 ? 'Delivery_Kurir' : 'Ambil_Di_Outlet')
           })) : [
             {
               id: 1,

@@ -5,6 +5,7 @@ import {
   getTransactionDetail,
   updateWorkStatus,
   updateItemWorkStatus,
+  updateFulfillment,
   markTransactionAsPaid,
   requestDeleteTransaction,
   requestRefundTransaction,
@@ -24,6 +25,8 @@ router.post('/:id/payment-proof', uploadPaymentReceipt, uploadPaymentProof);
 router.get('/:orderNo', getTransactionDetail);
 router.patch('/:id/items/:itemId/status', updateItemWorkStatus);
 router.put('/:id/items/:itemId/status', updateItemWorkStatus);
+router.patch('/:id/fulfillment', updateFulfillment);
+router.put('/:id/fulfillment', updateFulfillment);
 router.patch('/:id/status', updateWorkStatus);
 router.put('/:id/status', updateWorkStatus);
 router.patch('/:id/pay', markTransactionAsPaid);

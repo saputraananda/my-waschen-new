@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Lock, X } from 'lucide-react';
 
 /**
- * Modal PIN sebelum create transaksi / closing shift.
+ * Modal PIN sebelum create transaksi / closing shift / pelunasan.
  * verify via POST /api/shifts/verify-pin
  *
  * mode:
@@ -17,7 +17,7 @@ export default function PinVerifyModal({
   onCancel,
   onVerified,
   title = 'Konfirmasi PIN Kasir',
-  description = 'Masukkan 8 digit PIN frontliner yang membuat nota ini (untuk atribusi kasir).',
+  description = 'Masukkan PIN frontliner (jumlah digit bebas) untuk atribusi kasir.',
   submitLabel = 'Lanjut Simpan Nota'
 }) {
   const [pin, setPin] = useState('');
@@ -29,10 +29,6 @@ export default function PinVerifyModal({
     const cleanPin = String(pin || '').replace(/\D/g, '');
     if (!cleanPin) {
       setError('PIN wajib diisi');
-      return;
-    }
-    if (cleanPin.length !== 8) {
-      setError('PIN harus 8 digit angka');
       return;
     }
     setLoading(true);
@@ -57,12 +53,14 @@ export default function PinVerifyModal({
           setError('PIN valid tetapi identitas kasir tidak ditemukan');
           return;
         }
-        onVerified({
-          employeeId: Number(data.employeeId),
-          role: data.role,
-          fullName: data.fullName || null,
-          outletId: data.outletId ?? null
-        });
+        await Promise.resolve(
+          onVerified({
+            employeeId: Number(data.employeeId),
+            role: data.role,
+            fullName: data.fullName || null,
+            outletId: data.outletId ?? null
+          })
+        );
       } else {
         setError(res.data?.message || 'PIN tidak valid');
       }
@@ -78,7 +76,7 @@ export default function PinVerifyModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] bg-[#313030]/70 backdrop-blur-sm flex justify-center items-center p-4">
+    <div className="fixed inset-0 z-[130] bg-[#313030]/70 backdrop-blur-sm flex justify-center items-center p-4">
       <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-sm shadow-2xl overflow-hidden">
         <div className="p-4 border-b border-[#e0e0e0] flex justify-between items-center bg-[#f8f8f8]">
           <div className="flex items-center gap-2">
@@ -100,11 +98,10 @@ export default function PinVerifyModal({
             type="password"
             inputMode="numeric"
             autoFocus
-            maxLength={8}
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-            placeholder="••••••••"
-            className="w-full px-4 py-3 border border-[#e0e0e0] rounded-xl text-center text-lg font-black tracking-[0.4em] outline-none focus:border-[#5f1340]"
+            placeholder="Masukkan PIN"
+            className="w-full px-4 py-3 border border-[#e0e0e0] rounded-xl text-center text-lg font-black tracking-[0.35em] outline-none focus:border-[#5f1340]"
           />
           <button
             type="submit"

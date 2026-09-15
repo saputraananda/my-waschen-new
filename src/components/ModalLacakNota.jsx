@@ -87,6 +87,7 @@ const STATUS_ICONS = {
   Pengemasan: Layers,
   'Siap Diambil': PackageCheck,
   'Siap Diantar': Truck,
+  'Sedang Diantar': Truck,
   Selesai: CheckCircle2,
   Dibatalkan: AlertCircle
 };

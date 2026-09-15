@@ -18,7 +18,9 @@ export const getPaymentLogs = async (req, res) => {
   try {
     const { id } = req.params;
     const [orderRows] = await myWaschenPool.query(
-      `SELECT t.id, t.order_no, t.grand_total, t.paid_amount, t.payment_status, t.payment_method, t.payment_proof_url, t.customer_id,
+      `SELECT t.id, t.order_no, t.grand_total, t.paid_amount, t.payment_status, t.payment_method,
+              t.payment_proof_url, t.customer_id, t.cashier_employee_id,
+              t.paid_at, t.settled_by_employee_id, t.settled_at,
               COALESCE(c.deposit_balance, 0) AS member_balance,
               COALESCE(c.deposit_balance, 0) AS customer_deposit_balance
        FROM tr_transaction t
@@ -32,14 +34,33 @@ export const getPaymentLogs = async (req, res) => {
     }
     const order = orderRows[0];
     const [logs] = await myWaschenPool.query(
-      'SELECT * FROM tr_payment_log WHERE transaction_id = ? ORDER BY id ASC',
+      `SELECT pl.*,
+              COALESCE(NULLIF(TRIM(r.employee_name), ''), CONCAT('Karyawan #', pl.cashier_employee_id)) AS cashier_name
+       FROM tr_payment_log pl
+       LEFT JOIN mst_role r ON r.employee_id = pl.cashier_employee_id
+       WHERE pl.transaction_id = ?
+       ORDER BY pl.id ASC`,
       [order.id]
     );
+
+    let settledByName = null;
+    if (order.settled_by_employee_id) {
+      const [settlerRows] = await myWaschenPool.query(
+        `SELECT COALESCE(NULLIF(TRIM(employee_name), ''), CONCAT('Karyawan #', employee_id)) AS name
+         FROM mst_role WHERE employee_id = ? LIMIT 1`,
+        [order.settled_by_employee_id]
+      );
+      settledByName = settlerRows[0]?.name || null;
+    }
+
     const remaining = Math.max(0, parseFloat(order.grand_total) - parseFloat(order.paid_amount || 0));
     return res.status(200).json({
       success: true,
       data: {
-        order,
+        order: {
+          ...order,
+          settled_by_name: settledByName
+        },
         logs,
         remaining,
         grandTotal: parseFloat(order.grand_total) || 0,
@@ -133,10 +154,10 @@ export const updateTransactionPayment = async (req, res) => {
     let depositResult = null;
     let refundAmountToSave = 0;
 
-    if (targetStatus === 'Outstanding') {
-      newPaid = 0;
-      changeAmount = 0;
-    } else if (additionalAmount !== undefined && additionalAmount !== null) {
+    // Prioritas: additionalAmount / paidAmount dulu.
+    // Jangan cek Outstanding dulu — kalau nota masih Outstanding tapi ada
+    // nominal pelunasan, harus diproses (bug: bayar + PIN sukses tapi paid tetap 0).
+    if (additionalAmount !== undefined && additionalAmount !== null) {
       const add = parseFloat(additionalAmount) || 0;
       if (add <= 0) {
         await connection.rollback();
@@ -219,10 +240,17 @@ export const updateTransactionPayment = async (req, res) => {
         notes: notes || `Update pembayaran nota ${order.order_no}`,
         cashierEmployeeId: cashierEmployeeId || order.cashier_employee_id
       });
+    } else if (String(paymentStatus || '') === 'Outstanding') {
+      // Hanya reset jika client eksplisit set Outstanding (tanpa nominal)
+      targetStatus = 'Outstanding';
+      newPaid = 0;
+      changeAmount = 0;
     }
 
     const method = targetStatus === 'Outstanding' ? '-' : (paymentMethod || order.payment_method || 'Tunai');
     const proofUrl = paymentProofUrl || order.payment_proof_url;
+    const settlerId = cashierEmployeeId || order.cashier_employee_id || null;
+    const shouldStampSettler = targetStatus !== 'Outstanding' && newPaid > 0;
 
     await connection.query(
       `UPDATE tr_transaction SET
@@ -232,6 +260,8 @@ export const updateTransactionPayment = async (req, res) => {
          change_amount = ?,
          payment_proof_url = ?,
          paid_at = CASE WHEN ? = 'Lunas' THEN NOW() WHEN paid_at IS NULL AND ? > 0 THEN NOW() ELSE paid_at END,
+         settled_by_employee_id = CASE WHEN ? THEN ? ELSE settled_by_employee_id END,
+         settled_at = CASE WHEN ? THEN NOW() ELSE settled_at END,
          is_refund_requested = CASE WHEN ? > 0 THEN 1 ELSE is_refund_requested END,
          refund_approval_status = CASE WHEN ? > 0 THEN 0 ELSE refund_approval_status END,
          refund_requested_at = CASE WHEN ? > 0 THEN NOW() ELSE refund_requested_at END,
@@ -247,6 +277,9 @@ export const updateTransactionPayment = async (req, res) => {
         proofUrl,
         targetStatus,
         newPaid,
+        shouldStampSettler ? 1 : 0,
+        settlerId,
+        shouldStampSettler ? 1 : 0,
         refundAmountToSave,
         refundAmountToSave,
         refundAmountToSave,

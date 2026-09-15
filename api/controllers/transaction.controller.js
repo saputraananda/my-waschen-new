@@ -625,6 +625,7 @@ export const getTransactionDetail = async (req, res) => {
               sp.name as speed_name,
               p.name as parfume_name,
               COALESCE(NULLIF(TRIM(r.employee_name), ''), CONCAT('Kasir #', t.cashier_employee_id)) as cashier_name,
+              COALESCE(NULLIF(TRIM(rs.employee_name), ''), IF(t.settled_by_employee_id IS NULL, NULL, CONCAT('Karyawan #', t.settled_by_employee_id))) as settled_by_name,
               (
                 SELECT b.batch_no
                 FROM tr_payment_batch_item bi
@@ -648,6 +649,7 @@ export const getTransactionDetail = async (req, res) => {
        LEFT JOIN mst_service_speed sp ON t.speed_id = sp.id
        LEFT JOIN mst_parfume p ON t.parfume_id = p.id
        LEFT JOIN mst_role r ON r.employee_id = t.cashier_employee_id
+       LEFT JOIN mst_role rs ON rs.employee_id = t.settled_by_employee_id
        WHERE t.order_no = ? OR t.barcode = ? OR t.id = ?
        ORDER BY CASE
          WHEN t.order_no = ? THEN 0
@@ -697,6 +699,192 @@ export const getTransactionDetail = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Gagal mengambil detail nota',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * PATCH /api/transactions/:id/fulfillment
+ * Ubah nota/item dari Ambil di Outlet → Delivery (atau sebaliknya).
+ * Body: { isDelivery, itemIds?, deliveryAddress?, deliveryNotes?, employeeId?, notes? }
+ * - itemIds kosong/null = seluruh item aktif
+ * - Jika jadi delivery & status item "Siap Diambil" → otomatis "Siap Diantar"
+ */
+export const updateFulfillment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      isDelivery,
+      itemIds,
+      deliveryAddress,
+      deliveryNotes,
+      employeeId,
+      notes
+    } = req.body;
+
+    if (typeof isDelivery !== 'boolean' && isDelivery !== 0 && isDelivery !== 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'isDelivery wajib diisi (true/false)'
+      });
+    }
+
+    const toDelivery = isDelivery === true || isDelivery === 1;
+    const fulfillmentType = toDelivery ? 'Delivery_Kurir' : 'Ambil_Di_Outlet';
+
+    const [orderRows] = await myWaschenPool.query(
+      `SELECT t.*,
+              COALESCE(NULLIF(TRIM(t.delivery_address), ''), NULLIF(TRIM(c.full_address), ''), NULLIF(TRIM(c.address), ''), '-') AS customer_address_fallback
+       FROM tr_transaction t
+       LEFT JOIN mst_customer c ON c.id = t.customer_id
+       WHERE t.id = ?
+       LIMIT 1`,
+      [id]
+    );
+    if (orderRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Nota tidak ditemukan' });
+    }
+    const order = orderRows[0];
+
+    const [allItems] = await myWaschenPool.query(
+      `SELECT id, item_work_status, fulfillment_type
+       FROM tr_transaction_detail
+       WHERE transaction_id = ?
+         AND COALESCE(item_work_status, '') != 'Dibatalkan'`,
+      [id]
+    );
+    if (allItems.length === 0) {
+      return res.status(422).json({ success: false, message: 'Nota tidak punya item aktif' });
+    }
+
+    const selectedIds = Array.isArray(itemIds) && itemIds.length > 0
+      ? itemIds.map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0)
+      : allItems.map((it) => it.id);
+
+    const targetItems = allItems.filter((it) => selectedIds.includes(it.id));
+    if (targetItems.length === 0) {
+      return res.status(422).json({ success: false, message: 'Item yang dipilih tidak valid' });
+    }
+
+    const targetIdList = targetItems.map((it) => it.id);
+    const placeholders = targetIdList.map(() => '?').join(',');
+
+    // Update fulfillment_type (+ sesuaikan Siap Diambil/Diantar)
+    if (toDelivery) {
+      await myWaschenPool.query(
+        `UPDATE tr_transaction_detail
+         SET fulfillment_type = ?,
+             item_work_status = CASE
+               WHEN item_work_status = 'Siap Diambil' THEN 'Siap Diantar'
+               ELSE item_work_status
+             END
+         WHERE transaction_id = ?
+           AND id IN (${placeholders})`,
+        [fulfillmentType, id, ...targetIdList]
+      );
+    } else {
+      await myWaschenPool.query(
+        `UPDATE tr_transaction_detail
+         SET fulfillment_type = ?,
+             item_work_status = CASE
+               WHEN item_work_status = 'Siap Diantar' THEN 'Siap Diambil'
+               ELSE item_work_status
+             END
+         WHERE transaction_id = ?
+           AND id IN (${placeholders})`,
+        [fulfillmentType, id, ...targetIdList]
+      );
+    }
+
+    const [afterItems] = await myWaschenPool.query(
+      `SELECT id, fulfillment_type, item_work_status
+       FROM tr_transaction_detail
+       WHERE transaction_id = ?
+         AND COALESCE(item_work_status, '') != 'Dibatalkan'`,
+      [id]
+    );
+    const hasDeliveryItem = afterItems.some((it) => it.fulfillment_type === 'Delivery_Kurir');
+    const headerIsDelivery = hasDeliveryItem ? 1 : 0;
+
+    let nextAddress = order.delivery_address;
+    let nextNotes = order.delivery_notes;
+    if (headerIsDelivery) {
+      const addr = String(deliveryAddress || '').trim();
+      nextAddress = addr || order.delivery_address || order.customer_address_fallback || null;
+      if (deliveryNotes !== undefined) nextNotes = String(deliveryNotes || '').trim() || null;
+    } else if (!hasDeliveryItem) {
+      // Semua item kembali ambil di outlet — kosongkan alamat antar opsional
+      if (deliveryAddress === '' || deliveryAddress === null) nextAddress = null;
+      if (deliveryNotes === '' || deliveryNotes === null) nextNotes = null;
+    }
+
+    await myWaschenPool.query(
+      `UPDATE tr_transaction
+       SET is_delivery = ?,
+           delivery_address = ?,
+           delivery_notes = ?,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [headerIsDelivery, nextAddress, nextNotes, id]
+    );
+
+    const accumulated = await refreshHeaderWorkPercentage(myWaschenPool, id);
+
+    const scopeLabel = selectedIds.length === allItems.length
+      ? 'seluruh item'
+      : `${targetItems.length} item`;
+    const logNote = notes
+      || (toDelivery
+        ? `Pengambilan diubah ke Delivery (${scopeLabel})`
+        : `Pengambilan diubah ke Ambil di Outlet (${scopeLabel})`);
+
+    await myWaschenPool.query(
+      'INSERT INTO tr_transaction_status_log (transaction_id, status, employee_id, notes) VALUES (?, ?, ?, ?)',
+      [
+        id,
+        toDelivery ? 'Siap Diantar' : 'Siap Diambil',
+        employeeId || 167,
+        logNote
+      ]
+    );
+
+    emitDashboardRefresh('transaction:updated', {
+      outletId: order.outlet_id,
+      orderNo: order.order_no,
+      transactionId: Number(id),
+      workStatus: accumulated,
+      isDelivery: headerIsDelivery
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: toDelivery
+        ? `Nota ${order.order_no} berhasil diubah ke Delivery (${scopeLabel})`
+        : `Nota ${order.order_no} berhasil diubah ke Ambil di Outlet (${scopeLabel})`,
+      data: {
+        orderId: Number(id),
+        orderNo: order.order_no,
+        isDelivery: headerIsDelivery,
+        fulfillmentType,
+        deliveryAddress: nextAddress,
+        deliveryNotes: nextNotes,
+        updatedItemIds: targetIdList,
+        workStatus: accumulated,
+        items: afterItems
+      }
+    });
+  } catch (error) {
+    console.error('Error updateFulfillment:', error);
+    if (/Unknown column.*fulfillment_type/i.test(error.message || '')) {
+      return res.status(500).json({
+        success: false,
+        message: 'Kolom fulfillment_type belum ada di database. Jalankan migrasi schema terlebih dahulu.'
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal mengubah metode pengambilan',
       error: error.message
     });
   }
@@ -815,6 +1003,20 @@ export const updateItemWorkStatus = async (req, res) => {
       [accumulated, order.id]
     );
 
+    // Semua item aktif Selesai → isi picked_up_at (keluar dari filter Di Ruko)
+    const statusesForPickup = allItems.map((i) =>
+      i.id === item.id ? nextStatus : (i.item_work_status || 'Antrean')
+    );
+    const activeStatuses = statusesForPickup.filter((s) => s !== 'Dibatalkan');
+    if (activeStatuses.length > 0 && activeStatuses.every((s) => s === 'Selesai')) {
+      await myWaschenPool.query(
+        `UPDATE tr_transaction
+         SET picked_up_at = COALESCE(picked_up_at, NOW())
+         WHERE id = ?`,
+        [order.id]
+      );
+    }
+
     const logNote = notes
       || `Item "${item.service_name}" → ${nextStatus} (rata-rata nota: ${accumulated}%)`;
     await myWaschenPool.query(
@@ -889,6 +1091,19 @@ export const markTransactionAsPaid = async (req, res) => {
       cashierEmployeeId: cashierEmployeeId || order.cashier_employee_id
     });
 
+    const settlerId = cashierEmployeeId || order.cashier_employee_id || null;
+    const paidNow = Number(depositResult.paidAmount) || 0;
+
+    await insertPaymentLog(connection, {
+      transactionId: order.id,
+      logType: 'Lunas',
+      amount: paidNow,
+      paymentMethod: method,
+      paymentProofUrl: null,
+      notes: `Pelunasan nota ${order.order_no}`,
+      cashierEmployeeId: settlerId
+    });
+
     await connection.query(
       `UPDATE tr_transaction 
        SET payment_status = 'Lunas',
@@ -896,9 +1111,11 @@ export const markTransactionAsPaid = async (req, res) => {
            paid_amount = ?,
            change_amount = ?,
            paid_at = NOW(),
+           settled_by_employee_id = ?,
+           settled_at = NOW(),
            updated_at = NOW()
        WHERE id = ?`,
-      [method, depositResult.paidAmount, depositResult.changeAmount, id]
+      [method, depositResult.paidAmount, depositResult.changeAmount, settlerId, id]
     );
 
     await connection.commit();
@@ -1238,9 +1455,11 @@ export const settlePaymentBatch = async (req, res) => {
              payment_method = ?,
              payment_proof_url = COALESCE(?, payment_proof_url),
              paid_at = NOW(),
+             settled_by_employee_id = ?,
+             settled_at = NOW(),
              updated_at = NOW()
          WHERE id = ?`,
-        [newPaidAmount, newStatus, paymentMethod, paymentProofUrl, order.id]
+        [newPaidAmount, newStatus, paymentMethod, paymentProofUrl, cashierEmployeeId || null, order.id]
       );
 
       await connection.query(

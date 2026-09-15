@@ -788,8 +788,9 @@ export default function TransactionPage() {
     setShowPinModal(true);
   };
 
-  const submitOrderWithCashier = async (cashierEmployeeId, cashierFullName) => {
-    if (!pendingOrderPayload) return;
+  const submitOrderWithCashier = async (cashierEmployeeId, cashierFullName, orderPayload = null) => {
+    const payload = orderPayload || pendingOrderPayload;
+    if (!payload) return;
     const resolvedCashierId = Number(cashierEmployeeId);
     if (!resolvedCashierId) {
       showAlert({
@@ -806,7 +807,7 @@ export default function TransactionPage() {
 
     try {
       const res = await axios.post('/api/transactions', {
-        ...pendingOrderPayload,
+        ...payload,
         cashierEmployeeId: resolvedCashierId
       });
 
@@ -821,9 +822,9 @@ export default function TransactionPage() {
       }
 
       const depositDelta = orderResult?.deposit_delta ?? 0;
-      const payloadPaid = pendingOrderPayload.paidAmount || 0;
-      const payloadChange = pendingOrderPayload.changeAmount || 0;
-      const payloadDepositAdded = pendingOrderPayload.overpaymentToDeposit
+      const payloadPaid = payload.paidAmount || 0;
+      const payloadChange = payload.changeAmount || 0;
+      const payloadDepositAdded = payload.overpaymentToDeposit
         ? Math.max(0, payloadPaid - calculations.grandTotal)
         : 0;
       const newMemberBalance = Math.max(0, (selectedCustomer.memberBalance || 0) + depositDelta);
@@ -836,8 +837,8 @@ export default function TransactionPage() {
         )));
       }
 
-      // Nama kasir wajib dari pemilik PIN / response API — jangan fallback ke user login shift
-      const pinCashierName =
+      // Nama kasir dari user login / response API
+      const cashierNameResolved =
         orderResult?.cashier_name ||
         cashierFullName ||
         null;
@@ -853,8 +854,8 @@ export default function TransactionPage() {
         customerBalance: newMemberBalance,
         branch: orderResult?.outlet_name || activeOutletName,
         cashierEmployeeId: orderResult?.cashier_employee_id || resolvedCashierId,
-        cashierName: formatEmployeeName(pinCashierName, 'Frontliner'),
-        cashierFullName: pinCashierName || `Karyawan #${resolvedCashierId}`,
+        cashierName: formatEmployeeName(cashierNameResolved, 'Frontliner'),
+        cashierFullName: cashierNameResolved || `Karyawan #${resolvedCashierId}`,
         items: cartItems,
         perfume: selectedPerfume,
         isExpress,
@@ -865,8 +866,8 @@ export default function TransactionPage() {
         subtotal: calculations.rawSubtotal,
         subtotalAfterExpress: calculations.subtotalAfterExpress,
         grandTotal: calculations.grandTotal,
-        paymentStatus: orderResult?.payment_status || pendingOrderPayload.paymentStatus,
-        paymentMethod: orderResult?.payment_method || pendingOrderPayload.paymentMethod,
+        paymentStatus: orderResult?.payment_status || payload.paymentStatus,
+        paymentMethod: orderResult?.payment_method || payload.paymentMethod,
         paidAmount: parseFloat(orderResult?.paid_amount) || payloadPaid,
         changeAmount: parseFloat(orderResult?.change_amount) || payloadChange,
         depositAdded: payloadDepositAdded,
@@ -1182,6 +1183,9 @@ export default function TransactionPage() {
         <PinVerifyModal
           outletId={activeOutletId}
           mode="pin"
+          title="Konfirmasi PIN Kasir"
+          description="Masukkan PIN frontliner yang membuat nota ini (jumlah digit bebas)."
+          submitLabel="Lanjut Simpan Nota"
           onCancel={() => {
             setShowPinModal(false);
             setPendingOrderPayload(null);

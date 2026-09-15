@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import ModalLacakNota from '../../../components/ModalLacakNota.jsx';
+import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
 import {
   sendCustomerNotaWhatsAppFromOrder,
   describeCustomerNotaWaResult
@@ -80,6 +81,7 @@ export default function HistoryTransaction({
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
   const [sendingNotaWaId, setSendingNotaWaId] = useState(null);
+  const [showPayPinModal, setShowPayPinModal] = useState(false);
 
   const normalizePaymentStatus = (status) => {
     if (status === 'Belum Lunas') return 'Outstanding';
@@ -165,10 +167,37 @@ export default function HistoryTransaction({
     }
   };
 
-  const handleSubmitPaymentUpdate = async () => {
+  const requestSubmitPaymentUpdate = () => {
+    if (!paymentModalOrder) return;
+    if (normalizePaymentStatus(paymentModalOrder.paymentStatus) === 'Lunas') {
+      showAlert({ title: 'Sudah Lunas', message: 'Nota ini sudah lunas.', type: 'error' });
+      return;
+    }
+    const addAmount = parseRupiah(paymentForm.additionalAmount);
+    if (addAmount <= 0) {
+      showAlert({
+        title: 'Nominal Kosong',
+        message: 'Nominal bayar wajib diisi sebelum menyimpan pembayaran.',
+        type: 'warning'
+      });
+      return;
+    }
+    setShowPayPinModal(true);
+  };
+
+  const handleSubmitPaymentUpdate = async (cashierEmployeeId) => {
     if (!paymentModalOrder) return;
     const remaining = paymentDetail?.remaining ?? Math.max(0, (paymentModalOrder.grandTotal || 0) - (paymentModalOrder.paidAmount || 0));
     const addAmount = parseRupiah(paymentForm.additionalAmount);
+    const resolvedCashierId = Number(cashierEmployeeId);
+    if (!resolvedCashierId) {
+      showAlert({
+        title: 'PIN Tidak Valid',
+        message: 'Identitas kasir dari PIN tidak ditemukan.',
+        type: 'error'
+      });
+      return;
+    }
 
     if (normalizePaymentStatus(paymentModalOrder.paymentStatus) === 'Lunas') {
       showAlert({ title: 'Sudah Lunas', message: 'Nota ini sudah lunas.', type: 'error' });
@@ -193,6 +222,7 @@ export default function HistoryTransaction({
       outlets
     });
 
+    setShowPayPinModal(false);
     setIsSubmittingPayment(true);
     try {
       const txnId = paymentModalOrder.dbId || paymentModalOrder.id;
@@ -213,7 +243,7 @@ export default function HistoryTransaction({
         overpaymentToDeposit: paymentForm.overpaymentAction === 'deposit',
         overpaymentToRefund: paymentForm.overpaymentAction === 'refund',
         overpaymentAction: paymentForm.overpaymentAction,
-        cashierEmployeeId: localStorage.getItem('employeeId') || null
+        cashierEmployeeId: resolvedCashierId
       });
 
       const updated = res.data?.data;
@@ -427,7 +457,7 @@ export default function HistoryTransaction({
 
       {/* Filter Tabs with Live Counters */}
       <div className="px-5 border-b border-[#e0e0e0]/60 flex gap-2 overflow-x-auto py-2.5 bg-slate-50/30 no-scrollbar">
-        {['Semua', ...(workStatusTabs.length ? workStatusTabs : ['Antrean', 'Pencucian', 'Penyetrikaan', 'Pengemasan', 'Siap Diambil / Diantar', 'Selesai'])].map((tab) => {
+        {['Semua', ...(workStatusTabs.length ? workStatusTabs : ['Antrean', 'Pencucian', 'Penyetrikaan', 'Pengemasan', 'Siap Diambil', 'Sedang Diantar', 'Selesai'])].map((tab) => {
           const active = activeFilterTab === tab;
           const count = getTabCount(tab);
 
@@ -1047,7 +1077,7 @@ export default function HistoryTransaction({
                 <button
                   type="button"
                   disabled={isSubmittingPayment}
-                  onClick={handleSubmitPaymentUpdate}
+                  onClick={requestSubmitPaymentUpdate}
                   className="flex-1 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 text-white font-black rounded-xl text-xs cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <CheckCircle2 className="h-4 w-4" />
@@ -1065,6 +1095,18 @@ export default function HistoryTransaction({
         onClose={() => setIsLacakModalOpen(false)}
         autoOpenScanner
       />
+
+      {showPayPinModal && (
+        <PinVerifyModal
+          outletId={localStorage.getItem('activeOutletId') || paymentModalOrder?.outletId}
+          mode="pin"
+          title="PIN Pelunasan Nota"
+          description="Masukkan PIN frontliner yang menerima pelunasan (jumlah digit bebas)."
+          submitLabel="Lanjut Simpan Pembayaran"
+          onCancel={() => setShowPayPinModal(false)}
+          onVerified={({ employeeId }) => handleSubmitPaymentUpdate(employeeId)}
+        />
+      )}
     </div>
   );
 }

@@ -102,7 +102,7 @@ export default function ResumeShiftModal({
             ) : (
               <>
                 <Wallet className="h-3.5 w-3.5 inline mr-1 -mt-0.5" />
-                Anda melanjutkan sesi kas yang sama (backup / ganti shift). Transaksi pakai PIN masing-masing. Saat jam closing, <strong>Anda juga bisa menutup shift</strong> ini jika kasir pembuka tidak ada.
+                Anda melanjutkan sesi kas yang sama (backup / ganti shift). Transaksi memakai akun yang sedang login. Saat jam closing, <strong>Anda juga bisa menutup shift</strong> ini jika kasir pembuka tidak ada.
               </>
             )}
           </div>

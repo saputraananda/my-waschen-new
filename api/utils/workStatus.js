@@ -18,6 +18,7 @@ export const WORK_STATUS_PERCENTAGE = {
   'Siap Diambil': 90,
   'Siap Diantar': 90,
   Delivery: 90,
+  'Sedang Diantar': 95,
   Selesai: 100,
   Dibatalkan: 0
 };
@@ -70,6 +71,7 @@ export function nextLifecycleStatus(current, isDelivery = false) {
     'Penyetrikaan',
     'Pengemasan',
     isDelivery ? 'Siap Diantar' : 'Siap Diambil',
+    ...(isDelivery ? ['Sedang Diantar'] : []),
     'Selesai'
   ];
   if (typeof current === 'string' && lifecycle.includes(current)) {
@@ -106,7 +108,10 @@ export function workStatusTabSql(tabName, column = 't.work_status') {
     tabName === 'Siap Diantar' ||
     tabName === 'Delivery'
   ) {
-    return { sql: `${column} > 82.5 AND ${column} < 100`, params: [] };
+    return { sql: `${column} > 82.5 AND ${column} < 92.5`, params: [] };
+  }
+  if (tabName === 'Sedang Diantar') {
+    return { sql: `${column} >= 92.5 AND ${column} < 100`, params: [] };
   }
   if (tabName === 'Selesai') return { sql: `${column} >= 100`, params: [] };
   return { sql: '1=1', params: [] };

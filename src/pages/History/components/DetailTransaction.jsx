@@ -12,6 +12,8 @@ import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 import { getBankAccountForOutlet, getAllBankAccounts, OUTLET_BANK_ACCOUNTS } from '../../../utils/bankAccounts.js';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import TransactionBarcodeCard from '../../../components/TransactionBarcodeCard.jsx';
+import ChangeFulfillmentModal from '../../../components/ChangeFulfillmentModal.jsx';
+import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
 import {
   CheckCircle2,
   ChevronDown,
@@ -28,7 +30,8 @@ import {
   UserCheck,
   Building2,
   ArrowRightLeft,
-  MessageCircle
+  MessageCircle,
+  Truck
 } from 'lucide-react';
 import {
   sendCustomerNotaWhatsAppFromOrder,
@@ -85,6 +88,8 @@ export default function DetailTransaction() {
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
   const [sendingNotaWa, setSendingNotaWa] = useState(false);
+  const [fulfillmentModalOpen, setFulfillmentModalOpen] = useState(false);
+  const [showPayPinModal, setShowPayPinModal] = useState(false);
 
   const showToast = (title, message, type = 'success') => {
     showAlert({ title, message, type });
@@ -108,6 +113,12 @@ export default function DetailTransaction() {
     speed: raw.speed_name || 'Reguler',
     isExpress: Number(raw.speed_surcharge) > 0,
     isDelivery: raw.is_delivery === 1,
+    deliveryAddress: raw.delivery_address || '',
+    deliveryNotes: raw.delivery_notes || '',
+    settledByEmployeeId: raw.settled_by_employee_id || null,
+    settledByName: raw.settled_by_name || null,
+    settledAt: raw.settled_at || null,
+    paidAt: raw.paid_at || null,
     subtotal: parseFloat(raw.subtotal) || 0,
     discountAmount: parseFloat(raw.discount_amount) || 0,
     grandTotal: parseFloat(raw.grand_total) || 0,
@@ -126,7 +137,7 @@ export default function DetailTransaction() {
     generalNotes: raw.special_notes || ''
   });
 
-  const mapItems = (rawItems) => (rawItems || []).map((it) => ({
+  const mapItems = (rawItems, orderIsDelivery = false) => (rawItems || []).map((it) => ({
     id: it.id,
     serviceId: it.service_id,
     serviceCode: it.service_code || null,
@@ -146,7 +157,8 @@ export default function DetailTransaction() {
     isDryClean: it.is_dry_clean === 1 || it.laundry_method_code === 'DC',
     laundryMethodName: it.laundry_method_name || (it.laundry_method_code === 'DC' ? 'Dry Clean' : 'Wet Clean'),
     laundryMethodCode: it.laundry_method_code || (it.is_dry_clean === 1 ? 'DC' : 'WC'),
-    photoUrl: it.photo_url || null
+    photoUrl: it.photo_url || null,
+    fulfillmentType: it.fulfillment_type || (orderIsDelivery ? 'Delivery_Kurir' : 'Ambil_Di_Outlet')
   }));
 
   const fetchDetail = useCallback(async () => {
@@ -162,7 +174,7 @@ export default function DetailTransaction() {
       const raw = res.data.data;
       const mapped = mapOrder(raw);
       setOrder(mapped);
-      setItems(mapItems(raw.items));
+      setItems(mapItems(raw.items, mapped.isDelivery));
       setLogs(raw.logs || []);
       document.title = `Detail ${mapped.id} | Waschen Laundry`;
 
@@ -332,9 +344,32 @@ export default function DetailTransaction() {
     }
   };
 
-  const handleSubmitPaymentUpdate = async () => {
+  const requestSubmitPaymentUpdate = () => {
+    if (!order) return;
+    if (normalizePaymentStatus(order.paymentStatus) === 'Lunas') {
+      showToast('Sudah Lunas', 'Nota ini sudah lunas.', 'error');
+      return;
+    }
+    const addAmount = parseRupiah(paymentForm.additionalAmount);
+    if (addAmount <= 0) {
+      showAlert({
+        title: 'Nominal Kosong',
+        message: 'Nominal bayar wajib diisi sebelum menyimpan pembayaran.',
+        type: 'warning'
+      });
+      return;
+    }
+    setShowPayPinModal(true);
+  };
+
+  const handleSubmitPaymentUpdate = async (cashierEmployeeId) => {
     if (!order) return;
     const addAmount = parseRupiah(paymentForm.additionalAmount);
+    const resolvedCashierId = Number(cashierEmployeeId);
+    if (!resolvedCashierId) {
+      showToast('PIN Tidak Valid', 'Identitas kasir dari PIN tidak ditemukan.', 'error');
+      return;
+    }
     if (normalizePaymentStatus(order.paymentStatus) === 'Lunas') {
       showToast('Sudah Lunas', 'Nota ini sudah lunas.', 'error');
       return;
@@ -348,6 +383,7 @@ export default function DetailTransaction() {
       return;
     }
 
+    setShowPayPinModal(false);
     setIsSubmittingPayment(true);
     try {
       let proofUrl = paymentDetail?.order?.payment_proof_url || order.paymentProofUrl || null;
@@ -375,7 +411,7 @@ export default function DetailTransaction() {
         overpaymentToDeposit: paymentForm.overpaymentAction === 'deposit',
         overpaymentToRefund: paymentForm.overpaymentAction === 'refund',
         overpaymentAction: paymentForm.overpaymentAction,
-        cashierEmployeeId: localStorage.getItem('employeeId') || null
+        cashierEmployeeId: resolvedCashierId
       });
 
       const updated = res.data?.data;
@@ -527,45 +563,45 @@ export default function DetailTransaction() {
                   <p className="text-xs text-slate-400 mt-1">{order.createdAt} · {order.branch}</p>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="w-full lg:w-auto lg:min-w-[28rem] lg:max-w-xl grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {paymentStatus !== 'Lunas' && (
                     <button
                       type="button"
                       onClick={openPaymentModal}
-                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl cursor-pointer inline-flex items-center gap-1.5"
+                      className="w-full px-3 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl cursor-pointer inline-flex items-center justify-center gap-1.5"
                     >
-                      <Wallet className="h-3.5 w-3.5" />
-                      Update Pembayaran
+                      <Wallet className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">Update Pembayaran</span>
                     </button>
                   )}
                   {unpaidCount >= 2 && (
                     <button
                       type="button"
                       onClick={openCombinedPaymentModal}
-                      className="px-4 py-2 bg-[#5f1340] hover:bg-[#4d0f33] text-amber-200 text-xs font-black rounded-xl cursor-pointer inline-flex items-center gap-1.5 shadow-xs"
+                      className="w-full px-3 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] text-amber-200 text-xs font-black rounded-xl cursor-pointer inline-flex items-center justify-center gap-1.5 shadow-xs"
                       title="Gabungkan pelunasan beberapa nota tertunggak milik pelanggan ini"
                     >
-                      <Receipt className="h-3.5 w-3.5" />
-                      Pelunasan Gabungan Nota
+                      <Receipt className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">Pelunasan Gabungan</span>
                     </button>
                   )}
                   <button
                     type="button"
                     onClick={handlePrint}
-                    className="px-4 py-2 border border-[#e0e0e0] bg-white hover:bg-slate-800 hover:text-white text-slate-700 text-xs font-bold rounded-xl cursor-pointer inline-flex items-center gap-1.5"
+                    className="w-full px-3 py-2.5 border border-[#e0e0e0] bg-white hover:bg-slate-800 hover:text-white text-slate-700 text-xs font-bold rounded-xl cursor-pointer inline-flex items-center justify-center gap-1.5"
                   >
-                    <Printer className="h-4 w-4" />
-                    Cetak Nota
+                    <Printer className="h-4 w-4 shrink-0" />
+                    <span className="truncate">Cetak Nota</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleKirimNotaDigital}
                     disabled={sendingNotaWa || !order.customerPhone || order.customerPhone === '-'}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-black rounded-xl cursor-pointer inline-flex items-center gap-1.5"
+                    className="w-full px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-black rounded-xl cursor-pointer inline-flex items-center justify-center gap-1.5"
                     title="Kirim nota digital + QR ke WhatsApp pelanggan"
                   >
-                    <MessageCircle className="h-4 w-4" />
-                    {sendingNotaWa ? 'Menyiapkan…' : 'Kirim Nota Digital'}
+                    <MessageCircle className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{sendingNotaWa ? 'Menyiapkan…' : 'Kirim Nota Digital'}</span>
                   </button>
                 </div>
               </div>
@@ -582,7 +618,23 @@ export default function DetailTransaction() {
                     <span className="text-[10px] font-bold text-slate-400 uppercase block">Layanan</span>
                     <span className="font-black text-sm text-[#313030] block mt-0.5">{order.serviceType}</span>
                     <span className="text-[11px] text-pink-700 font-bold">Aroma: {order.perfume}</span>
-                    <span className="text-[10px] text-slate-500 block">{order.isDelivery ? 'Diantar' : 'Ambil di outlet'}</span>
+                    <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                        order.isDelivery
+                          ? 'bg-orange-50 text-orange-700 border-orange-200'
+                          : 'bg-slate-100 text-slate-600 border-slate-200'
+                      }`}>
+                        {order.isDelivery ? 'Diantar' : 'Ambil di outlet'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setFulfillmentModalOpen(true)}
+                        className="text-[10px] font-black text-[#5f1340] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Truck className="h-3 w-3" />
+                        Ubah pengambilan
+                      </button>
+                    </div>
                   </div>
                   <div className="p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl">
                     <span className="text-[10px] font-bold text-slate-400 uppercase block">Tagihan</span>
@@ -597,8 +649,15 @@ export default function DetailTransaction() {
                     )}
                   </div>
                   <div className="p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Kasir</span>
-                    <span className="font-black text-sm text-[#313030] block mt-0.5">{formatEmployeeName(order.cashierName)}</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Kasir / Pelunasan</span>
+                    <span className="font-black text-sm text-[#313030] block mt-0.5">
+                      Dibuat: {formatEmployeeName(order.cashierName)}
+                    </span>
+                    <span className="text-[10px] text-slate-500 block mt-0.5">
+                      {order.settledByName
+                        ? `Dilunasi: ${formatEmployeeName(order.settledByName)}${order.settledAt ? ` · ${formatDateId(order.settledAt)}` : ''}`
+                        : 'Belum ada data pelunasan'}
+                    </span>
                     <span className="text-[10px] text-slate-500 block">Catatan: {order.specialNotes}</span>
                   </div>
                 </div>
@@ -647,7 +706,7 @@ export default function DetailTransaction() {
                     : `${it.laundryMethodName || 'Wet Clean'} (WC)`;
                   const codeBadge = it.serviceCode || (it.serviceId ? `SRV-${it.serviceId}` : null);
                   const noteText = it.note && it.note !== '-' ? it.note : 'Tidak ada catatan kondisi';
-                  const pickupLabel = order.isDelivery ? 'Diantar' : 'Ambil di outlet';
+                  const pickupLabel = it.fulfillmentType === 'Delivery_Kurir' ? 'Diantar' : 'Ambil di outlet';
 
                   return (
                     <div
@@ -890,6 +949,46 @@ export default function DetailTransaction() {
                     </div>
                   </div>
 
+                  {(paymentDetail?.logs || []).length > 0 && (
+                    <div className="rounded-2xl border border-[#e0e0e0] bg-[#fafafa] p-3 space-y-2">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Riwayat Pembayaran
+                      </span>
+                      {(paymentDetail.logs || []).map((log) => (
+                        <div
+                          key={log.id || `${log.log_type}-${log.created_at}`}
+                          className="rounded-xl border border-[#e0e0e0] bg-white px-3 py-2 flex items-start justify-between gap-2"
+                        >
+                          <div className="min-w-0">
+                            <span className="text-[11px] font-black text-[#313030]">
+                              {log.log_type || 'Bayar'} · Rp {Number(log.amount || 0).toLocaleString('id-ID')}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
+                              {log.payment_method || '-'}
+                              {log.cashier_name ? ` · oleh ${formatEmployeeName(log.cashier_name)}` : ''}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 shrink-0">
+                            {log.created_at ? formatDateId(log.created_at) : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600 font-medium">
+                    <span className="font-bold text-slate-500 uppercase text-[9px] tracking-wider block mb-0.5">Petugas</span>
+                    Dibuat: <strong>{formatEmployeeName(order.cashierName)}</strong>
+                    {paymentDetail?.order?.settled_by_name || order.settledByName ? (
+                      <>
+                        {' '}· Dilunasi: <strong>{formatEmployeeName(paymentDetail?.order?.settled_by_name || order.settledByName)}</strong>
+                        {(paymentDetail?.order?.settled_at || order.settledAt) ? (
+                          <span className="text-slate-400"> ({formatDateId(paymentDetail?.order?.settled_at || order.settledAt)})</span>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+
                   {paymentStatus !== 'Lunas' && (
                     <>
                       {unpaidCount >= 2 && (
@@ -998,7 +1097,7 @@ export default function DetailTransaction() {
             {paymentStatus !== 'Lunas' && !isLoadingPayment && (
               <div className="p-4 border-t border-[#e0e0e0] bg-[#f8f8f8] flex gap-2 shrink-0">
                 <button type="button" onClick={() => { setPaymentModalOpen(false); setPaymentDetail(null); }} className="px-4 py-2.5 bg-white border border-[#e0e0e0] text-slate-700 font-bold rounded-xl text-xs cursor-pointer">Batal</button>
-                <button type="button" disabled={isSubmittingPayment} onClick={handleSubmitPaymentUpdate} className="flex-1 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 text-white font-black rounded-xl text-xs cursor-pointer flex items-center justify-center gap-1.5">
+                <button type="button" disabled={isSubmittingPayment} onClick={requestSubmitPaymentUpdate} className="flex-1 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 text-white font-black rounded-xl text-xs cursor-pointer flex items-center justify-center gap-1.5">
                   <CheckCircle2 className="h-4 w-4" />
                   {isSubmittingPayment ? 'Menyimpan...' : 'Simpan Pembayaran'}
                 </button>
@@ -1006,6 +1105,18 @@ export default function DetailTransaction() {
             )}
           </div>
         </div>
+      )}
+
+      {showPayPinModal && (
+        <PinVerifyModal
+          outletId={activeOutletId || order?.outletId}
+          mode="pin"
+          title="PIN Pelunasan Nota"
+          description="Masukkan PIN frontliner yang menerima pelunasan (jumlah digit bebas)."
+          submitLabel="Lanjut Simpan Pembayaran"
+          onCancel={() => setShowPayPinModal(false)}
+          onVerified={({ employeeId }) => handleSubmitPaymentUpdate(employeeId)}
+        />
       )}
       {/* Combined Multi-Invoice Payment Modal */}
       <CombinedReceiptModal
@@ -1026,6 +1137,17 @@ export default function DetailTransaction() {
         activeOutletName={activeOutletName}
         paymentMethods={paymentMethods}
         initialBatchData={batchPrintData}
+        onSuccess={() => {
+          fetchDetail();
+        }}
+      />
+
+      <ChangeFulfillmentModal
+        open={fulfillmentModalOpen}
+        onClose={() => setFulfillmentModalOpen(false)}
+        order={order}
+        items={items}
+        showAlert={showAlert}
         onSuccess={() => {
           fetchDetail();
         }}

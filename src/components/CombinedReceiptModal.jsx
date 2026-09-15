@@ -22,6 +22,7 @@ import { formatEmployeeName } from '../utils/FormatName.js';
 import { formatRupiah, parseRupiah } from '../utils/FormatRupiah.js';
 import { getBankAccountForOutlet, getAllBankAccounts, OUTLET_BANK_ACCOUNTS } from '../utils/bankAccounts.js';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from './CascadingPaymentSelector.jsx';
+import PinVerifyModal from '../pages/Shift/PinVerifyModal.jsx';
 
 export default function CombinedReceiptModal({
   isOpen,
@@ -48,6 +49,7 @@ export default function CombinedReceiptModal({
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [showPayPinModal, setShowPayPinModal] = useState(false);
   const [settledBatchData, setSettledBatchData] = useState(initialBatchData);
 
   const isTransferBank = useMemo(() => {
@@ -178,7 +180,7 @@ export default function CombinedReceiptModal({
   };
 
   // Submit Batch Settlement
-  const handleSubmitBatch = async () => {
+  const requestSubmitBatch = () => {
     if (selectedOrderIds.length === 0) {
       setErrorMessage('Pilih minimal 1 nota tertunggak untuk dilunasi.');
       return;
@@ -194,6 +196,35 @@ export default function CombinedReceiptModal({
       return;
     }
 
+    setErrorMessage('');
+    setShowPayPinModal(true);
+  };
+
+  const handleSubmitBatch = async (pinCashierEmployeeId) => {
+    if (selectedOrderIds.length === 0) {
+      setErrorMessage('Pilih minimal 1 nota tertunggak untuk dilunasi.');
+      return;
+    }
+
+    if (totalSelectedAmount <= 0) {
+      setErrorMessage('Total tagihan nota terpilih adalah Rp 0.');
+      return;
+    }
+
+    if (paidAmountNum < totalSelectedAmount) {
+      setErrorMessage(`Nominal bayar kurang Rp ${(totalSelectedAmount - paidAmountNum).toLocaleString('id-ID')}`);
+      return;
+    }
+
+    const resolvedCashierId = Number(
+      pinCashierEmployeeId || cashierEmployeeId || localStorage.getItem('employeeId')
+    );
+    if (!resolvedCashierId) {
+      setErrorMessage('Identitas kasir dari PIN tidak ditemukan.');
+      return;
+    }
+
+    setShowPayPinModal(false);
     setIsSubmitting(true);
     setErrorMessage('');
 
@@ -210,7 +241,7 @@ export default function CombinedReceiptModal({
       const payload = {
         customerId: customer?.dbId || customer?.id,
         outletId: activeOutletId || parseInt(localStorage.getItem('activeOutletId'), 10) || 2,
-        cashierEmployeeId: cashierEmployeeId || parseInt(localStorage.getItem('employeeId'), 10) || 167,
+        cashierEmployeeId: resolvedCashierId,
         paymentMethod: resolvedPaymentMethod,
         paymentProofUrl,
         notes,
@@ -684,7 +715,7 @@ export default function CombinedReceiptModal({
               <button
                 type="button"
                 disabled={isSubmitting || selectedOrderIds.length === 0}
-                onClick={handleSubmitBatch}
+                onClick={requestSubmitBatch}
                 className="flex-1 sm:flex-initial px-6 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 text-white text-xs font-black rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-md transition-all"
               >
                 {isSubmitting ? (
@@ -704,6 +735,18 @@ export default function CombinedReceiptModal({
         </div>
 
       </div>
+
+      {showPayPinModal && (
+        <PinVerifyModal
+          outletId={activeOutletId || localStorage.getItem('activeOutletId')}
+          mode="pin"
+          title="PIN Pelunasan Gabungan"
+          description="Masukkan PIN frontliner yang menerima pelunasan (jumlah digit bebas)."
+          submitLabel="Lanjut Proses Pelunasan"
+          onCancel={() => setShowPayPinModal(false)}
+          onVerified={({ employeeId }) => handleSubmitBatch(employeeId)}
+        />
+      )}
     </div>,
     document.body
   );
