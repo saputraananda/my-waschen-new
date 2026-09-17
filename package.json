@@ -6,7 +6,7 @@
     "dev": "concurrently \"nodemon server.js\" \"vite\"",
     "dev:server": "nodemon server.js",
     "dev:client": "vite",
-    "build": "vite build",
+    "build": "vite build --mode prod",
     "start": "node server.js",
     "preview": "vite preview"
   },
