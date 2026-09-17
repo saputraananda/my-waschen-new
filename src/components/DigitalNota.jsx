@@ -9,7 +9,7 @@ import { DEFAULT_CUSTOMER_SETTINGS } from '../utils/printerSettings.js';
  */
 
 function formatRp(n) {
-  return `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
+  return `Rp${Number(n || 0).toLocaleString('id-ID')}`;
 }
 
 function paymentLabel(receipt) {
@@ -23,15 +23,17 @@ function itemLine(it) {
   const name = it?.name || it?.serviceName || 'Layanan';
   const qty = it?.qtyDisplay || (it?.qty != null ? String(it.qty) : '1');
   const sub = Number(it?.effectiveSubtotal ?? it?.subtotal) || 0;
-  return `- ${qty} ${name}${sub ? ` - ${formatRp(sub)}` : ''}`;
+  return `  ・ ${qty} ${name}${sub ? ` — ${formatRp(sub)}` : ''}`;
 }
 
-export const DIGITAL_NOTA_INTRO = (customerName) => (
-  `Halo Kak ${customerName || 'Pelanggan'},\n\nTerima kasih telah menggunakan jasa Waschen Laundry.`
+export const DIGITAL_NOTA_INTRO = (customerName, branch) => (
+  `Halo Kak ${customerName || 'Pelanggan'} 👋\n`
+  + `Berikut rincian pesanan laundry Kakak di ${branch || 'Waschen Laundry'} yaa 🧺`
 );
 
 export const DIGITAL_NOTA_FOOTER =
-  'Terima kasih, sampai jumpa kembali di Waschen Laundry.\nSemoga cucian Anda selalu wangi dan rapi.';
+  'Terima kasih telah mempercayakan kebutuhan laundry Kakak kepada Waschen Laundry.\n'
+  + 'Nikmati hasil cucian yang bersih, rapi, wangi, dan higienis melalui layanan premium Waschen. 🤍';
 
 /**
  * Ringkasan rincian pesanan untuk chat WA (bukan mirror struk thermal penuh).
@@ -40,9 +42,8 @@ export function buildDigitalNotaBody(receipt) {
   if (!receipt) return '';
   const lines = [];
   const orderNo = receipt.id || receipt.orderNo || '';
-  lines.push('*Rincian pesanan Anda*');
+  lines.push('*Detail Pesanan*');
   if (orderNo) lines.push(`Nota: *${orderNo}*`);
-  if (receipt.branch) lines.push(`Outlet: ${receipt.branch}`);
   if (receipt.perfume) lines.push(`Parfum: ${receipt.perfume}`);
   lines.push('');
 
@@ -50,12 +51,12 @@ export function buildDigitalNotaBody(receipt) {
   if (items.length) {
     items.forEach((it) => lines.push(itemLine(it)));
   } else {
-    lines.push(`- ${receipt.serviceType || receipt.category || 'Layanan Laundry'}`);
+    lines.push(`  ・ ${receipt.serviceType || receipt.category || 'Layanan Laundry'}`);
   }
 
   lines.push('');
   lines.push(`Total: *${formatRp(receipt.grandTotal)}*`);
-  lines.push(`Status bayar: ${paymentLabel(receipt)}`);
+  lines.push(`Status Pembayaran: ${paymentLabel(receipt)}`);
   return lines.join('\n');
 }
 
@@ -65,6 +66,7 @@ export function buildDigitalNotaBody(receipt) {
  */
 export function buildDigitalNotaMessage(receipt, _settings = DEFAULT_CUSTOMER_SETTINGS) {
   const name = receipt?.customerName || 'Pelanggan';
+  const branch = receipt?.branch || '';
   const orderNo = receipt?.id || receipt?.orderNo || '';
   const trackingUrl = String(receipt?.trackingUrl || buildCustomerTrackingUrl(orderNo) || '').trim();
   const accessCode = String(receipt?.accessCode || '').replace(/\D/g, '');
@@ -74,7 +76,7 @@ export function buildDigitalNotaMessage(receipt, _settings = DEFAULT_CUSTOMER_SE
   }
   if (!trackingUrl || !/^https?:\/\//i.test(trackingUrl)) {
     return [
-      DIGITAL_NOTA_INTRO(name),
+      DIGITAL_NOTA_INTRO(name, branch),
       '',
       buildDigitalNotaBody(receipt),
       '',
@@ -85,7 +87,7 @@ export function buildDigitalNotaMessage(receipt, _settings = DEFAULT_CUSTOMER_SE
   }
   if (!/^\d{4}$/.test(accessCode)) {
     return [
-      DIGITAL_NOTA_INTRO(name),
+      DIGITAL_NOTA_INTRO(name, branch),
       '',
       buildDigitalNotaBody(receipt),
       '',
@@ -96,15 +98,13 @@ export function buildDigitalNotaMessage(receipt, _settings = DEFAULT_CUSTOMER_SE
   }
 
   return [
-    DIGITAL_NOTA_INTRO(name),
+    DIGITAL_NOTA_INTRO(name, branch),
     '',
     buildDigitalNotaBody(receipt),
     '',
-    '*Lacak progres cucian*',
+    '📦 Lacak progres cucian :',
     trackingUrl,
-    '',
-    `Kode akses: *${accessCode}*`,
-    '(Masukkan kode ini saat membuka link - demi keamanan data Anda)',
+    `Kode akses: ${accessCode}`,
     '',
     DIGITAL_NOTA_FOOTER
   ].join('\n');
