@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { formatName } from '../../../utils/FormatName';
 import { formatWorkPercentage } from '../../../utils/workStatusMeta.js';
 import CombinedReceiptModal from '../../../components/CombinedReceiptModal.jsx';
+import ThermalNotaMerge from '../../../components/ThermalNotaMerge.jsx';
 import {
   Users,
   Search,
@@ -105,6 +106,7 @@ export default function ListCustomer({
   const [selectedCustomerDetail, setSelectedCustomerDetail] = useState(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isCombinedModalOpen, setIsCombinedModalOpen] = useState(false);
+  const [mergeReceipt, setMergeReceipt] = useState(null);
 
   useEffect(() => {
     if (activeOutletId) setSelectedBranch(String(activeOutletId));
@@ -538,8 +540,8 @@ export default function ListCustomer({
         outstandingOrders={selectedCustomerDetail?.history || []}
         activeOutletId={activeOutletId}
         activeOutletName={activeOutletName}
-        onSuccess={() => {
-          // Re-fetch detail for current customer
+        onSuccess={(data) => {
+          setMergeReceipt(data || null);
           if (selectedCustomerDetail?.id) {
             axios.get(`/api/customers/${selectedCustomerDetail.id}`).then((res) => {
               if (res.data && res.data.success) {
@@ -548,6 +550,14 @@ export default function ListCustomer({
             }).catch(() => {});
           }
         }}
+      />
+
+      <ThermalNotaMerge
+        batchData={mergeReceipt}
+        onClose={() => setMergeReceipt(null)}
+        outletName={mergeReceipt?.outletName || mergeReceipt?.outlet_name || activeOutletName}
+        customerName={mergeReceipt?.customerName || mergeReceipt?.customer_name || selectedCustomerDetail?.name}
+        customerPhone={mergeReceipt?.customerPhone || mergeReceipt?.customer_phone || selectedCustomerDetail?.phone}
       />
     </>
   );

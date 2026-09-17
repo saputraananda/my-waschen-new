@@ -8,7 +8,7 @@ import {
   getConnectedPortInfo,
   formatSerialConnectError
 } from '../utils/thermalPrinter.js';
-import { buildEscPosDualNota, buildEscPosNota } from '../utils/escpos.js';
+import { buildEscPosDualNota, buildEscPosNota, buildEscPosMergeNota } from '../utils/escpos.js';
 
 const ThermalPrinterContext = createContext(null);
 
@@ -88,6 +88,17 @@ export function ThermalPrinterProvider({ children }) {
     await writeToThermalPrinter(bytes);
   }, []);
 
+  /**
+   * Cetak struk pelunasan gabungan (merged nota).
+   */
+  const printMergeNota = useCallback(async (batchData, options = {}) => {
+    if (!isPrinterConnected()) {
+      throw new Error('Printer belum terhubung. Buka Setting Printer → Hubungkan Printer.');
+    }
+    const bytes = await buildEscPosMergeNota(batchData, options);
+    await writeToThermalPrinter(bytes);
+  }, []);
+
   const value = {
     supported,
     connected,
@@ -98,6 +109,7 @@ export function ThermalPrinterProvider({ children }) {
     disconnect,
     printNota,
     printDualNota,
+    printMergeNota,
     syncStatus
   };
 

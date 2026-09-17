@@ -10,11 +10,12 @@ export default function ThermalNotaBody({
   receipt,
   settings,
   variant = 'customer',
-  compact = false
+  compact = false,
+  rows: rowsOverride = null
 }) {
-  if (!receipt || !settings) return null;
+  if (!rowsOverride && (!receipt || !settings)) return null;
 
-  const rows = buildNotaModel(receipt, settings, variant);
+  const rows = rowsOverride || buildNotaModel(receipt, settings, variant);
   const pad = compact ? 'px-2 py-2.5' : 'px-2.5 py-3 sm:px-3 sm:py-4';
 
   return (

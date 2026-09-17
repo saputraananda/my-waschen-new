@@ -3,6 +3,7 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import HeaderNav from '../../../components/HeaderNav.jsx';
 import ThermalNota from '../../../components/ThermalNota.jsx';
+import ThermalNotaMerge from '../../../components/ThermalNotaMerge.jsx';
 import CombinedReceiptModal from '../../../components/CombinedReceiptModal.jsx';
 import { formatName, formatEmployeeName } from '../../../utils/FormatName.js';
 import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
@@ -66,7 +67,7 @@ export default function DetailTransaction() {
 
   // Combined Multi-Invoice Payment Modal
   const [isCombinedModalOpen, setIsCombinedModalOpen] = useState(false);
-  const [batchPrintData, setBatchPrintData] = useState(null);
+  const [mergeReceipt, setMergeReceipt] = useState(null);
   const [customerOutstandingOrders, setCustomerOutstandingOrders] = useState([]);
   const [unpaidCount, setUnpaidCount] = useState(0);
 
@@ -439,19 +440,6 @@ export default function DetailTransaction() {
 
   const handlePrint = async () => {
     if (!order) return;
-
-    if (order.paymentBatchNo) {
-      try {
-        const res = await axios.get(`/api/transactions/batch/${order.paymentBatchNo}`);
-        if (res.data && res.data.success) {
-          setBatchPrintData(res.data.data);
-          setIsCombinedModalOpen(true);
-          return;
-        }
-      } catch (err) {
-        console.error('Error fetching payment batch for print:', err);
-      }
-    }
 
     setPrintReceipt({
       id: order.id,
@@ -1132,10 +1120,7 @@ export default function DetailTransaction() {
       {/* Combined Multi-Invoice Payment Modal */}
       <CombinedReceiptModal
         isOpen={isCombinedModalOpen}
-        onClose={() => {
-          setIsCombinedModalOpen(false);
-          setBatchPrintData(null);
-        }}
+        onClose={() => setIsCombinedModalOpen(false)}
         customer={{
           dbId: order?.customerId,
           id: order?.customerCode || order?.customerId,
@@ -1147,10 +1132,18 @@ export default function DetailTransaction() {
         activeOutletId={activeOutletId}
         activeOutletName={activeOutletName}
         paymentMethods={paymentMethods}
-        initialBatchData={batchPrintData}
-        onSuccess={() => {
+        onSuccess={(data) => {
+          setMergeReceipt(data || null);
           fetchDetail();
         }}
+      />
+
+      <ThermalNotaMerge
+        batchData={mergeReceipt}
+        onClose={() => setMergeReceipt(null)}
+        outletName={mergeReceipt?.outletName || mergeReceipt?.outlet_name || activeOutletName}
+        customerName={mergeReceipt?.customerName || mergeReceipt?.customer_name || order?.customerName}
+        customerPhone={mergeReceipt?.customerPhone || mergeReceipt?.customer_phone || order?.customerPhone}
       />
 
       <ChangeFulfillmentModal

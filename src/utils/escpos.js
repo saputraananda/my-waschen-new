@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QRCodeCanvas } from 'qrcode.react';
 import { buildNotaModel, NOTA_DASH, NOTA_WIDTH, wrapNotaText } from './notaModel.js';
+import { buildMergeNotaModel } from './mergeNotaModel.js';
 
 const encoder = new TextEncoder();
 
@@ -287,4 +288,11 @@ export async function buildEscPosDualNota(receipt, customerSettings, internalSet
   const internal = await buildEscPosNota(receipt, internalSettings, 'internal');
   const customer = await buildEscPosNota(receipt, customerSettings, 'customer');
   return concat(internal, customer);
+}
+
+/** Cetak struk pelunasan gabungan (merged nota) ke thermal 58mm */
+export async function buildEscPosMergeNota(batchData, options = {}) {
+  if (!batchData) return INIT;
+  const segments = await renderModel(buildMergeNotaModel(batchData, options));
+  return concat(...segments);
 }
