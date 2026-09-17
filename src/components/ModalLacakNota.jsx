@@ -297,7 +297,7 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '', a
     if (rawPhone.startsWith('0')) rawPhone = '62' + rawPhone.slice(1);
     if (!rawPhone) rawPhone = '628123456789';
     const message = encodeURIComponent(`Halo Kak ${name || 'Pelanggan'}, update status pengerjaan nota ${orderNo} Anda saat ini adalah: ${formatWorkPercentage(status)}. Terima kasih! 😊`);
-    window.open(`https://wa.me/${rawPhone}?text=${message}`, '_blank');
+    window.open(`https://api.whatsapp.com/send?phone=${rawPhone}&text=${message}`, '_blank');
   };
 
   if (!isOpen) return null;

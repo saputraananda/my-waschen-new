@@ -16,7 +16,7 @@ export default function CustomerChurn({
     }
     if (!rawPhone) rawPhone = '628123456789';
     const message = encodeURIComponent(`Halo Kak ${cust.name || 'Pelanggan'}, salam hangat dari Waschen Laundry! Ada promo & diskon khusus retensi Kakak hari ini. Hubungi kami untuk jadwal antar/jemput cucian ya 😊`);
-    window.open(`https://wa.me/${rawPhone}?text=${message}`, '_blank');
+    window.open(`https://api.whatsapp.com/send?phone=${rawPhone}&text=${message}`, '_blank');
   };
 
   return (

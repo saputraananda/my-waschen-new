@@ -189,7 +189,8 @@ export async function ensureDigitalNotaAccess(orderNo) {
 }
 
 function openWhatsAppChat(digits, text) {
-  const url = `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+  // Langsung ke api.whatsapp.com — redirect wa.me me-re-encode query dan merusak emoji non-BMP.
+  const url = `https://api.whatsapp.com/send?phone=${digits}&text=${encodeURIComponent(text)}`;
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 

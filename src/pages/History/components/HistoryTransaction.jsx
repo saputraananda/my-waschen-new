@@ -114,7 +114,7 @@ export default function HistoryTransaction({
     }
     if (!rawPhone) rawPhone = '628123456789';
     const message = encodeURIComponent(`Halo Kak ${order.customerName || 'Pelanggan'}, update status pengerjaan nota ${order.id} Anda saat ini: ${formatWorkPercentage(order.progressStatus ?? order.workStatus)}. Terima kasih telah mempercayakan Waschen Laundry! 😊`);
-    window.open(`https://wa.me/${rawPhone}?text=${message}`, '_blank');
+    window.open(`https://api.whatsapp.com/send?phone=${rawPhone}&text=${message}`, '_blank');
   };
 
   const handleKirimNotaDigital = async (e, order) => {
