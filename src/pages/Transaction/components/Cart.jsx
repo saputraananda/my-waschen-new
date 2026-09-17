@@ -307,7 +307,7 @@ export default function Cart({
               </label>
               <textarea
                 rows="2"
-                placeholder="Contoh: Packing double plastik rapi, diantar hari Sabtu sore..."
+                placeholder="Contoh : Packing double plastik rapi, diantar hari Sabtu sore"
                 value={generalOrderNotes}
                 onChange={(e) => setGeneralOrderNotes(e.target.value)}
                 className="w-full p-2.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl text-xs font-medium text-[#313030] outline-none focus:border-[#5f1340]"

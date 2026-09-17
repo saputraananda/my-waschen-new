@@ -1046,7 +1046,7 @@ export default function DetailTransaction() {
                           inputMode="numeric"
                           value={paymentForm.additionalAmount}
                           onChange={(e) => setPaymentForm({ ...paymentForm, additionalAmount: formatRupiah(e.target.value) })}
-                          placeholder={formatRupiah(paymentDetail?.remaining || remaining || order.grandTotal)}
+                          placeholder={`Contoh : ${formatRupiah(paymentDetail?.remaining || remaining || order.grandTotal)}`}
                           className="w-full px-4 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-sm font-black outline-none focus:border-[#5f1340]"
                         />
                         <div className="flex flex-wrap gap-2 mt-2">
@@ -1071,7 +1071,7 @@ export default function DetailTransaction() {
                           type="text"
                           value={paymentForm.notes}
                           onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
-                          placeholder="Opsional"
+                          placeholder="Contoh : Transfer BCA a/n pelanggan"
                           className="w-full px-4 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-xs outline-none focus:border-[#5f1340]"
                         />
                       </div>

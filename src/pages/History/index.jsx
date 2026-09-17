@@ -84,8 +84,10 @@ export default function History() {
           paidAmount: parseFloat(t.paid_amount) || 0,
           paymentProofUrl: t.payment_proof_url || null,
           progressStatus: t.work_status ?? 10,
+          pickedUpAt: t.picked_up_at || null,
           cashierName: t.cashier_name || t.cashier_employee_name || (t.cashier_employee_id ? `Kasir #${t.cashier_employee_id}` : 'Kasir Waschen'),
           createdAt: new Date(t.order_date).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
+          rawDate: t.order_date || null,
           notes: t.special_notes || '-',
           // Delete Request Fields
           isDeleteRequested: t.is_delete_requested === 1 || t.is_delete_requested === true,

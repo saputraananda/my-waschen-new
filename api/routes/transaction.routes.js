@@ -11,7 +11,8 @@ import {
   requestRefundTransaction,
   settlePaymentBatch,
   getPaymentBatchByNo,
-  uploadPaymentProof
+  uploadPaymentProof,
+  ensureDigitalNotaAccess
 } from '../controllers/transaction.controller.js';
 import { uploadPaymentReceipt } from '../middleware/upload.js';
 
@@ -21,6 +22,7 @@ router.post('/', createTransaction);
 router.get('/', getTransactions);
 router.post('/settle-batch', settlePaymentBatch);
 router.get('/batch/:batchNo', getPaymentBatchByNo);
+router.post('/:orderNo/digital-nota-access', ensureDigitalNotaAccess);
 router.post('/:id/payment-proof', uploadPaymentReceipt, uploadPaymentProof);
 router.get('/:orderNo', getTransactionDetail);
 router.patch('/:id/items/:itemId/status', updateItemWorkStatus);

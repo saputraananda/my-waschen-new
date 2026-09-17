@@ -488,8 +488,9 @@ export default function TransactionPage() {
     let qtyDisplay = '';
 
     const isMeter = configuringItem.unit_id === 4 || configuringItem.unit === 'm²' || configuringItem.unit === 'm2' || configuringItem.unit === 'Meter';
+    const isKiloan = String(configuringItem.category || '').toLowerCase().includes('kiloan');
 
-    if (configuringItem.category === 'Kiloan') {
+    if (isKiloan) {
       const weight = Math.max(0.5, parseFloat(itemSpecs.weight) || 4);
       if (weight < 4) {
         effectivePrice = 36000;
@@ -512,27 +513,40 @@ export default function TransactionPage() {
     }
 
     const editingCartId = configuringItem.editingCartId;
+    const specsForCart = isKiloan
+      ? {
+          isCleanox: false,
+          isDryClean: false,
+          brand: '-',
+          color: '-',
+          material: '-',
+          size: '-',
+          note: itemSpecs.note || '-'
+        }
+      : {
+          isCleanox: itemSpecs.isCleanox === true,
+          isDryClean: itemSpecs.isDryClean === true,
+          brand: itemSpecs.brand || '-',
+          color: itemSpecs.color || '-',
+          material: itemSpecs.material || '-',
+          size: isMeter
+            ? `${parseFloat(itemSpecs.length) || 1}m x ${parseFloat(itemSpecs.width) || 1}m (${((parseFloat(itemSpecs.length) || 1) * (parseFloat(itemSpecs.width) || 1)).toFixed(2)} m²)`
+            : (itemSpecs.size || '-'),
+          note: itemSpecs.note || '-'
+        };
 
     if (editingCartId) {
       setCartItems((prev) => prev.map((item) => (
         item.cartId === editingCartId
           ? {
               ...item,
-              isCleanox: itemSpecs.isCleanox === true,
-              isDryClean: itemSpecs.isDryClean === true,
-              qty: isMeter ? (parseInt(itemSpecs.qty, 10) || 1) : (configuringItem.category === 'Kiloan' ? (parseFloat(itemSpecs.weight) || 4) : (parseInt(itemSpecs.qty, 10) || 1)),
+              ...specsForCart,
+              qty: isMeter ? (parseInt(itemSpecs.qty, 10) || 1) : (isKiloan ? (parseFloat(itemSpecs.weight) || 4) : (parseInt(itemSpecs.qty, 10) || 1)),
               weight: parseFloat(itemSpecs.weight) || 4,
               qtyDisplay,
               effectiveSubtotal: effectivePrice,
-              brand: itemSpecs.brand || '-',
-              color: itemSpecs.color || '-',
-              material: itemSpecs.material || '-',
               length: parseFloat(itemSpecs.length) || 1,
               width: parseFloat(itemSpecs.width) || 1,
-              size: isMeter
-                ? `${parseFloat(itemSpecs.length) || 1}m x ${parseFloat(itemSpecs.width) || 1}m (${((parseFloat(itemSpecs.length) || 1) * (parseFloat(itemSpecs.width) || 1)).toFixed(2)} m²)`
-                : (itemSpecs.size || '-'),
-              note: itemSpecs.note || '-',
               isExpanded: false
             }
           : item
@@ -546,26 +560,18 @@ export default function TransactionPage() {
       serviceId: configuringItem.id,
       serviceDbId: configuringItem.dbId,
       serviceIsCleanox: configuringItem.isCleanox === true,
-      isCleanox: itemSpecs.isCleanox === true,
-      isDryClean: itemSpecs.isDryClean === true,
+      ...specsForCart,
       name: configuringItem.name,
       category: configuringItem.category,
       unit: configuringItem.unit,
       unitPrice: configuringItem.price,
       duration: configuringItem.duration,
-      qty: isMeter ? (parseInt(itemSpecs.qty, 10) || 1) : (configuringItem.category === 'Kiloan' ? (parseFloat(itemSpecs.weight) || 4) : (parseInt(itemSpecs.qty, 10) || 1)),
+      qty: isMeter ? (parseInt(itemSpecs.qty, 10) || 1) : (isKiloan ? (parseFloat(itemSpecs.weight) || 4) : (parseInt(itemSpecs.qty, 10) || 1)),
       weight: parseFloat(itemSpecs.weight) || 4,
       qtyDisplay,
       effectiveSubtotal: effectivePrice,
-      brand: itemSpecs.brand || '-',
-      color: itemSpecs.color || '-',
-      material: itemSpecs.material || '-',
       length: parseFloat(itemSpecs.length) || 1,
       width: parseFloat(itemSpecs.width) || 1,
-      size: isMeter
-        ? `${parseFloat(itemSpecs.length) || 1}m x ${parseFloat(itemSpecs.width) || 1}m (${((parseFloat(itemSpecs.length) || 1) * (parseFloat(itemSpecs.width) || 1)).toFixed(2)} m²)`
-        : (itemSpecs.size || '-'),
-      note: itemSpecs.note || '-',
       isExpanded: false
     };
 

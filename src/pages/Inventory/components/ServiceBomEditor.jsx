@@ -179,7 +179,7 @@ export default function ServiceBomEditor({ services, items }) {
                       next[idx] = { ...next[idx], qtyPerService: e.target.value };
                       setBomRows(next);
                     }}
-                    placeholder="Qty"
+                    placeholder="Contoh : 1"
                     className="w-full px-2.5 py-2 border rounded-xl text-xs font-bold outline-none focus:border-[#5f1340] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>
@@ -192,7 +192,7 @@ export default function ServiceBomEditor({ services, items }) {
                       next[idx] = { ...next[idx], notes: e.target.value };
                       setBomRows(next);
                     }}
-                    placeholder="Catatan (opsional)"
+                    placeholder="Contoh : Plastik untuk kiloan"
                     className="w-full px-2.5 py-2 border rounded-xl text-xs font-bold outline-none focus:border-[#5f1340]"
                   />
                 </div>

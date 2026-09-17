@@ -81,10 +81,14 @@ export const getMemberships = async (req, res) => {
  * POST /api/memberships
  * Aktivasi / Top-Up Paket Membership Pelanggan
  * Rules:
- * 1. Menambah saldo deposit sebesar nominal pas paket (500K untuk Gold, 1M untuk Diamond).
+ * 1. Menambah saldo deposit sebesar nominal pas paket (500K untuk Gold, 1M untuk Diamond) + bonus.
  * 2. Highest Tier Retention: Jika pelanggan sedang berada di Tier DIAMOND dan melakukan top-up paket GOLD (500K),
  *    saldo deposit bertambah +500K, masa aktif diperpanjang, namun tier pelanggan TETAP DIAMOND (retensi tier tertinggi).
  * 3. Mengupdate masa aktif (validity_days) dari tanggal kadaluarsa sebelumnya atau hari ini.
+ * 4. Kelebihan bayar (paidAmount > top_up_amount):
+ *    - change  → kembalian tunai (tidak masuk saldo)
+ *    - deposit → kelebihan ditambahkan ke saldo deposit
+ *    - refund  → kelebihan dicatat menunggu refund (tidak masuk saldo)
  */
 export const createMembership = async (req, res) => {
   const connection = await myWaschenPool.getConnection();
@@ -94,7 +98,9 @@ export const createMembership = async (req, res) => {
       packageId,
       outletId,
       paymentMethod,
-      cashierEmployeeId
+      cashierEmployeeId,
+      paidAmount: paidAmountRaw,
+      overpaymentAction: overpaymentActionRaw
     } = req.body;
 
     if (!customerId || !packageId) {
@@ -131,7 +137,43 @@ export const createMembership = async (req, res) => {
       bonusAmount = 25000;
     }
 
-    const totalCredit = topUpAmount + bonusAmount;
+    const paidAmount = paidAmountRaw !== undefined && paidAmountRaw !== null && paidAmountRaw !== ''
+      ? Math.round(parseFloat(paidAmountRaw) || 0)
+      : topUpAmount;
+    const overpaymentAction = String(overpaymentActionRaw || 'change').toLowerCase();
+
+    if (/saldo\s*member/i.test(String(paymentMethod || ''))) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Aktivasi/top-up membership tidak bisa memakai Potong Saldo Member.'
+      });
+    }
+
+    if (paidAmount < topUpAmount) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Nominal bayar kurang. Minimal Rp ${topUpAmount.toLocaleString('id-ID')} (harga paket).`
+      });
+    }
+
+    const excess = Math.max(0, Math.round((paidAmount - topUpAmount) * 100) / 100);
+    let changeAmount = 0;
+    let excessToDeposit = 0;
+    let refundAmount = 0;
+
+    if (excess > 0) {
+      if (overpaymentAction === 'deposit') {
+        excessToDeposit = excess;
+      } else if (overpaymentAction === 'refund') {
+        refundAmount = excess;
+      } else {
+        changeAmount = excess;
+      }
+    }
+
+    const totalCredit = topUpAmount + bonusAmount + excessToDeposit;
 
     // 2. Ambil detail pelanggan & status membership aktif saat ini
     const [custRows] = await connection.query(
@@ -153,6 +195,15 @@ export const createMembership = async (req, res) => {
     const customer = custRows[0];
     const balanceBefore = parseFloat(customer.deposit_balance) || 0;
     const balanceAfter = balanceBefore + totalCredit;
+
+    const excessNote = excessToDeposit > 0
+      ? ` + Kelebihan bayar Rp ${excessToDeposit.toLocaleString('id-ID')} (simpan ke saldo)`
+      : changeAmount > 0
+        ? ` | Kembalian tunai Rp ${changeAmount.toLocaleString('id-ID')}`
+        : refundAmount > 0
+          ? ` | Kelebihan Rp ${refundAmount.toLocaleString('id-ID')} menunggu refund`
+          : '';
+    const depositNotes = `Top Up Paket ${requestedPkg.name} (Bayar Rp ${paidAmount.toLocaleString('id-ID')} → Setoran paket Rp ${topUpAmount.toLocaleString('id-ID')} + Bonus Rp ${bonusAmount.toLocaleString('id-ID')}${excessNote})`;
 
     // Hierarchy Tier: Diamond (Rank 2) > Gold (Rank 1)
     const TIER_RANK = { 'Gold': 1, 'Diamond': 2 };
@@ -234,20 +285,33 @@ export const createMembership = async (req, res) => {
         balanceAfter,
         paymentMethod || 'Tunai',
         membershipId,
-        `Top Up Paket ${requestedPkg.name} (Setoran Rp ${topUpAmount.toLocaleString('id-ID')} + Bonus Rp ${bonusAmount.toLocaleString('id-ID')})`
+        depositNotes
       ]
     );
 
     await connection.commit();
 
+    const extrasMsg = excessToDeposit > 0
+      ? ` Kelebihan Rp ${excessToDeposit.toLocaleString('id-ID')} disimpan ke saldo.`
+      : changeAmount > 0
+        ? ` Kembalian tunai Rp ${changeAmount.toLocaleString('id-ID')}.`
+        : refundAmount > 0
+          ? ` Kelebihan Rp ${refundAmount.toLocaleString('id-ID')} menunggu refund.`
+          : '';
+
     return res.status(201).json({
       success: true,
-      message: `Top-up paket ${requestedPkg.name} berhasil! Setoran Rp ${topUpAmount.toLocaleString('id-ID')} + Bonus Saldo Rp ${bonusAmount.toLocaleString('id-ID')}. Total saldo bertambah +Rp ${totalCredit.toLocaleString('id-ID')}. Status Membership: ${finalTier.toUpperCase()}`,
+      message: `Top-up paket ${requestedPkg.name} berhasil! Setoran Rp ${topUpAmount.toLocaleString('id-ID')} + Bonus Saldo Rp ${bonusAmount.toLocaleString('id-ID')}. Total saldo bertambah +Rp ${totalCredit.toLocaleString('id-ID')}.${extrasMsg} Status Membership: ${finalTier.toUpperCase()}`,
       data: {
         membershipId,
         membershipTier: finalTier,
         topUpAmount,
         bonusAmount,
+        paidAmount,
+        excess,
+        excessToDeposit,
+        changeAmount,
+        refundAmount,
         totalCredit,
         balanceAfter,
         startDate,

@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { formatName, formatEmployeeName } from '../../../utils/FormatName';
 import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
-import { getWorkPercentage, percentageTone, formatWorkPercentage, matchesWorkStatusTab } from '../../../utils/workStatusMeta.js';
+import { getWorkPercentage, percentageTone, formatWorkPercentage } from '../../../utils/workStatusMeta.js';
+import { NOTA_QUEUE_TABS, matchesNotaQueueTab } from '../../../utils/notaQueueMeta.js';
 import {
   Search,
   Printer,
@@ -25,6 +26,8 @@ import {
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import ModalLacakNota from '../../../components/ModalLacakNota.jsx';
 import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
+import DateModeFilter from '../../../components/DateModeFilter.jsx';
+import { passesDateModeFilter, getCutoffMonthKey } from '../../../utils/dateCutoffFilter.js';
 import {
   sendCustomerNotaWhatsAppFromOrder,
   describeCustomerNotaWaResult
@@ -43,20 +46,19 @@ export default function HistoryTransaction({
   const [searchQuery, setSearchQuery] = useState('');
   const [isLacakModalOpen, setIsLacakModalOpen] = useState(false);
   const [paymentFilter, setPaymentFilter] = useState('Semua'); // Semua | Lunas | DP | Outstanding | Sisa Tagihan
-  const [activeFilterTab, setActiveFilterTab] = useState('Semua'); // Status Workflow Tab
+  const [activeFilterTab, setActiveFilterTab] = useState('Semua'); // Kategori antrean nota (NOTA_QUEUE_TABS)
   const [selectedBranchFilter, setSelectedBranchFilter] = useState(localStorage.getItem('activeOutletName') || 'Semua');
-  const [dateFilter, setDateFilter] = useState(''); // YYYY-MM-DD string
-  const [workStatusTabs, setWorkStatusTabs] = useState([]);
+  const [dateMode, setDateMode] = useState('cutoff'); // 'cutoff' | 'range'
+  const [rangeStart, setRangeStart] = useState('');
+  const [rangeEnd, setRangeEnd] = useState('');
+  const [cutoffMonth, setCutoffMonth] = useState(getCutoffMonthKey());
+  const dateFilterState = { mode: dateMode, start: rangeStart, end: rangeEnd, cutoffMonth };
 
-  useEffect(() => {
-    axios.get('/api/masters/work-statuses?filter_tabs=1')
-      .then((res) => {
-        if (res.data?.success) {
-          setWorkStatusTabs((res.data.data || []).map((s) => s.label || s.name));
-        }
-      })
-      .catch((err) => console.error('Gagal memuat work status:', err));
-  }, []);
+  // Samakan bentuk order dengan TrackingService agar kategori antrean konsisten
+  const toQueueOrder = (order) => ({
+    ...order,
+    workStatus: order.progressStatus ?? order.workStatus
+  });
 
   // Modals
   const [selectedReceipt, setSelectedReceipt] = useState(null);
@@ -346,15 +348,11 @@ export default function HistoryTransaction({
       if (!matchesBranch) return false;
     }
 
-    // Date Filter
-    if (dateFilter) {
-      const orderDateStr = order.createdAt ? new Date(order.createdAt).toISOString().slice(0, 10) : '';
-      if (orderDateStr !== dateFilter) return false;
-    }
+    // Date Filter (cutoff 26–25 atau range manual)
+    if (!passesDateModeFilter(order, dateFilterState)) return false;
 
-    // Workflow Status Tab Filter
-    const status = order.progressStatus ?? order.workStatus;
-    if (activeFilterTab !== 'Semua' && !matchesWorkStatusTab(status, activeFilterTab)) return false;
+    // Filter kategori antrean (progress + bayar + pengambilan)
+    if (!matchesNotaQueueTab(toQueueOrder(order), activeFilterTab)) return false;
 
     return true;
   });
@@ -371,126 +369,152 @@ export default function HistoryTransaction({
           ));
         if (!matchesBranch) return false;
       }
-      if (dateFilter) {
-        const orderDateStr = order.createdAt ? new Date(order.createdAt).toISOString().slice(0, 10) : '';
-        if (orderDateStr !== dateFilter) return false;
-      }
+      if (!passesDateModeFilter(order, dateFilterState)) return false;
       return true;
     });
 
     if (tabName === 'Semua') return baseList.length;
-    return baseList.filter((o) => matchesWorkStatusTab(o.progressStatus ?? o.workStatus, tabName)).length;
+    return baseList.filter((o) => matchesNotaQueueTab(toQueueOrder(o), tabName)).length;
   };
 
   return (
     <div id="tracking-service-section" className="bg-white border border-[#e0e0e0]/70 rounded-3xl shadow-xs flex flex-col overflow-hidden transition-all duration-300">
-      {/* Table Header Controls (Sleek Single Line Toolbar) */}
-      <div className="p-4 sm:p-5 border-b border-[#e0e0e0]/70 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3 bg-slate-50/50">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-base font-extrabold text-[#313030] tracking-tight">Riwayat Transaksi POS</h3>
-            <span className="px-2.5 py-0.5 rounded-full bg-[#5f1340]/10 text-[#5f1340] text-[10px] font-black border border-[#5f1340]/15">
-              {displayOrders.length} Order
-            </span>
+      {/* Header: judul + toolbar yang wrap natural */}
+      <div className="p-4 sm:p-5 border-b border-[#e0e0e0]/70 bg-slate-50/50 flex flex-col gap-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-base font-extrabold text-[#313030] tracking-tight">Riwayat Transaksi POS</h3>
+              <span className="px-2.5 py-0.5 rounded-full bg-[#5f1340]/10 text-[#5f1340] text-[10px] font-black border border-[#5f1340]/15">
+                {displayOrders.length} Order
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 font-medium mt-0.5">
+              Klik baris untuk melihat rincian status pengerjaan per item
+            </p>
           </div>
-          <p className="text-xs text-slate-400 font-medium mt-0.5">Klik baris untuk melihat rincian status pengerjaan per item</p>
+
+          {((dateMode === 'range' && (rangeStart || rangeEnd)) || cutoffMonth !== getCutoffMonthKey() || paymentFilter !== 'Semua' || selectedBranchFilter !== 'Semua' || activeFilterTab !== 'Semua' || searchQuery) && (
+            <button
+              type="button"
+              onClick={() => {
+                setDateMode('cutoff');
+                setRangeStart('');
+                setRangeEnd('');
+                setCutoffMonth(getCutoffMonthKey());
+                setPaymentFilter('Semua');
+                setSelectedBranchFilter('Semua');
+                setActiveFilterTab('Semua');
+                setSearchQuery('');
+              }}
+              className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-[#e0e0e0] hover:bg-slate-100 text-slate-600 rounded-xl text-[11px] font-bold transition-all cursor-pointer"
+              title="Reset Semua Filter"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Reset</span>
+            </button>
+          )}
         </div>
 
-        {/* Header Right Controls: Search, Branch, Date, Payment Filter */}
-        <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto">
-          {/* Search Input */}
-          <div className="relative flex-1 sm:w-56">
-            <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <div className="relative w-full sm:flex-1 sm:min-w-[14rem] sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
             <input
               type="text"
-              placeholder="Cari Struk, Pelanggan..."
+              placeholder="Contoh : WS-0826001 / Budi"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-8 pr-7 py-1.5 border border-[#e0e0e0] rounded-xl text-xs bg-white focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340] outline-none font-medium text-[#313030]"
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1.5 text-slate-400 text-xs font-bold">&times;</button>
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold leading-none"
+              >
+                &times;
+              </button>
             )}
           </div>
 
-          {/* Scan Barcode Button */}
-          <button
-            type="button"
-            onClick={() => setIsLacakModalOpen(true)}
-            className="px-3 py-1.5 bg-white border border-[#e0e0e0] hover:border-[#5f1340] text-[#5f1340] font-black rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-            title="Scan Barcode / QR Kamera untuk lacak nota"
-          >
-            <QrCode className="h-3.5 w-3.5" />
-            <span>Scan Barcode</span>
-          </button>
-
-          {/* Branch Filter */}
-          <select
-            value={selectedBranchFilter}
-            onChange={(e) => setSelectedBranchFilter(e.target.value)}
-            className="px-3 py-1.5 border border-[#e0e0e0] bg-white rounded-xl outline-none focus:border-[#5f1340] text-xs font-bold text-[#313030] cursor-pointer"
-          >
-            <option value="Semua">Semua Cabang Outlet</option>
-            {outlets.map(o => (
-              <option key={o.id} value={o.full_name || o.name}>{o.full_name || o.name}</option>
-            ))}
-          </select>
-
-          {/* Date Picker */}
-          <input
-            type="date"
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            className="px-2.5 py-1.5 border border-[#e0e0e0] rounded-xl text-xs font-bold text-[#313030] bg-white outline-none focus:border-[#5f1340] cursor-pointer"
-            title="Filter Tanggal Transaksi"
-          />
-
-          {/* Payment Status Select */}
-          <select
-            value={paymentFilter}
-            onChange={(e) => setPaymentFilter(e.target.value)}
-            className="px-3 py-1.5 border border-[#e0e0e0] bg-white rounded-xl outline-none focus:border-[#5f1340] text-xs font-bold text-[#313030] cursor-pointer"
-          >
-            <option value="Semua">Semua Bayar</option>
-            <option value="Lunas">Lunas Only</option>
-            <option value="DP">DP Only</option>
-            <option value="Outstanding">Outstanding Only</option>
-            <option value="Sisa Tagihan">Sisa Tagihan (DP + Outstanding)</option>
-          </select>
-
-          {/* Reset Filters */}
-          {(dateFilter || paymentFilter !== 'Semua' || selectedBranchFilter !== 'Semua' || searchQuery) && (
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar sm:overflow-visible sm:ml-auto">
             <button
               type="button"
-              onClick={() => { setDateFilter(''); setPaymentFilter('Semua'); setSelectedBranchFilter('Semua'); setSearchQuery(''); }}
-              className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-all cursor-pointer"
-              title="Reset Semua Filter"
+              onClick={() => setIsLacakModalOpen(true)}
+              className="shrink-0 px-3 py-1.5 bg-white border border-[#e0e0e0] hover:border-[#5f1340] text-[#5f1340] font-black rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+              title="Scan Barcode / QR Kamera untuk lacak nota"
             >
-              <RotateCcw className="h-3.5 w-3.5" />
+              <QrCode className="h-3.5 w-3.5" />
+              <span>Scan</span>
             </button>
-          )}
+
+            <select
+              value={selectedBranchFilter}
+              onChange={(e) => setSelectedBranchFilter(e.target.value)}
+              className="shrink-0 min-w-0 max-w-[10rem] sm:max-w-[13rem] px-2.5 py-1.5 border border-[#e0e0e0] bg-white rounded-xl outline-none focus:border-[#5f1340] text-xs font-bold text-[#313030] cursor-pointer"
+              title="Filter cabang"
+            >
+              <option value="Semua">Semua Cabang</option>
+              {outlets.map((o) => (
+                <option key={o.id} value={o.full_name || o.name}>{o.full_name || o.name}</option>
+              ))}
+            </select>
+
+            <select
+              value={paymentFilter}
+              onChange={(e) => setPaymentFilter(e.target.value)}
+              className="shrink-0 min-w-0 px-2.5 py-1.5 border border-[#e0e0e0] bg-white rounded-xl outline-none focus:border-[#5f1340] text-xs font-bold text-[#313030] cursor-pointer"
+              title="Filter status bayar"
+            >
+              <option value="Semua">Semua Bayar</option>
+              <option value="Lunas">Lunas Only</option>
+              <option value="DP">DP Only</option>
+              <option value="Outstanding">Outstanding Only</option>
+              <option value="Sisa Tagihan">Sisa Tagihan</option>
+            </select>
+
+            <DateModeFilter
+              mode={dateMode}
+              onModeChange={setDateMode}
+              rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
+              onRangeStartChange={setRangeStart}
+              onRangeEndChange={setRangeEnd}
+              cutoffMonth={cutoffMonth}
+              onCutoffMonthChange={setCutoffMonth}
+              className="shrink-0 flex-nowrap"
+            />
+          </div>
         </div>
       </div>
 
-      {/* Filter Tabs with Live Counters */}
-      <div className="px-5 border-b border-[#e0e0e0]/60 flex gap-2 overflow-x-auto py-2.5 bg-slate-50/30 no-scrollbar">
-        {['Semua', ...(workStatusTabs.length ? workStatusTabs : ['Antrean', 'Pencucian', 'Penyetrikaan', 'Pengemasan', 'Siap Diambil', 'Sedang Diantar', 'Selesai'])].map((tab) => {
+      {/* Filter Tabs — satu baris, geser horizontal di layar sempit */}
+      <div className="px-4 sm:px-5 border-b border-[#e0e0e0]/60 flex items-center gap-1.5 py-2.5 bg-slate-50/30 overflow-x-auto no-scrollbar">
+        {['Semua', ...NOTA_QUEUE_TABS.map((t) => t.key)].map((tab) => {
           const active = activeFilterTab === tab;
           const count = getTabCount(tab);
+          const label = tab === 'Semua' ? 'Semua' : (NOTA_QUEUE_TABS.find((t) => t.key === tab)?.label || tab);
+          const [head, ...rest] = label.split(' · ');
 
           return (
             <button
               key={tab}
               type="button"
               onClick={() => setActiveFilterTab(tab)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              title={label}
+              className={`shrink-0 px-3 py-1.5 rounded-xl text-[11px] transition-all duration-200 cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
                 active
-                  ? 'bg-[#5f1340] text-white shadow-2xs font-extrabold'
+                  ? 'bg-[#5f1340] text-white shadow-2xs'
                   : 'bg-white border border-[#e0e0e0]/70 text-slate-600 hover:border-[#5f1340]/40 hover:text-[#5f1340]'
               }`}
             >
-              <span>{tab}</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
+              <span className="font-extrabold">{head}</span>
+              {rest.length > 0 && (
+                <span className={`font-bold ${active ? 'text-white/70' : 'text-slate-400'}`}>
+                  {rest.join(' · ')}
+                </span>
+              )}
+              <span className={`px-1.5 rounded-full text-[9px] font-black ${
                 active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
               }`}>
                 {count}
@@ -500,7 +524,12 @@ export default function HistoryTransaction({
         })}
       </div>
 
-      {/* Table Content (Exact structure as TrackingService) */}
+      {/* Table / empty state ringkas */}
+      {displayOrders.length === 0 ? (
+        <div className="px-5 py-6 text-center text-xs text-slate-400 font-semibold">
+          Tidak ada data riwayat transaksi yang sesuai dengan filter.
+        </div>
+      ) : (
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -515,14 +544,7 @@ export default function HistoryTransaction({
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e0e0e0]/40 text-xs font-medium">
-            {displayOrders.length === 0 ? (
-              <tr>
-                <td colSpan="7" className="py-12 text-center text-slate-400 font-bold">
-                  Tidak ada data riwayat transaksi yang sesuai dengan filter.
-                </td>
-              </tr>
-            ) : (
-              displayOrders.map((order) => {
+              {displayOrders.map((order) => {
                 const workStatus = order.progressStatus || order.workStatus || 'Antrean';
                 const workPct = getWorkPercentage(workStatus);
                 const pctTone = percentageTone(workPct);
@@ -666,13 +688,14 @@ export default function HistoryTransaction({
                   </tr>
                 );
               })
-            )}
+          }
           </tbody>
         </table>
       </div>
+      )}
 
       {/* Table footer */}
-      <div className="p-4 border-t border-[#e0e0e0]/70 bg-slate-50/50 flex justify-between items-center text-[10px] text-slate-400 font-bold">
+      <div className="px-4 py-2.5 border-t border-[#e0e0e0]/70 bg-slate-50/50 flex justify-between items-center text-[10px] text-slate-400 font-bold">
         <span>Menampilkan {displayOrders.length} dari {activeTransactions.length} transaksi terdaftar</span>
       </div>
 
@@ -713,7 +736,7 @@ export default function HistoryTransaction({
                   rows="3"
                   value={deleteReason}
                   onChange={(e) => setDeleteReason(e.target.value)}
-                  placeholder="Misal: Salah input layanan kiloan, double input nota, atau pembatalan transaksi oleh pelanggan..."
+                  placeholder="Contoh : Salah input layanan kiloan, double input nota"
                   className="w-full p-3 border border-[#e0e0e0] rounded-xl text-xs outline-none focus:border-rose-600 focus:ring-1 focus:ring-rose-600 text-[#313030]"
                 />
               </div>
@@ -980,7 +1003,7 @@ export default function HistoryTransaction({
                           inputMode="numeric"
                           value={paymentForm.additionalAmount}
                           onChange={(e) => setPaymentForm({ ...paymentForm, additionalAmount: formatRupiah(e.target.value) })}
-                          placeholder={formatRupiah(paymentDetail?.remaining || paymentModalOrder.grandTotal || 0)}
+                          placeholder={`Contoh : ${formatRupiah(paymentDetail?.remaining || paymentModalOrder.grandTotal || 0)}`}
                           className="w-full px-4 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-sm font-black outline-none focus:border-[#5f1340]"
                         />
                         <div className="flex flex-wrap gap-2 mt-2">
@@ -1011,7 +1034,7 @@ export default function HistoryTransaction({
                           type="text"
                           value={paymentForm.notes}
                           onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
-                          placeholder="Opsional — misal: transfer BCA a/n pelanggan"
+                          placeholder="Contoh : Transfer BCA a/n pelanggan"
                           className="w-full px-4 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-xs font-medium outline-none focus:border-[#5f1340]"
                         />
                       </div>

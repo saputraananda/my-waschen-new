@@ -1,5 +1,6 @@
 import { PERHATIAN_ITEMS } from './printerSettings.js';
 import { formatEmployeeName } from './FormatName.js';
+import { getCustomerTrackingQrValue } from './customerTrackingUrl.js';
 
 export { PERHATIAN_ITEMS };
 
@@ -41,8 +42,11 @@ export function formatNotaDateTime(value, addDays = 0) {
 }
 
 export function getQrValue(receipt) {
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  return `${origin}/dashboard?trackingNo=${encodeURIComponent(receipt?.id || '')}`;
+  // Arahkan ke Waschen Customer /tracking — bukan origin POS
+  const url = getCustomerTrackingQrValue(receipt);
+  if (url) return url;
+  // Fallback aman: hanya nomor nota (bukan URL POS yang salah)
+  return String(receipt?.id || '').trim();
 }
 
 export function getRemaining(receipt) {

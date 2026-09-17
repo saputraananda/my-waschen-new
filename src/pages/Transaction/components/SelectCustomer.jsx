@@ -93,7 +93,7 @@ export default function SelectCustomer({
             <Search className="absolute left-3.5 h-4 w-4 text-slate-400 pointer-events-none" />
             <input
               type="text"
-              placeholder="Cari nama pelanggan, nomor WhatsApp, atau alamat..."
+              placeholder="Contoh : Budi / 087770597000"
               value={customerSearch}
               onChange={(e) => setCustomerSearch(e.target.value)}
               className="w-full pl-10 pr-3.5 h-10 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl text-xs font-semibold text-[#313030] outline-none focus:bg-white focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340] transition-all"

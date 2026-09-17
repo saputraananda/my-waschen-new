@@ -572,7 +572,7 @@ export default function CombinedReceiptModal({
                   inputMode="numeric"
                   value={paidAmountInput}
                   onChange={(e) => setPaidAmountInput(formatRupiah(e.target.value))}
-                  placeholder={formatRupiah(totalSelectedAmount)}
+                  placeholder={`Contoh : ${formatRupiah(totalSelectedAmount)}`}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 focus:outline-hidden focus:border-[#5f1340]"
                 />
                 <div className="flex flex-wrap gap-1.5 mt-1">
@@ -674,7 +674,7 @@ export default function CombinedReceiptModal({
                 type="text"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Contoh: Transfer gabungan atas nama Bpk Budi (BCA 80rb)"
+                placeholder="Contoh : Transfer gabungan atas nama Bpk Budi (BCA 80rb)"
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-hidden focus:border-[#5f1340]"
               />
             </div>

@@ -339,7 +339,7 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '', a
               <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Masukkan Nomor Struk Nota (misal: WS-0826001)..."
+                placeholder="Contoh : WS-0826001"
                 value={searchKey}
                 onChange={(e) => setSearchKey(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearchOrder()}

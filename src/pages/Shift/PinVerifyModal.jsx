@@ -100,7 +100,7 @@ export default function PinVerifyModal({
             autoFocus
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-            placeholder="Masukkan PIN"
+            placeholder="Contoh : 1234"
             className="w-full px-4 py-3 border border-[#e0e0e0] rounded-xl text-center text-lg font-black tracking-[0.35em] outline-none focus:border-[#5f1340]"
           />
           <button

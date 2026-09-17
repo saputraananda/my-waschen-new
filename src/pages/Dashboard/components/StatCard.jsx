@@ -1,102 +1,178 @@
-import React from 'react';
-import { Wallet, Package, Clock, AlertCircle } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import axios from 'axios';
+import { Wallet, CalendarDays, AlertTriangle } from 'lucide-react';
+import { getCutoffMonthKey, getOrderDateKey } from '../../../utils/dateCutoffFilter.js';
+import {
+  buildPaidRevenueByDay,
+  computeCarryDailyTarget,
+  countPaidNota,
+  filterOrdersByDateMode,
+  listDateKeysInclusive,
+  resolveAsOfDateKey,
+  resolveStatDateRange,
+  summarizePiutang,
+  sumPaidRevenue
+} from '../../../utils/dailyTargetCarry.js';
 
 export default function StatCard({
-  todayRevenue,
-  monthlyTarget,
-  activeOrdersCount,
-  readyOrdersCount,
-  unpaidOrdersCount,
+  orders = [],
+  monthlyTarget: monthlyTargetProp = 0,
+  activeOutletId,
+  activeOutletName,
+  dateFilter,
   setActiveFilterTab
 }) {
-  const handleStatClick = (filterTabName) => {
-    if (setActiveFilterTab) {
-      setActiveFilterTab(filterTabName);
-    }
-    const trackingSection = document.getElementById('tracking-service-section');
-    if (trackingSection) {
-      trackingSection.scrollIntoView({ behavior: 'smooth' });
-    }
+  const [periodTarget, setPeriodTarget] = useState(monthlyTargetProp || 0);
+
+  const resolvedFilter = useMemo(
+    () => dateFilter || { mode: 'cutoff', start: '', end: '', cutoffMonth: getCutoffMonthKey() },
+    [dateFilter]
+  );
+
+  const range = useMemo(() => resolveStatDateRange(resolvedFilter), [resolvedFilter]);
+  const dayKeys = useMemo(
+    () => listDateKeysInclusive(range.start, range.end),
+    [range.start, range.end]
+  );
+  const asOfKey = useMemo(() => resolveAsOfDateKey(range), [range]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchTarget = async () => {
+      try {
+        const monthKey = (range.end || resolvedFilter.cutoffMonth || getCutoffMonthKey()).slice(0, 7);
+        const [y, m] = monthKey.split('-').map(Number);
+        const res = await axios.get('/api/masters/target', {
+          params: {
+            outlet_id: activeOutletId || localStorage.getItem('activeOutletId') || undefined,
+            outlet: activeOutletName || localStorage.getItem('activeOutletName') || undefined,
+            tahun: y,
+            bulan: m
+          }
+        });
+        if (!cancelled && res.data?.success && res.data.data?.targetNominal != null) {
+          setPeriodTarget(Number(res.data.data.targetNominal) || 0);
+        }
+      } catch {
+        if (!cancelled && monthlyTargetProp) setPeriodTarget(monthlyTargetProp);
+      }
+    };
+    fetchTarget();
+    return () => { cancelled = true; };
+  }, [range.end, resolvedFilter.cutoffMonth, activeOutletId, activeOutletName, monthlyTargetProp]);
+
+  useEffect(() => {
+    if (monthlyTargetProp > 0 && !periodTarget) setPeriodTarget(monthlyTargetProp);
+  }, [monthlyTargetProp, periodTarget]);
+
+  const filteredOrders = useMemo(
+    () => filterOrdersByDateMode(orders, resolvedFilter),
+    [orders, resolvedFilter]
+  );
+
+  const paidCount = countPaidNota(filteredOrders);
+  const paidRevenue = sumPaidRevenue(filteredOrders);
+  const piutang = summarizePiutang(filteredOrders);
+  const periodPct = periodTarget > 0 ? Math.min(999, (paidRevenue / periodTarget) * 100) : 0;
+
+  const revenueByDay = useMemo(() => buildPaidRevenueByDay(orders), [orders]);
+  const daily = useMemo(
+    () => computeCarryDailyTarget(periodTarget, dayKeys, revenueByDay, asOfKey),
+    [periodTarget, dayKeys, revenueByDay, asOfKey]
+  );
+
+  const todayNotaCount = useMemo(() => (
+    (orders || []).filter((o) => {
+      if ((o.paymentStatus || o.payment_status) !== 'Lunas') return false;
+      return getOrderDateKey(o) === asOfKey;
+    }).length
+  ), [orders, asOfKey]);
+
+  const todayPemasukan = daily.today.actual;
+  const todayTarget = daily.today.effectiveTarget;
+  const todayPct = todayTarget > 0 ? Math.min(999, (todayPemasukan / todayTarget) * 100) : 0;
+
+  const scrollToTracking = (tab) => {
+    if (setActiveFilterTab) setActiveFilterTab(tab);
+    document.getElementById('tracking-service-section')?.scrollIntoView({ behavior: 'smooth' });
   };
 
   return (
-    <div>
-      <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">Ringkasan Operasional</h3>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">
+    <div className="flex flex-col gap-2">
+      <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none">
+        Ringkasan Operasional
+      </h3>
 
-        {/* Metric 1: Revenue vs Target */}
-        <div
-          onClick={() => handleStatClick('Selesai')}
-          className="bg-white border border-[#e0e0e0]/70 rounded-2xl p-3 sm:p-5 shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex items-center gap-2.5 sm:gap-4 relative overflow-hidden group cursor-pointer min-w-0"
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 items-stretch">
+        {/* 1 — Revenue periode */}
+        <button
+          type="button"
+          onClick={() => scrollToTracking('Semua')}
+          className="text-left bg-white border border-[#e0e0e0]/70 rounded-xl px-3 py-3 shadow-xs hover:border-[#5f1340]/25 transition-all cursor-pointer min-w-0 h-full flex items-center gap-2.5"
         >
-          <div className="p-2.5 sm:p-3 bg-[#5f1340]/5 text-[#5f1340] rounded-xl shrink-0">
-            <Wallet className="h-5 sm:h-6 w-5 sm:w-6" />
+          <div className="p-2 bg-[#5f1340]/5 text-[#5f1340] rounded-lg shrink-0">
+            <Wallet className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 block uppercase tracking-wider truncate">Revenue</span>
-            <span className="text-sm sm:text-lg font-black text-[#313030] block mt-0.5 truncate">Rp {todayRevenue.toLocaleString('id-ID')}</span>
-
-            <div className="mt-1 flex flex-col gap-0.5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[9px] font-bold min-w-0">
-                <span className="text-slate-400 truncate">Target: Rp {monthlyTarget.toLocaleString('id-ID')}</span>
-                <span className="text-[#5f1340] whitespace-nowrap shrink-0">
-                  {monthlyTarget > 0 ? ((todayRevenue / monthlyTarget) * 100).toFixed(1) : 0}%
-                </span>
-              </div>
-              <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-0.5">
-                <div
-                  className="bg-[#5f1340] h-full rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, Math.max(4, monthlyTarget > 0 ? (todayRevenue / monthlyTarget) * 100 : 0))}%` }}
-                />
-              </div>
-            </div>
+            <span className="text-[10px] font-medium text-slate-400 block leading-none">Revenue</span>
+            <p className="text-[13px] font-black text-[#313030] leading-snug mt-1 break-words">
+              {paidCount.toLocaleString('id-ID')} Nota
+              <span className="text-slate-300 font-bold mx-1">·</span>
+              Rp {paidRevenue.toLocaleString('id-ID')}
+            </p>
+            <p className="text-[10px] font-medium text-slate-400 mt-1 break-words">
+              Target Bulan Ini Rp {periodTarget.toLocaleString('id-ID')}
+            </p>
           </div>
-        </div>
+          <span className="text-xl font-black text-[#c45a5a] tabular-nums shrink-0 leading-none">
+            {periodPct.toFixed(0)}%
+          </span>
+        </button>
 
-        {/* Metric 2: Active queue */}
-        <div
-          onClick={() => handleStatClick('Antrean')}
-          className="bg-white border border-[#e0e0e0]/70 rounded-2xl p-3 sm:p-5 shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex items-center gap-2.5 sm:gap-4 relative overflow-hidden group cursor-pointer min-w-0"
+        {/* 2 — Hari ini (aktual) */}
+        <button
+          type="button"
+          onClick={() => scrollToTracking('Semua')}
+          title={`Target harian termasuk sisa kemarin jika ada · ${asOfKey}`}
+          className="text-left bg-white border border-[#e0e0e0]/70 rounded-xl px-3 py-3 shadow-xs hover:border-[#5f1340]/25 transition-all cursor-pointer min-w-0 h-full flex items-center gap-2.5"
         >
-          <div className="p-2.5 sm:p-3 bg-[#5f1340]/5 text-[#5f1340] rounded-xl shrink-0">
-            <Package className="h-5 sm:h-6 w-5 sm:w-6" />
+          <div className="p-2 bg-amber-50 text-amber-700 rounded-lg shrink-0">
+            <CalendarDays className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 block uppercase tracking-wider truncate">Antrean Aktif</span>
-            <span className="text-sm sm:text-lg font-black text-[#313030] block mt-0.5 truncate">{activeOrdersCount} Nota</span>
-            <span className="text-[9px] text-[#5f1340] font-bold block mt-1 truncate">Sedang diproses</span>
+            <span className="text-[10px] font-medium text-slate-400 block leading-none">Hari Ini</span>
+            <p className="text-[13px] font-black text-[#313030] leading-snug mt-1 break-words">
+              {todayNotaCount.toLocaleString('id-ID')} Nota
+              <span className="text-slate-300 font-bold mx-1">·</span>
+              Rp {todayPemasukan.toLocaleString('id-ID')}
+            </p>
+            <p className="text-[10px] font-medium text-slate-400 mt-1 break-words">
+              Target Kamu Hari Ini Rp {todayTarget.toLocaleString('id-ID')}
+            </p>
           </div>
-        </div>
+          <span className="text-xl font-black text-amber-600 tabular-nums shrink-0 leading-none">
+            {todayPct.toFixed(0)}%
+          </span>
+        </button>
 
-        {/* Metric 3: Ready to pick up */}
-        <div
-          onClick={() => handleStatClick('Siap Diambil / Diantar')}
-          className="bg-white border border-[#e0e0e0]/70 rounded-2xl p-3 sm:p-5 shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex items-center gap-2.5 sm:gap-4 relative overflow-hidden group cursor-pointer min-w-0"
+        {/* 3 — Piutang */}
+        <button
+          type="button"
+          onClick={() => scrollToTracking('proses_belum_bayar')}
+          className="text-left bg-white border border-[#e0e0e0]/70 rounded-xl px-3 py-3 shadow-xs hover:border-rose-300 transition-all cursor-pointer min-w-0 h-full flex items-center gap-2.5"
         >
-          <div className="p-2.5 sm:p-3 bg-amber-50 text-amber-700 rounded-xl shrink-0">
-            <Clock className="h-5 sm:h-6 w-5 sm:w-6 text-amber-600" />
+          <div className="p-2 bg-rose-50 text-rose-600 rounded-lg shrink-0">
+            <AlertTriangle className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 block uppercase tracking-wider truncate">Siap Diambil</span>
-            <span className="text-sm sm:text-lg font-black text-[#313030] block mt-0.5 truncate">{readyOrdersCount} Nota</span>
-            <span className="text-[9px] text-amber-600 font-bold block mt-1 truncate">Menunggu diambil</span>
+            <span className="text-[10px] font-medium text-slate-400 block leading-none">Piutang</span>
+            <p className="text-[13px] font-black text-[#313030] leading-snug mt-1 break-words">
+              {piutang.count.toLocaleString('id-ID')} Nota
+              <span className="text-slate-300 font-bold mx-1">·</span>
+              Rp {piutang.amount.toLocaleString('id-ID')}
+            </p>
           </div>
-        </div>
-
-        {/* Metric 4: Nota Belum Lunas */}
-        <div
-          onClick={() => handleStatClick('Semua')}
-          className="bg-white border border-[#e0e0e0]/70 rounded-2xl p-3 sm:p-5 shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex items-center gap-2.5 sm:gap-4 relative overflow-hidden group cursor-pointer min-w-0"
-        >
-          <div className="p-2.5 sm:p-3 bg-rose-50 text-rose-600 rounded-xl shrink-0">
-            <AlertCircle className="h-5 sm:h-6 w-5 sm:w-6" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 block uppercase tracking-wider truncate">Nota Belum Lunas</span>
-            <span className="text-sm sm:text-lg font-black text-[#313030] block mt-0.5 truncate">{unpaidOrdersCount} Nota</span>
-            <span className="text-[9px] text-rose-600 font-bold block mt-1 truncate">Tagihan belum bayar</span>
-          </div>
-        </div>
+        </button>
       </div>
     </div>
   );

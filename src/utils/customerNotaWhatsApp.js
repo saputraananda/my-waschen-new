@@ -1,12 +1,9 @@
-import { createElement } from 'react';
-import { createRoot } from 'react-dom/client';
-import { QRCodeCanvas } from 'qrcode.react';
 import axios from 'axios';
 import { normalizePhone } from './NormalizePhone.js';
-import { getQrValue } from './notaLayout.js';
 import { DEFAULT_CUSTOMER_SETTINGS } from './printerSettings.js';
 import { formatDateId } from './FilterDate.js';
 import { buildDigitalNotaMessage } from '../components/DigitalNota.jsx';
+import { buildCustomerTrackingUrl } from './customerTrackingUrl.js';
 
 /** Nomor lokal 08… → digit WA internasional 62… */
 export function toWhatsAppDigits(phone) {
@@ -21,10 +18,6 @@ function cleanPhone(phone) {
   const s = String(phone).trim();
   if (!s || s === '-') return '';
   return s;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function normalizeReceiptItems(itemsSrc, order) {
@@ -87,6 +80,8 @@ export function toCustomerNotaReceipt(order, itemsOverride) {
     estimatedAt: order.estimatedAt,
     outletPhone: order.outletPhone,
     outletAddress: order.outletAddress || order.branch,
+    accessCode: order.accessCode || order.access_code || '',
+    trackingUrl: order.trackingUrl || order.tracking_url || '',
     items: normalizeReceiptItems(itemsOverride || order.items, order)
   };
 }
@@ -119,7 +114,9 @@ export function mapApiTransactionToReceipt(raw) {
     category: raw.order_category,
     qty: raw.order_category === 'Kiloan'
       ? `${raw.total_weight_kg} Kg`
-      : `${raw.total_pcs} Pcs`
+      : `${raw.total_pcs} Pcs`,
+    accessCode: raw.access_code || '',
+    trackingUrl: raw.tracking_url || ''
   };
   const items = (raw.items || []).map((it) => ({
     name: it.service_name,
@@ -139,57 +136,54 @@ export function mapApiTransactionToReceipt(raw) {
 export { buildDigitalNotaMessage, buildCustomerNotaWhatsAppText } from '../components/DigitalNota.jsx';
 
 /**
- * Render QR nota ke File PNG (isi = URL tracking, sama seperti struk).
+ * Ambil / generate kode akses + URL tracking dari server (sumber kebenaran).
  */
-export async function buildNotaQrPngFile(receipt, size = 320) {
-  const value = getQrValue(receipt);
-  const orderNo = receipt?.id || 'nota';
-  const host = document.createElement('div');
-  host.style.cssText = 'position:fixed;left:-99999px;top:0;pointer-events:none;';
-  document.body.appendChild(host);
-  const root = createRoot(host);
-
-  try {
-    await new Promise((resolve) => {
-      root.render(createElement(QRCodeCanvas, {
-        value: String(value || ''),
-        size,
-        level: 'M',
-        includeMargin: true,
-        bgColor: '#ffffff',
-        fgColor: '#000000'
-      }));
-      requestAnimationFrame(() => requestAnimationFrame(resolve));
-    });
-    await sleep(50);
-
-    const src = host.querySelector('canvas');
-    if (!src) throw new Error('QR canvas gagal dibuat');
-
-    const blob = await new Promise((resolve, reject) => {
-      src.toBlob(
-        (b) => (b ? resolve(b) : reject(new Error('Gagal export QR PNG'))),
-        'image/png'
-      );
-    });
-
-    return new File([blob], `QR-${orderNo}.png`, { type: 'image/png' });
-  } finally {
-    try { root.unmount(); } catch { /* ignore */ }
-    host.remove();
+export async function ensureDigitalNotaAccess(orderNo) {
+  const key = String(orderNo || '').trim();
+  if (!key) {
+    const err = new Error('Nomor nota tidak valid');
+    err.code = 'NO_ORDER';
+    throw err;
   }
-}
 
-function downloadFile(file) {
-  const url = URL.createObjectURL(file);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = file.name;
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  let res;
+  try {
+    res = await axios.post(`/api/transactions/${encodeURIComponent(key)}/digital-nota-access`);
+  } catch (axiosErr) {
+    const data = axiosErr?.response?.data;
+    const err = new Error(
+      data?.message
+      || (axiosErr?.response?.status === 503
+        ? 'Layanan nota digital belum siap (cek migrasi DB / CUSTOMER_APP_URL).'
+        : (axiosErr?.message || 'Gagal menyiapkan kode akses nota digital'))
+    );
+    err.code = data?.code || 'ACCESS_FAILED';
+    throw err;
+  }
+
+  if (!res.data?.success || !res.data?.data) {
+    const err = new Error(res.data?.message || 'Gagal menyiapkan kode akses nota digital');
+    err.code = res.data?.code || 'ACCESS_FAILED';
+    throw err;
+  }
+
+  const { accessCode, trackingUrl, orderNo: resolvedNo } = res.data.data;
+  if (!/^\d{4}$/.test(String(accessCode || ''))) {
+    const err = new Error('Kode akses tidak valid dari server');
+    err.code = 'BAD_ACCESS_CODE';
+    throw err;
+  }
+  if (!trackingUrl || !/^https?:\/\//i.test(trackingUrl)) {
+    const err = new Error('Link tracking tidak valid. Cek VITE_CUSTOMER_APP_URL / CUSTOMER_APP_URL.');
+    err.code = 'BAD_TRACKING_URL';
+    throw err;
+  }
+
+  return {
+    orderNo: resolvedNo || key,
+    accessCode: String(accessCode),
+    trackingUrl: String(trackingUrl)
+  };
 }
 
 function openWhatsAppChat(digits, text) {
@@ -198,8 +192,8 @@ function openWhatsAppChat(digits, text) {
 }
 
 /**
- * Buka chat WA langsung ke nomor pelanggan dengan teks nota terisi.
- * Kalimat diambil dari DigitalNota.buildDigitalNotaMessage.
+ * Buka chat WA langsung ke nomor pelanggan dengan teks nota digital.
+ * Tidak mengirim / mengunduh gambar nota atau QR.
  */
 export async function sendCustomerNotaWhatsApp(receipt, options = {}) {
   const settings = options.settings || DEFAULT_CUSTOMER_SETTINGS;
@@ -210,26 +204,28 @@ export async function sendCustomerNotaWhatsApp(receipt, options = {}) {
     throw err;
   }
 
-  const text = buildDigitalNotaMessage(receipt, settings);
+  const access = await ensureDigitalNotaAccess(receipt?.id);
+  const enriched = {
+    ...receipt,
+    id: access.orderNo || receipt.id,
+    accessCode: access.accessCode,
+    trackingUrl: access.trackingUrl || buildCustomerTrackingUrl(access.orderNo || receipt.id)
+  };
 
-  // Jangan pakai navigator.share(+files): di Windows/WA Desktop jadi picker
-  // "Send message to" tanpa nomor & tanpa teks. Selalu deep-link wa.me.
-  let downloadedQr = false;
-  try {
-    const qrFile = await buildNotaQrPngFile(receipt);
-    if (qrFile) {
-      downloadFile(qrFile);
-      downloadedQr = true;
-    }
-  } catch {
-    // teks + link tracking tetap cukup
+  const text = buildDigitalNotaMessage(enriched, settings);
+  if (/PERHATIAN:/.test(text)) {
+    const err = new Error('Nota digital belum lengkap (link/kode akses). Cek konfigurasi server.');
+    err.code = 'INCOMPLETE_NOTA';
+    throw err;
   }
 
   openWhatsAppChat(digits, text);
   return {
     mode: 'wa_me',
     sharedImage: false,
-    downloadedQr
+    downloadedQr: false,
+    accessCode: access.accessCode,
+    trackingUrl: enriched.trackingUrl
   };
 }
 
@@ -268,16 +264,9 @@ export async function sendCustomerNotaWhatsAppFromOrder(order, options = {}) {
 /** Pesan alert setelah buka WA. */
 export function describeCustomerNotaWaResult(result) {
   if (!result || result.cancelled) return null;
-  if (result.downloadedQr) {
-    return {
-      title: 'Chat WhatsApp Dibuka',
-      message: 'Sudah masuk ke chat pelanggan dengan teks nota. Lampirkan file QR yang baru diunduh (opsional), lalu klik Send.',
-      type: 'success'
-    };
-  }
   return {
     title: 'Chat WhatsApp Dibuka',
-    message: 'Sudah masuk ke chat pelanggan dengan teks nota + link tracking. Cek lalu klik Send.',
+    message: 'Sudah masuk ke chat pelanggan dengan greeting, rincian, link tracking, dan kode akses 4 digit. Cek lalu klik Send.',
     type: 'success'
   };
 }

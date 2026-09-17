@@ -6,7 +6,7 @@ import { normalizePhone, composeFullAddress } from '../../../utils/NormalizePhon
 import { ArrowLeft, Save, RotateCcw } from 'lucide-react';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 
-const GREETINGS = ['Pak', 'Bu', 'Mas', 'Mba', 'Kaka', 'Mr.', 'Mrs.'];
+const GREETINGS = ['Pak', 'Bu', 'Mas', 'Mba', 'Kakak', 'Nyonya', 'Nona', 'Ananda', 'Tuan', 'Mr.', 'Mrs.'];
 
 const emptyForm = (activeOutletName, defaults = {}) => ({
   name: '',
@@ -321,7 +321,7 @@ export default function AddCustomer({
               </div>
               <div className="flex flex-col gap-1 sm:col-span-2">
                 <label className={labelCls}>Nama Lengkap *</label>
-                <input className={fieldCls} placeholder="Contoh: Budi Santoso" value={form.name} onChange={(e) => patch({ name: e.target.value })} required />
+                <input className={fieldCls} placeholder="Contoh : Budi Santoso" value={form.name} onChange={(e) => patch({ name: e.target.value })} required />
               </div>
             </div>
 
@@ -330,7 +330,7 @@ export default function AddCustomer({
               <input
                 className={fieldCls}
                 type="tel"
-                placeholder="087770597000"
+                placeholder="Contoh : 087770597000"
                 value={form.phone}
                 onChange={(e) => patch({ phone: e.target.value })}
                 onBlur={handlePhoneBlur}
@@ -402,13 +402,13 @@ export default function AddCustomer({
                     </div>
                     <div className="flex flex-col gap-1">
                       <label className={labelCls}>Pekerjaan</label>
-                      <input className={fieldCls} placeholder="PNS, Swasta, dll" value={form.occupation} onChange={(e) => patch({ occupation: e.target.value })} />
+                      <input className={fieldCls} placeholder="Contoh : PNS, Swasta" value={form.occupation} onChange={(e) => patch({ occupation: e.target.value })} />
                     </div>
                   </div>
 
                   <div className="flex flex-col gap-1">
                     <label className={labelCls}>Email</label>
-                    <input className={fieldCls} type="email" placeholder="pelanggan@email.com" value={form.email} onChange={(e) => patch({ email: e.target.value })} />
+                    <input className={fieldCls} type="email" placeholder="Contoh : pelanggan@email.com" value={form.email} onChange={(e) => patch({ email: e.target.value })} />
                   </div>
                 </div>
               )}
@@ -459,7 +459,7 @@ export default function AddCustomer({
               <textarea
                 className={`${fieldCls} resize-none`}
                 rows={2}
-                placeholder="Catatan internal pelanggan, misal: Pakaian branded, perlakuan khusus..."
+                placeholder="Contoh : Pakaian branded, perlakuan khusus"
                 value={form.generalNotes}
                 onChange={(e) => patch({ generalNotes: e.target.value })}
               />
@@ -476,17 +476,17 @@ export default function AddCustomer({
 
             <div className="flex flex-col gap-1">
               <label className={labelCls}>Alamat Singkat / Nama Jalan</label>
-              <input className={fieldCls} placeholder="Raffles Hills" value={form.address} onChange={(e) => patch({ address: e.target.value })} />
+              <input className={fieldCls} placeholder="Contoh : Raffles Hills" value={form.address} onChange={(e) => patch({ address: e.target.value })} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1">
                 <label className={labelCls}>Blok</label>
-                <input className={fieldCls} placeholder="T11" value={form.block} onChange={(e) => patch({ block: e.target.value })} />
+                <input className={fieldCls} placeholder="Contoh : T11" value={form.block} onChange={(e) => patch({ block: e.target.value })} />
               </div>
               <div className="flex flex-col gap-1">
                 <label className={labelCls}>Nomor Rumah</label>
-                <input className={fieldCls} placeholder="18" value={form.houseNumber} onChange={(e) => patch({ houseNumber: e.target.value })} />
+                <input className={fieldCls} placeholder="Contoh : 18" value={form.houseNumber} onChange={(e) => patch({ houseNumber: e.target.value })} />
               </div>
             </div>
 
@@ -495,7 +495,7 @@ export default function AddCustomer({
               <textarea
                 className={`${fieldCls} resize-none`}
                 rows={3}
-                placeholder="Raffles Hills Blok T11 No 18"
+                placeholder="Contoh : Raffles Hills Blok T11 No 18"
                 value={form.fullAddress}
                 onChange={(e) => {
                   setFullAddressTouched(true);
@@ -507,7 +507,7 @@ export default function AddCustomer({
 
             <div className="flex flex-col gap-1">
               <label className={labelCls}>Catatan / Patokan Lokasi Rumah</label>
-              <input className={fieldCls} placeholder="Pagar hitam depan masjid" value={form.notes} onChange={(e) => patch({ notes: e.target.value })} />
+              <input className={fieldCls} placeholder="Contoh : Pagar hitam depan masjid" value={form.notes} onChange={(e) => patch({ notes: e.target.value })} />
             </div>
 
             <div className="pt-2 border-t border-[#f0f0f0]">
@@ -523,19 +523,19 @@ export default function AddCustomer({
                 <div className="grid grid-cols-2 gap-3 mt-3 p-3 bg-white border border-[#e0e0e0] rounded-xl">
                   <div className="flex flex-col gap-1">
                     <label className={labelCls}>Kecamatan</label>
-                    <input className={fieldCls} placeholder="Duren Sawit" value={form.district} onChange={(e) => patch({ district: e.target.value })} />
+                    <input className={fieldCls} placeholder="Contoh : Duren Sawit" value={form.district} onChange={(e) => patch({ district: e.target.value })} />
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className={labelCls}>Kelurahan</label>
-                    <input className={fieldCls} placeholder="Pondok Bambu" value={form.subDistrict} onChange={(e) => patch({ subDistrict: e.target.value })} />
+                    <input className={fieldCls} placeholder="Contoh : Pondok Bambu" value={form.subDistrict} onChange={(e) => patch({ subDistrict: e.target.value })} />
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className={labelCls}>Kota</label>
-                    <input className={fieldCls} placeholder="Jakarta Timur" value={form.city} onChange={(e) => patch({ city: e.target.value })} />
+                    <input className={fieldCls} placeholder="Contoh : Jakarta Timur" value={form.city} onChange={(e) => patch({ city: e.target.value })} />
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className={labelCls}>Kode POS</label>
-                    <input className={fieldCls} placeholder="13430" value={form.postalCode} onChange={(e) => patch({ postalCode: e.target.value })} />
+                    <input className={fieldCls} placeholder="Contoh : 13430" value={form.postalCode} onChange={(e) => patch({ postalCode: e.target.value })} />
                   </div>
                 </div>
               )}

@@ -14,12 +14,14 @@ import {
   Gem,
   Wallet,
   Sparkles,
-  X
+  X,
+  Coins
 } from 'lucide-react';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import WaschenMemberCard from '../../../components/WaschenMemberCard.jsx';
 import MemberExclusiveBenefits from '../../../components/MemberExclusiveBenefits.jsx';
 import { formatName } from '../../../utils/FormatName.js';
+import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
 
 export default function AddMember({
   outlets,
@@ -47,6 +49,8 @@ export default function AddMember({
   const [edcCardType, setEdcCardType] = useState('Debit Card');
   const [isCrossTransfer, setIsCrossTransfer] = useState(false);
   const [crossBankOutletId, setCrossBankOutletId] = useState(1);
+  const [paidAmount, setPaidAmount] = useState('');
+  const [overpaymentAction, setOverpaymentAction] = useState('change');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -70,6 +74,7 @@ export default function AddMember({
           const list = pkgRes.data.data;
           setPackages(list);
           setPackageId(list[0].id);
+          setPaidAmount(formatRupiah(list[0].top_up_amount));
         }
         if (payRes.data?.success) {
           setPaymentMethods(payRes.data.data || []);
@@ -98,6 +103,18 @@ export default function AddMember({
   const selectedPackage = useMemo(() => {
     return packages.find((p) => String(p.id) === String(packageId)) || packages[0];
   }, [packages, packageId]);
+
+  const packagePrice = Number(selectedPackage?.top_up_amount || 0);
+  const paidAmountNum = parseRupiah(paidAmount);
+  const excessAmount = Math.max(0, paidAmountNum - packagePrice);
+  const isUnderpaid = paidAmountNum > 0 && paidAmountNum < packagePrice;
+
+  useEffect(() => {
+    if (selectedPackage?.top_up_amount != null) {
+      setPaidAmount(formatRupiah(selectedPackage.top_up_amount));
+      setOverpaymentAction('change');
+    }
+  }, [selectedPackage?.id, selectedPackage?.top_up_amount]);
 
   const filteredCustomers = useMemo(() => {
     return customersList.filter((c) => {
@@ -185,6 +202,16 @@ export default function AddMember({
       return;
     }
 
+    const paid = parseRupiah(paidAmount);
+    if (paid < Number(selectedPackage.top_up_amount || 0)) {
+      showToast(
+        'Nominal Kurang',
+        `Minimal bayar Rp ${Number(selectedPackage.top_up_amount || 0).toLocaleString('id-ID')} (harga paket).`,
+        'error'
+      );
+      return;
+    }
+
     const resolvedPaymentMethod = resolvePaymentMethodString({
       mainCategory,
       edcCardType,
@@ -202,7 +229,9 @@ export default function AddMember({
         packageId: selectedPackage.id,
         outletId: parseInt(localStorage.getItem('activeOutletId')) || 2,
         paymentMethod: resolvedPaymentMethod,
-        cashierEmployeeId: localStorage.getItem('employeeId') || null
+        cashierEmployeeId: localStorage.getItem('employeeId') || null,
+        paidAmount: paid,
+        overpaymentAction: paid > Number(selectedPackage.top_up_amount || 0) ? overpaymentAction : 'change'
       });
 
       if (memRes.data?.success) {
@@ -271,7 +300,7 @@ export default function AddMember({
                   <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400 pointer-events-none" />
                   <input
                     type="text"
-                    placeholder="Ketik nama pelanggan atau nomor HP..."
+                    placeholder="Contoh : Budi / 087770597000"
                     value={customerSearch}
                     onChange={(e) => setCustomerSearch(e.target.value)}
                     className="w-full pl-10 pr-9 py-3 bg-white border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340] focus:ring-2 focus:ring-[#5f1340]/10 shadow-xs"
@@ -505,14 +534,122 @@ export default function AddMember({
               outlets={outlets}
               paymentMethods={paymentMethods}
               selectedCustomer={selectedCustomer}
-              grandTotal={selectedPackage ? Number(selectedPackage.top_up_amount) : 500000}
+              grandTotal={packagePrice || 500000}
+              hideMemberBalance
             />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-[11px] font-black text-slate-700">Nominal Dibayar *</label>
+              <span className="text-[10px] font-bold text-slate-400">
+                Tagihan paket: Rp {packagePrice.toLocaleString('id-ID')}
+              </span>
+            </div>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={paidAmount}
+              onChange={(e) => setPaidAmount(formatRupiah(e.target.value))}
+              placeholder="Contoh : 500.000"
+              className="w-full px-4 py-3 bg-white border border-[#e0e0e0] rounded-xl text-sm font-black outline-none focus:border-[#5f1340]"
+            />
+            <div className="flex flex-wrap gap-1.5">
+              {[packagePrice, packagePrice + 50000, packagePrice + 100000]
+                .filter((n, i, arr) => n > 0 && arr.indexOf(n) === i)
+                .map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setPaidAmount(formatRupiah(preset))}
+                    className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-white border border-[#e0e0e0] text-slate-600 hover:border-[#5f1340] hover:text-[#5f1340] cursor-pointer"
+                  >
+                    Rp {preset.toLocaleString('id-ID')}
+                  </button>
+                ))}
+            </div>
+
+            {isUnderpaid && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-[11px] font-bold text-rose-700">
+                Nominal kurang Rp {(packagePrice - paidAmountNum).toLocaleString('id-ID')} dari harga paket.
+              </div>
+            )}
+
+            {excessAmount > 0 && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-amber-900 flex items-center gap-1.5">
+                    <Coins className="h-4 w-4" />
+                    Kelebihan Bayar
+                  </span>
+                  <span className="font-black text-amber-900">
+                    Rp {excessAmount.toLocaleString('id-ID')}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOverpaymentAction('change')}
+                    className={`py-2.5 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer ${
+                      overpaymentAction === 'change'
+                        ? 'bg-amber-600 text-white'
+                        : 'bg-white text-amber-900 border border-amber-300'
+                    }`}
+                  >
+                    Kembalian Tunai
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOverpaymentAction('deposit')}
+                    className={`py-2.5 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer ${
+                      overpaymentAction === 'deposit'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-white text-emerald-800 border border-emerald-300'
+                    }`}
+                  >
+                    Simpan ke Saldo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOverpaymentAction('refund')}
+                    className={`py-2.5 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer ${
+                      overpaymentAction === 'refund'
+                        ? 'bg-sky-600 text-white'
+                        : 'bg-white text-sky-800 border border-sky-300'
+                    }`}
+                  >
+                    Refund
+                  </button>
+                </div>
+                {overpaymentAction === 'deposit' && (
+                  <p className="text-[10px] text-emerald-800 font-medium">
+                    Kelebihan Rp {excessAmount.toLocaleString('id-ID')} masuk saldo member (di luar paket + bonus).
+                    Estimasi saldo baru: Rp {(
+                      parseFloat(selectedCustomer?.deposit_balance || 0)
+                      + packagePrice
+                      + (selectedPackage?.tier === 'Diamond' ? 50000 : 25000)
+                      + excessAmount
+                    ).toLocaleString('id-ID')}
+                  </p>
+                )}
+                {overpaymentAction === 'change' && (
+                  <p className="text-[10px] text-amber-900 font-medium">
+                    Kembalikan tunai Rp {excessAmount.toLocaleString('id-ID')} ke pelanggan. Saldo hanya bertambah dari paket + bonus.
+                  </p>
+                )}
+                {overpaymentAction === 'refund' && (
+                  <p className="text-[10px] text-sky-800 font-medium">
+                    Kelebihan Rp {excessAmount.toLocaleString('id-ID')} dicatat menunggu refund (tidak masuk saldo).
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3 pt-4 border-t border-[#e0e0e0] mt-auto">
             <button
               type="submit"
-              disabled={isSubmitting || !selectedCustId}
+              disabled={isSubmitting || !selectedCustId || isUnderpaid || paidAmountNum <= 0}
               className="flex-1 py-3.5 bg-gradient-to-r from-[#5f1340] to-[#7d1956] hover:opacity-95 text-white font-black rounded-2xl text-xs shadow-lg shadow-[#5f1340]/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
               <Save className="h-4 w-4" />

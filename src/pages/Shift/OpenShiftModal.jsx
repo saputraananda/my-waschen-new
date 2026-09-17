@@ -168,7 +168,7 @@ export default function OpenShiftModal({
                     value={cashInput}
                     onChange={(e) => setCashInput(formatRupiah(e.target.value))}
                     className="w-full px-3 py-2.5 border border-[#e0e0e0] rounded-xl font-black text-sm text-[#5f1340] outline-none focus:border-[#5f1340]"
-                    placeholder="0"
+                    placeholder="Contoh : 0"
                   />
                 </div>
                 <div>
@@ -179,7 +179,7 @@ export default function OpenShiftModal({
                     value={pettyInput}
                     onChange={(e) => setPettyInput(formatRupiah(e.target.value))}
                     className="w-full px-3 py-2.5 border border-[#e0e0e0] rounded-xl font-black text-sm text-[#5f1340] outline-none focus:border-[#5f1340]"
-                    placeholder="0"
+                    placeholder="Contoh : 0"
                   />
                 </div>
               </div>
@@ -234,7 +234,7 @@ export default function OpenShiftModal({
                 rows={3}
                 value={imbalanceReason}
                 onChange={(e) => setImbalanceReason(e.target.value)}
-                placeholder="Misal: Selisih karena setoran bank belum tercatat / selisih hitung fisik..."
+                placeholder="Contoh : Selisih karena setoran bank belum tercatat"
                 className="w-full p-3 border border-[#e0e0e0] rounded-xl outline-none focus:border-amber-600 font-medium"
               />
               <button

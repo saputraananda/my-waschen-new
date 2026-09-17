@@ -248,7 +248,7 @@ export default function AddPettyCash({
             <input
               type="text"
               required
-              placeholder="Contoh: 25.000"
+              placeholder="Contoh : 25.000"
               value={logForm.amount}
               onChange={(e) => setLogForm({ ...logForm, amount: formatRupiah(e.target.value) })}
               className="w-full px-4 py-3 border border-[#e0e0e0] rounded-xl bg-white font-black text-lg text-[#5f1340] outline-none focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340]"
@@ -278,7 +278,7 @@ export default function AddPettyCash({
             <textarea
               rows={5}
               required
-              placeholder="Contoh: Beli tabung gas 12 kg..."
+              placeholder="Contoh : Beli tabung gas 12 kg"
               value={logForm.desc}
               onChange={(e) => setLogForm({ ...logForm, desc: e.target.value })}
               className="w-full px-4 py-3 border border-[#e0e0e0] rounded-xl bg-white text-xs font-bold outline-none focus:border-[#5f1340] resize-none flex-1 min-h-[120px]"

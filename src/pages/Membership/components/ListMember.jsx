@@ -19,8 +19,10 @@ import {
   Gem,
   Crown,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Coins
 } from 'lucide-react';
+import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
 
 const renderMembershipBadge = (tier) => {
   if (!tier || tier === '-' || tier === 'Tidak' || tier === 'None') {
@@ -76,6 +78,8 @@ export default function ListMember({
   const [edcCardType, setEdcCardType] = useState('Debit Card');
   const [isCrossTransfer, setIsCrossTransfer] = useState(false);
   const [crossBankOutletId, setCrossBankOutletId] = useState(1);
+  const [paidAmount, setPaidAmount] = useState('');
+  const [overpaymentAction, setOverpaymentAction] = useState('change');
   const [isSubmittingTopUp, setIsSubmittingTopUp] = useState(false);
 
   useEffect(() => {
@@ -106,21 +110,45 @@ export default function ListMember({
     return membershipPackages.find((p) => String(p.id) === String(selectedPackageId)) || membershipPackages[0];
   }, [membershipPackages, selectedPackageId]);
 
+  const packagePrice = Number(selectedPackage?.top_up_amount || 0);
+  const paidAmountNum = parseRupiah(paidAmount);
+  const excessAmount = Math.max(0, paidAmountNum - packagePrice);
+  const isUnderpaid = paidAmountNum > 0 && paidAmountNum < packagePrice;
+
+  useEffect(() => {
+    if (isTopUpModalOpen && selectedPackage?.top_up_amount != null) {
+      setPaidAmount(formatRupiah(selectedPackage.top_up_amount));
+      setOverpaymentAction('change');
+    }
+  }, [isTopUpModalOpen, selectedPackage?.id, selectedPackage?.top_up_amount]);
+
   const openTopUpModal = (member) => {
     setSelectedMember(member);
     if (membershipPackages[0]) {
       setSelectedPackageId(membershipPackages[0].id);
+      setPaidAmount(formatRupiah(membershipPackages[0].top_up_amount));
     }
     setMainCategory('Tunai');
     setEdcCardType('Debit Card');
     setIsCrossTransfer(false);
     setCrossBankOutletId(1);
+    setOverpaymentAction('change');
     setIsTopUpModalOpen(true);
   };
 
   const handleTopUpSubmit = async (e) => {
     e.preventDefault();
     if (!selectedMember || !selectedPackage) return;
+
+    const paid = parseRupiah(paidAmount);
+    if (paid < packagePrice) {
+      showToast(
+        'Nominal Kurang',
+        `Minimal bayar Rp ${packagePrice.toLocaleString('id-ID')} (harga paket).`,
+        'error'
+      );
+      return;
+    }
 
     const resolvedMethod = resolvePaymentMethodString({
       mainCategory,
@@ -139,12 +167,14 @@ export default function ListMember({
         packageId: selectedPackage.id,
         outletId: parseInt(localStorage.getItem('activeOutletId')) || 2,
         paymentMethod: resolvedMethod,
-        cashierEmployeeId: localStorage.getItem('employeeId') || null
+        cashierEmployeeId: localStorage.getItem('employeeId') || null,
+        paidAmount: paid,
+        overpaymentAction: paid > packagePrice ? overpaymentAction : 'change'
       });
 
       if (res.data?.success) {
-        const topUpAmt = Number(selectedPackage.top_up_amount || 0);
-        showToast('Top-Up Berhasil', res.data.message || `Saldo kartu ${selectedMember.name} bertambah Rp ${topUpAmt.toLocaleString('id-ID')}`);
+        const credit = Number(res.data.data?.totalCredit || selectedPackage.top_up_amount || 0);
+        showToast('Top-Up Berhasil', res.data.message || `Saldo kartu ${selectedMember.name} bertambah Rp ${credit.toLocaleString('id-ID')}`);
         
         // Update local state
         setMembers(members.map(m => {
@@ -154,8 +184,8 @@ export default function ListMember({
               ...m,
               tier: updatedTier,
               membershipTier: updatedTier,
-              balance: (m.balance || 0) + topUpAmt,
-              totalTopUp: (m.totalTopUp || 0) + topUpAmt
+              balance: res.data.data?.balanceAfter ?? ((m.balance || 0) + credit),
+              totalTopUp: (m.totalTopUp || 0) + Number(res.data.data?.topUpAmount || packagePrice)
             };
           }
           return m;
@@ -245,7 +275,7 @@ export default function ListMember({
             <Search className="absolute left-3.5 h-4 w-4 text-slate-400 pointer-events-none" />
             <input
               type="text"
-              placeholder="Cari nama, No. Kartu (WS-...), atau No HP..."
+              placeholder="Contoh : Budi / WS-0826001 / 087770597000"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-3.5 h-10 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl text-xs font-semibold text-[#313030] outline-none focus:bg-white focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340] transition-all"
@@ -456,8 +486,107 @@ export default function ListMember({
                   outlets={outlets}
                   paymentMethods={paymentMethods}
                   selectedCustomer={selectedMember}
-                  grandTotal={selectedPackage ? Number(selectedPackage.top_up_amount) : 500000}
+                  grandTotal={packagePrice || 500000}
+                  hideMemberBalance
                 />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Nominal Dibayar *</label>
+                  <span className="text-[10px] font-bold text-slate-400">
+                    Tagihan: Rp {packagePrice.toLocaleString('id-ID')}
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={paidAmount}
+                  onChange={(e) => setPaidAmount(formatRupiah(e.target.value))}
+                  placeholder="Contoh : 500.000"
+                  className="w-full px-3 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-sm font-black outline-none focus:border-[#5f1340]"
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  {[packagePrice, packagePrice + 50000, packagePrice + 100000]
+                    .filter((n, i, arr) => n > 0 && arr.indexOf(n) === i)
+                    .map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setPaidAmount(formatRupiah(preset))}
+                        className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-white border border-[#e0e0e0] text-slate-600 hover:border-[#5f1340] hover:text-[#5f1340] cursor-pointer"
+                      >
+                        Rp {preset.toLocaleString('id-ID')}
+                      </button>
+                    ))}
+                </div>
+
+                {isUnderpaid && (
+                  <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-[11px] font-bold text-rose-700">
+                    Nominal kurang Rp {(packagePrice - paidAmountNum).toLocaleString('id-ID')} dari harga paket.
+                  </div>
+                )}
+
+                {excessAmount > 0 && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl space-y-2.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-amber-900 flex items-center gap-1.5">
+                        <Coins className="h-3.5 w-3.5" />
+                        Kelebihan Bayar
+                      </span>
+                      <span className="font-black text-amber-900">Rp {excessAmount.toLocaleString('id-ID')}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setOverpaymentAction('change')}
+                        className={`py-2 rounded-xl text-[10px] font-black cursor-pointer ${
+                          overpaymentAction === 'change' ? 'bg-amber-600 text-white' : 'bg-white text-amber-900 border border-amber-300'
+                        }`}
+                      >
+                        Kembalian
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOverpaymentAction('deposit')}
+                        className={`py-2 rounded-xl text-[10px] font-black cursor-pointer ${
+                          overpaymentAction === 'deposit' ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-800 border border-emerald-300'
+                        }`}
+                      >
+                        Ke Saldo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOverpaymentAction('refund')}
+                        className={`py-2 rounded-xl text-[10px] font-black cursor-pointer ${
+                          overpaymentAction === 'refund' ? 'bg-sky-600 text-white' : 'bg-white text-sky-800 border border-sky-300'
+                        }`}
+                      >
+                        Refund
+                      </button>
+                    </div>
+                    {overpaymentAction === 'deposit' && (
+                      <p className="text-[10px] text-emerald-800 font-medium">
+                        Kelebihan masuk saldo. Estimasi saldo baru: Rp {(
+                          (selectedMember?.balance || 0)
+                          + packagePrice
+                          + (selectedPackage?.tier === 'Diamond' ? 50000 : 25000)
+                          + excessAmount
+                        ).toLocaleString('id-ID')}
+                      </p>
+                    )}
+                    {overpaymentAction === 'change' && (
+                      <p className="text-[10px] text-amber-900 font-medium">
+                        Kembalikan tunai Rp {excessAmount.toLocaleString('id-ID')}.
+                      </p>
+                    )}
+                    {overpaymentAction === 'refund' && (
+                      <p className="text-[10px] text-sky-800 font-medium">
+                        Kelebihan dicatat menunggu refund (tidak masuk saldo).
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="p-4 border-t border-[#e0e0e0] bg-[#f8f8f8] flex gap-2 shrink-0 -mx-5 -mb-5 mt-2">
@@ -470,7 +599,7 @@ export default function ListMember({
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingTopUp}
+                  disabled={isSubmittingTopUp || isUnderpaid || paidAmountNum <= 0}
                   className="flex-1 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 text-white font-black rounded-xl text-xs cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-[#5f1340]/20"
                 >
                   <CheckCircle2 className="h-4 w-4" />

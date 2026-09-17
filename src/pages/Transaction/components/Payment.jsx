@@ -495,7 +495,7 @@ export default function Payment({
                         inputMode="numeric"
                         value={paidAmountInput}
                         onChange={(e) => setPaidAmountInput(formatRupiah(e.target.value))}
-                        placeholder={isDP ? formatRupiah(Math.floor(calculations.grandTotal / 2)) : formatRupiah(calculations.grandTotal)}
+                        placeholder={`Contoh : ${isDP ? formatRupiah(Math.floor(calculations.grandTotal / 2)) : formatRupiah(calculations.grandTotal)}`}
                         className="w-full px-4 py-3 bg-white border border-[#e0e0e0] rounded-2xl text-sm font-black text-[#313030] outline-none focus:border-[#5f1340]"
                       />
                       <div className="flex flex-wrap gap-2 mt-2">

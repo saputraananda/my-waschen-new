@@ -80,7 +80,7 @@ export default function RequestDeleteTransaction({ transactions, outlets }) {
             <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400 pointer-events-none" />
             <input
               type="text"
-              placeholder="Cari No. Nota, Pelanggan, Alasan..."
+              placeholder="Contoh : WS-0826001 / Budi"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-3.5 py-1.5 border border-[#e0e0e0] rounded-xl text-xs font-semibold text-[#313030] outline-none focus:border-rose-600 focus:ring-1 focus:ring-rose-600 bg-slate-50/50"

@@ -29,6 +29,8 @@ import TransactionBarcodeCard from '../../../components/TransactionBarcodeCard.j
 import ModalLacakNota from '../../../components/ModalLacakNota.jsx';
 import ChangeFulfillmentModal from '../../../components/ChangeFulfillmentModal.jsx';
 import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
+import DateModeFilter from '../../../components/DateModeFilter.jsx';
+import { passesDateModeFilter } from '../../../utils/dateCutoffFilter.js';
 import {
   sendCustomerNotaWhatsAppFromOrder,
   describeCustomerNotaWaResult
@@ -42,7 +44,15 @@ export default function TrackingService({
   activeFilterTab,
   setActiveFilterTab,
   handlePrintNota,
-  fetchLiveDashboardData
+  fetchLiveDashboardData,
+  dateMode,
+  setDateMode,
+  rangeStart,
+  setRangeStart,
+  rangeEnd,
+  setRangeEnd,
+  cutoffMonth,
+  setCutoffMonth
 }) {
   const navigate = useNavigate();
   const { showAlert } = useAppDialog();
@@ -322,16 +332,10 @@ export default function TrackingService({
     }
   };
 
-  // Filter State: tanggal transaksi
-  const [dateFilter, setDateFilter] = useState('');
+  // Filter tanggal dikontrol dari Dashboard (sama dengan Ringkasan Operasional)
+  const dateFilterState = { mode: dateMode, start: rangeStart, end: rangeEnd, cutoffMonth };
 
-  const passesDateFilter = (order) => {
-    if (!dateFilter) return true;
-    const orderDateStr = order.rawDate
-      ? new Date(order.rawDate).toISOString().slice(0, 10)
-      : '';
-    return orderDateStr === dateFilter;
-  };
+  const passesDateFilter = (order) => passesDateModeFilter(order, dateFilterState);
 
   // filteredOrders sudah difilter tab antrean di Dashboard; di sini hanya filter tanggal
   const displayOrders = filteredOrders.filter(passesDateFilter);
@@ -344,10 +348,10 @@ export default function TrackingService({
 
   return (
     <div id="tracking-service-section" className="bg-white border border-[#e0e0e0]/70 rounded-3xl shadow-xs flex flex-col overflow-hidden transition-all duration-300">
-      {/* Table Header Controls (Sleek Single Line Toolbar) */}
-      <div className="p-4 sm:p-5 border-b border-[#e0e0e0]/70 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-slate-50/50">
-        <div>
-          <div className="flex items-center gap-2">
+      {/* Header: judul + toolbar wrap */}
+      <div className="p-4 sm:p-5 border-b border-[#e0e0e0]/70 bg-slate-50/50 flex flex-col gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-base font-extrabold text-[#313030] tracking-tight">Antrean Cucian Hari Ini</h3>
             <span className="px-2.5 py-0.5 rounded-full bg-[#5f1340]/10 text-[#5f1340] text-[10px] font-black border border-[#5f1340]/15">
               {displayOrders.length} Order
@@ -356,80 +360,75 @@ export default function TrackingService({
           <p className="text-xs text-slate-400 font-medium mt-0.5">Filter berdasarkan progress nota, pembayaran & pengambilan barang</p>
         </div>
 
-        {/* Clean Filter Controls Toolbar */}
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-          {/* Search Input */}
-          <div className="relative flex-1 md:w-56">
-            <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <div className="relative w-full sm:flex-1 sm:min-w-[14rem] sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
             <input
               id="tracking-search-input"
               type="text"
-              placeholder="Cari Struk, Pelanggan..."
+              placeholder="Contoh : WS-0826001 / Budi"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-8 pr-7 py-1.5 border border-[#e0e0e0] rounded-xl text-xs bg-white focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340] outline-none font-medium text-[#313030]"
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1.5 text-slate-400 text-xs font-bold">&times;</button>
+              <button type="button" onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold leading-none">&times;</button>
             )}
           </div>
 
-          {/* Scan Barcode Button */}
-          <button
-            type="button"
-            onClick={() => setIsLacakModalOpen(true)}
-            className="px-3 py-1.5 bg-white border border-[#e0e0e0] hover:border-[#5f1340] text-[#5f1340] font-black rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-            title="Scan Barcode / QR Kamera untuk lacak nota"
-          >
-            <QrCode className="h-3.5 w-3.5" />
-            <span>Scan Barcode</span>
-          </button>
-
-          {/* Date Picker */}
-          <input
-            type="date"
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            className="px-2.5 py-1.5 border border-[#e0e0e0] rounded-xl text-xs font-bold text-[#313030] bg-white outline-none focus:border-[#5f1340] cursor-pointer"
-            title="Filter Tanggal Transaksi"
-          />
-
-          {/* Payment status sudah digabung di tab antrean di bawah */}
-
-          {/* Reset date filter */}
-          {dateFilter && (
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar sm:overflow-visible sm:ml-auto">
             <button
               type="button"
-              onClick={() => setDateFilter('')}
-              className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-all cursor-pointer"
-              title="Reset filter tanggal"
+              onClick={() => setIsLacakModalOpen(true)}
+              className="shrink-0 px-3 py-1.5 bg-white border border-[#e0e0e0] hover:border-[#5f1340] text-[#5f1340] font-black rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+              title="Scan Barcode / QR Kamera untuk lacak nota"
             >
-              <RotateCcw className="h-3.5 w-3.5" />
+              <QrCode className="h-3.5 w-3.5" />
+              <span>Scan</span>
             </button>
-          )}
+
+            <DateModeFilter
+              mode={dateMode}
+              onModeChange={setDateMode}
+              rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
+              onRangeStartChange={setRangeStart}
+              onRangeEndChange={setRangeEnd}
+              cutoffMonth={cutoffMonth}
+              onCutoffMonthChange={setCutoffMonth}
+              className="shrink-0 flex-nowrap"
+            />
+          </div>
         </div>
       </div>
 
-      {/* Filter Tabs with Live Counters */}
-      <div className="px-5 border-b border-[#e0e0e0]/60 flex gap-2 overflow-x-auto py-2.5 bg-slate-50/30 no-scrollbar">
+      {/* Filter Tabs — satu baris, geser horizontal di layar sempit */}
+      <div className="px-4 sm:px-5 border-b border-[#e0e0e0]/60 flex items-center gap-1.5 py-2.5 bg-slate-50/30 overflow-x-auto no-scrollbar">
         {['Semua', ...NOTA_QUEUE_TABS.map((t) => t.key)].map((tab) => {
           const active = activeFilterTab === tab;
           const count = getTabCount(tab);
           const label = tab === 'Semua' ? 'Semua' : (NOTA_QUEUE_TABS.find((t) => t.key === tab)?.label || tab);
+          const [head, ...rest] = label.split(' · ');
 
           return (
             <button
               key={tab}
               type="button"
               onClick={() => setActiveFilterTab(tab)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              title={label}
+              className={`shrink-0 px-3 py-1.5 rounded-xl text-[11px] transition-all duration-200 cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
                 active
-                  ? 'bg-[#5f1340] text-white shadow-2xs font-extrabold'
+                  ? 'bg-[#5f1340] text-white shadow-2xs'
                   : 'bg-white border border-[#e0e0e0]/70 text-slate-600 hover:border-[#5f1340]/40 hover:text-[#5f1340]'
               }`}
             >
-              <span>{label}</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
+              <span className="font-extrabold">{head}</span>
+              {rest.length > 0 && (
+                <span className={`font-bold ${active ? 'text-white/70' : 'text-slate-400'}`}>
+                  {rest.join(' · ')}
+                </span>
+              )}
+              <span className={`px-1.5 rounded-full text-[9px] font-black ${
                 active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
               }`}>
                 {count}
@@ -439,7 +438,12 @@ export default function TrackingService({
         })}
       </div>
 
-      {/* Table Content */}
+      {/* Table / empty state ringkas */}
+      {displayOrders.length === 0 ? (
+        <div className="px-5 py-6 text-center text-xs text-slate-400 font-semibold">
+          Tidak ada data antrean yang sesuai dengan filter.
+        </div>
+      ) : (
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -453,14 +457,7 @@ export default function TrackingService({
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e0e0e0]/40 text-xs font-medium">
-            {displayOrders.length === 0 ? (
-              <tr>
-                <td colSpan="6" className="py-12 text-center text-slate-400 font-bold">
-                  Tidak ada data antrean yang sesuai dengan filter.
-                </td>
-              </tr>
-            ) : (
-              displayOrders.map((order) => {
+              {displayOrders.map((order) => {
                 const workPct = getWorkPercentage(order.workStatus);
                 const pctTone = percentageTone(workPct);
 
@@ -569,13 +566,14 @@ export default function TrackingService({
                   </tr>
                 );
               })
-            )}
+          }
           </tbody>
         </table>
       </div>
+      )}
 
       {/* Table footer */}
-      <div className="p-4 border-t border-[#e0e0e0]/70 bg-slate-50/50 flex justify-between items-center text-[10px] text-slate-400 font-bold">
+      <div className="px-4 py-2.5 border-t border-[#e0e0e0]/70 bg-slate-50/50 flex justify-between items-center text-[10px] text-slate-400 font-bold">
         <span>Menampilkan {displayOrders.length} dari {orders.length} transaksi terdaftar</span>
       </div>
 
@@ -962,7 +960,7 @@ export default function TrackingService({
                           inputMode="numeric"
                           value={paymentForm.additionalAmount}
                           onChange={(e) => setPaymentForm({ ...paymentForm, additionalAmount: formatRupiah(e.target.value) })}
-                          placeholder={formatRupiah(paymentDetail?.remaining || paymentModalOrder.grandTotal || 0)}
+                          placeholder={`Contoh : ${formatRupiah(paymentDetail?.remaining || paymentModalOrder.grandTotal || 0)}`}
                           className="w-full px-4 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-sm font-black outline-none focus:border-[#5f1340]"
                         />
                         <div className="flex flex-wrap gap-2 mt-2">
@@ -993,7 +991,7 @@ export default function TrackingService({
                           type="text"
                           value={paymentForm.notes}
                           onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
-                          placeholder="Opsional — misal: transfer BCA a/n pelanggan"
+                          placeholder="Contoh : Transfer BCA a/n pelanggan"
                           className="w-full px-4 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-xs font-medium outline-none focus:border-[#5f1340]"
                         />
                       </div>

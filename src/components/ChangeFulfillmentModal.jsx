@@ -224,7 +224,7 @@ export default function ChangeFulfillmentModal({
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   rows={3}
-                  placeholder="Alamat lengkap customer…"
+                  placeholder="Contoh : Jalan Pondok Bambu Asri Blok A3 No 18"
                   className="w-full rounded-xl border border-[#e0e0e0] bg-white px-3 py-2.5 text-[12px] font-medium text-slate-700 outline-none focus:border-[#5f1340]/40 resize-none"
                 />
               </div>
@@ -236,7 +236,7 @@ export default function ChangeFulfillmentModal({
                   type="text"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Contoh: rumah cat hijau, belok kiri…"
+                  placeholder="Contoh : rumah cat hijau, belok kiri"
                   className="w-full rounded-xl border border-[#e0e0e0] bg-white px-3 py-2.5 text-[12px] font-medium text-slate-700 outline-none focus:border-[#5f1340]/40"
                 />
               </div>

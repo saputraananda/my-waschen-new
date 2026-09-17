@@ -15,7 +15,8 @@ import TrackingService from './components/TrackingService.jsx';
 import ModalLacakNota from '../../components/ModalLacakNota.jsx';
 import BadgeShift from './components/BadgeShift.jsx';
 import { useShift } from '../../context/ShiftContext.jsx';
-import { isNotaWorkComplete, isNotaPickedUp, matchesNotaQueueTab } from '../../utils/notaQueueMeta.js';
+import { matchesNotaQueueTab } from '../../utils/notaQueueMeta.js';
+import { getCutoffMonthKey } from '../../utils/dateCutoffFilter.js';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -26,6 +27,13 @@ export default function Dashboard() {
 
   // Modal Lacak Nota State
   const [isLacakNotaModalOpen, setIsLacakNotaModalOpen] = useState(false);
+
+  // Filter tanggal bersama: Ringkasan Operasional + Antrean Cucian
+  const [dateMode, setDateMode] = useState('cutoff');
+  const [rangeStart, setRangeStart] = useState('');
+  const [rangeEnd, setRangeEnd] = useState('');
+  const [cutoffMonth, setCutoffMonth] = useState(getCutoffMonthKey());
+  const dateFilter = { mode: dateMode, start: rangeStart, end: rangeEnd, cutoffMonth };
 
   // Active role & branch state
   const getInitialOutlet = () => {
@@ -338,15 +346,7 @@ export default function Dashboard() {
     showToast('Cetak Nota Thermal', `Mengirim perintah cetak nota ${order.id} ke printer bluetooth POS...`, 'info');
   };
 
-  // Calculate Key Summary Metrics
-  const todayRevenue = orders
-    .filter(o => o.paymentStatus === 'Lunas')
-    .reduce((acc, curr) => acc + curr.totalAmount, 0);
-
-  const activeOrdersCount = orders.filter((o) => !isNotaWorkComplete(o)).length;
-  const readyOrdersCount = orders.filter((o) => isNotaWorkComplete(o) && !isNotaPickedUp(o)).length;
-  const unpaidOrdersCount = orders.filter(o => o.paymentStatus !== 'Lunas').length;
-
+  // Calculate Key Summary Metrics (petty cash / churn tetap; ringkasan di StatCard)
   // Cash log sum calculations
   const balanceLogs = cashLogs.filter((c) => c.isPettyCash !== false);
   const totalCashIn = balanceLogs.filter(c => c.type === 'Masuk').reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
@@ -407,12 +407,11 @@ export default function Dashboard() {
           <Menu navigate={navigate} onOrderClick={startOrderFlow} />
 
           <StatCard
-            todayRevenue={todayRevenue}
-            monthlyTarget={monthlyTarget}
-            activeOrdersCount={activeOrdersCount}
-            readyOrdersCount={readyOrdersCount}
-            unpaidOrdersCount={unpaidOrdersCount}
             orders={orders}
+            monthlyTarget={monthlyTarget}
+            activeOutletId={activeOutletId}
+            activeOutletName={activeOutletName}
+            dateFilter={dateFilter}
             setActiveFilterTab={setActiveFilterTab}
           />
 
@@ -425,6 +424,14 @@ export default function Dashboard() {
             setActiveFilterTab={setActiveFilterTab}
             handlePrintNota={handlePrintNota}
             fetchLiveDashboardData={fetchLiveDashboardData}
+            dateMode={dateMode}
+            setDateMode={setDateMode}
+            rangeStart={rangeStart}
+            setRangeStart={setRangeStart}
+            rangeEnd={rangeEnd}
+            setRangeEnd={setRangeEnd}
+            cutoffMonth={cutoffMonth}
+            setCutoffMonth={setCutoffMonth}
           />
         </div>
 

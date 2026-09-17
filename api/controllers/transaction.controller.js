@@ -5,6 +5,8 @@ import { applyDepositOnPayment } from '../utils/customerDeposit.js';
 import { insertPaymentLog, resolvePaymentStatus, buildPaymentProofUrl } from '../utils/paymentLog.js';
 import { computeAccumulatedWorkPercentage, refreshHeaderWorkPercentage, nextLifecycleStatus, workStatusTabSql } from '../utils/workStatus.js';
 import { consumeServiceBom } from '../utils/inventoryStock.js';
+import { generateAccessCode } from '../utils/accessCode.js';
+import { buildCustomerTrackingUrl } from '../utils/customerTrackingUrl.js';
 import path from 'path';
 
 const resolveCashierName = async (employeeId) => {
@@ -189,6 +191,7 @@ export const createTransaction = async (req, res) => {
     const cashierNameResolved = await resolveCashierName(resolvedCashierId);
 
     const orderNo = await generateOrderNo(outletId);
+    const accessCode = generateAccessCode();
     const grandTotalNum = parseFloat(grandTotal) || 0;
     const isOutstanding = paymentStatus === 'Outstanding';
     const isLunas = paymentStatus === 'Lunas';
@@ -247,40 +250,80 @@ export const createTransaction = async (req, res) => {
       resolvedParfumeId = parfumeRows[0]?.id || null;
     }
 
-    // 1. Insert tr_transaction
-    const [orderResult] = await connection.query(
-      `INSERT INTO tr_transaction 
-       (order_no, barcode, customer_id, outlet_id, cashier_employee_id, shift_id, order_category, total_weight_kg, total_pcs, speed_id, parfume_id, subtotal, speed_surcharge, discount_amount, discount_notes, grand_total, payment_status, payment_method, paid_amount, change_amount, payment_proof_url, paid_at, work_status, is_delivery, delivery_address, delivery_notes, special_notes, order_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?, ?, ?, ?, NOW())`,
-      [
-        orderNo,
-        orderNo,
-        resolvedCustomerId,
-        resolvedOutletId,
-        resolvedCashierId,
-        resolvedShiftId,
-        orderCategory || 'Kiloan',
-        parseFloat(totalWeightKg) || 0,
-        parseInt(totalPcs) || 0,
-        speedId || null,
-        resolvedParfumeId,
-        parseFloat(subtotal) || 0,
-        parseFloat(speedSurcharge) || 0,
-        parseFloat(discountAmount) || 0,
-        discountNotes || null,
-        grandTotalNum,
-        resolvedStatus,
-        isOutstanding ? '-' : (paymentMethod || 'Tunai'),
-        resolvedPaidAmount,
-        resolvedChangeAmount,
-        paymentProofUrl || null,
-        isOutstanding ? null : new Date(),
-        isDelivery ? 1 : 0,
-        deliveryAddress || null,
-        deliveryNotes || null,
-        specialNotes || null
-      ]
-    );
+    // 1. Insert tr_transaction (+ access_code untuk nota digital)
+    let orderResult;
+    try {
+      [orderResult] = await connection.query(
+        `INSERT INTO tr_transaction 
+         (order_no, barcode, customer_id, outlet_id, cashier_employee_id, shift_id, order_category, total_weight_kg, total_pcs, speed_id, parfume_id, subtotal, speed_surcharge, discount_amount, discount_notes, grand_total, payment_status, payment_method, paid_amount, change_amount, payment_proof_url, paid_at, work_status, is_delivery, delivery_address, delivery_notes, special_notes, order_date, access_code)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?, ?, ?, ?, NOW(), ?)`,
+        [
+          orderNo,
+          orderNo,
+          resolvedCustomerId,
+          resolvedOutletId,
+          resolvedCashierId,
+          resolvedShiftId,
+          orderCategory || 'Kiloan',
+          parseFloat(totalWeightKg) || 0,
+          parseInt(totalPcs) || 0,
+          speedId || null,
+          resolvedParfumeId,
+          parseFloat(subtotal) || 0,
+          parseFloat(speedSurcharge) || 0,
+          parseFloat(discountAmount) || 0,
+          discountNotes || null,
+          grandTotalNum,
+          resolvedStatus,
+          isOutstanding ? '-' : (paymentMethod || 'Tunai'),
+          resolvedPaidAmount,
+          resolvedChangeAmount,
+          paymentProofUrl || null,
+          isOutstanding ? null : new Date(),
+          isDelivery ? 1 : 0,
+          deliveryAddress || null,
+          deliveryNotes || null,
+          specialNotes || null,
+          accessCode
+        ]
+      );
+    } catch (colErr) {
+      if (!/Unknown column.*access_code/i.test(colErr.message || '')) throw colErr;
+      // Kolom belum dimigrasi — tetap buat nota tanpa access_code
+      [orderResult] = await connection.query(
+        `INSERT INTO tr_transaction 
+         (order_no, barcode, customer_id, outlet_id, cashier_employee_id, shift_id, order_category, total_weight_kg, total_pcs, speed_id, parfume_id, subtotal, speed_surcharge, discount_amount, discount_notes, grand_total, payment_status, payment_method, paid_amount, change_amount, payment_proof_url, paid_at, work_status, is_delivery, delivery_address, delivery_notes, special_notes, order_date)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?, ?, ?, ?, NOW())`,
+        [
+          orderNo,
+          orderNo,
+          resolvedCustomerId,
+          resolvedOutletId,
+          resolvedCashierId,
+          resolvedShiftId,
+          orderCategory || 'Kiloan',
+          parseFloat(totalWeightKg) || 0,
+          parseInt(totalPcs) || 0,
+          speedId || null,
+          resolvedParfumeId,
+          parseFloat(subtotal) || 0,
+          parseFloat(speedSurcharge) || 0,
+          parseFloat(discountAmount) || 0,
+          discountNotes || null,
+          grandTotalNum,
+          resolvedStatus,
+          isOutstanding ? '-' : (paymentMethod || 'Tunai'),
+          resolvedPaidAmount,
+          resolvedChangeAmount,
+          paymentProofUrl || null,
+          isOutstanding ? null : new Date(),
+          isDelivery ? 1 : 0,
+          deliveryAddress || null,
+          deliveryNotes || null,
+          specialNotes || null
+        ]
+      );
+    }
 
     const transactionId = orderResult.insertId;
 
@@ -454,6 +497,8 @@ export const createTransaction = async (req, res) => {
       message: `Nota ${orderNo} berhasil disimpan & siap cetak struk POS`,
       data: {
         ...resultData,
+        access_code: resultData.access_code || accessCode,
+        tracking_url: buildCustomerTrackingUrl(orderNo),
         deposit_delta: depositResult?.depositDelta || 0,
         inventory_usages: inventoryUsages,
         balance_after: depositResult?.balanceAfter ?? null
@@ -1597,6 +1642,80 @@ export const getPaymentBatchByNo = async (req, res) => {
       success: false,
       message: 'Gagal mengambil data batch pelunasan',
       error: error.message
+    });
+  }
+};
+
+/**
+ * POST /api/transactions/:orderNo/digital-nota-access
+ * Pastikan nota punya access_code 4 digit + kembalikan URL tracking customer yang valid.
+ * Dipakai sebelum kasir kirim nota digital WhatsApp.
+ */
+export const ensureDigitalNotaAccess = async (req, res) => {
+  try {
+    const key = String(req.params.orderNo || '').trim();
+    if (!key || key.length > 60) {
+      return res.status(400).json({ success: false, message: 'Nomor nota tidak valid' });
+    }
+
+    let rows;
+    try {
+      [rows] = await myWaschenPool.query(
+        `SELECT id, order_no, access_code
+         FROM tr_transaction
+         WHERE order_no = ? OR barcode = ? OR CAST(id AS CHAR) = ?
+         ORDER BY CASE WHEN order_no = ? THEN 0 ELSE 1 END
+         LIMIT 1`,
+        [key, key, key, key]
+      );
+    } catch (err) {
+      if (/Unknown column.*access_code/i.test(err.message || '')) {
+        return res.status(503).json({
+          success: false,
+          code: 'ACCESS_CODE_COLUMN_MISSING',
+          message: 'Kolom access_code belum ada di database. Jalankan migrasi dulu.'
+        });
+      }
+      throw err;
+    }
+
+    if (!rows.length) {
+      return res.status(404).json({ success: false, message: `Nota "${key}" tidak ditemukan` });
+    }
+
+    const trx = rows[0];
+    let accessCode = String(trx.access_code || '').replace(/\D/g, '');
+
+    if (!/^\d{4}$/.test(accessCode)) {
+      accessCode = generateAccessCode();
+      await myWaschenPool.query(
+        'UPDATE tr_transaction SET access_code = ?, updated_at = NOW() WHERE id = ?',
+        [accessCode, trx.id]
+      );
+    }
+
+    const trackingUrl = buildCustomerTrackingUrl(trx.order_no);
+    if (!trackingUrl) {
+      return res.status(503).json({
+        success: false,
+        code: 'CUSTOMER_APP_URL_MISSING',
+        message: 'CUSTOMER_APP_URL / VITE_CUSTOMER_APP_URL belum dikonfigurasi. Link tracking tidak bisa dibuat.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        orderNo: trx.order_no,
+        accessCode,
+        trackingUrl
+      }
+    });
+  } catch (err) {
+    console.error('ensureDigitalNotaAccess:', err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Gagal menyiapkan kode akses nota digital'
     });
   }
 };

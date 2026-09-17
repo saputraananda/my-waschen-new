@@ -71,7 +71,7 @@ function CustomMaterialSelect({ value, onChange, availableMaterials }) {
             <input
               type="text"
               autoFocus
-              placeholder="Cari bahan (e.g. Cotton...)"
+              placeholder="Contoh : Cotton"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full py-1 text-xs bg-transparent outline-none font-medium placeholder:text-slate-400"
@@ -147,6 +147,7 @@ export default function ItemConfigModal({
   if (!configuringItem) return null;
 
   const isMeterService = configuringItem.unit_id === 4 || configuringItem.unit === 'm²' || configuringItem.unit === 'm2' || configuringItem.unit === 'Meter';
+  const isKiloan = String(configuringItem.category || '').toLowerCase().includes('kiloan');
 
   // Merge backend materials list with MATERIAL_OPTIONS if provided
   const availableMaterials = Array.from(new Set([
@@ -296,7 +297,7 @@ export default function ItemConfigModal({
                           setItemSpecs((prev) => ({ ...prev, length: val }));
                         }}
                         className="w-full px-3 py-1.5 bg-white border border-[#e0e0e0] rounded-xl text-xs font-black outline-none focus:border-[#5f1340] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        placeholder="3.5"
+                        placeholder="Contoh : 3.5"
                       />
                     </div>
 
@@ -315,7 +316,7 @@ export default function ItemConfigModal({
                           setItemSpecs((prev) => ({ ...prev, width: val }));
                         }}
                         className="w-full px-3 py-1.5 bg-white border border-[#e0e0e0] rounded-xl text-xs font-black outline-none focus:border-[#5f1340] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        placeholder="2.0"
+                        placeholder="Contoh : 2.0"
                       />
                     </div>
 
@@ -333,7 +334,7 @@ export default function ItemConfigModal({
                           setItemSpecs((prev) => ({ ...prev, qty: val }));
                         }}
                         className="w-full px-3 py-1.5 bg-white border border-[#e0e0e0] rounded-xl text-xs font-black outline-none focus:border-[#5f1340] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        placeholder="1"
+                        placeholder="Contoh : 1"
                       />
                     </div>
                   </div>
@@ -413,131 +414,128 @@ export default function ItemConfigModal({
               )}
             </div>
 
-            {/* Rincian Spesifikasi (Brand, Warna, Material, Size) */}
-            <div>
-              <h4 className="text-[10.5px] font-black uppercase tracking-wider text-[#5f1340] mb-1.5 flex items-center gap-1">
-                <Edit3 className="h-3 w-3" />
-                <span>Rincian Spesifikasi (Opsional)</span>
-              </h4>
+            {/* Rincian Spesifikasi + Cleanox/DC — hanya untuk non-Kiloan */}
+            {!isKiloan && (
+              <>
+                <div>
+                  <h4 className="text-[10.5px] font-black uppercase tracking-wider text-[#5f1340] mb-1.5 flex items-center gap-1">
+                    <Edit3 className="h-3 w-3" />
+                    <span>Rincian Spesifikasi (Opsional)</span>
+                  </h4>
 
-              <div className={`grid grid-cols-2 ${isMeterService ? 'sm:grid-cols-3' : 'sm:grid-cols-4'} gap-2`}>
-                <div>
-                  <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Merk / Brand</label>
-                  <input
-                    type="text"
-                    placeholder="Uniqlo, Zara..."
-                    value={itemSpecs.brand}
-                    onChange={(e) => setItemSpecs({ ...itemSpecs, brand: e.target.value })}
-                    className="w-full px-2.5 py-1.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-lg text-xs font-medium outline-none focus:bg-white focus:border-[#5f1340]"
-                  />
-                </div>
-                <div>
-                  <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Warna</label>
-                  <input
-                    type="text"
-                    placeholder="Putih, Navy..."
-                    value={itemSpecs.color}
-                    onChange={(e) => setItemSpecs({ ...itemSpecs, color: e.target.value })}
-                    className="w-full px-2.5 py-1.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-lg text-xs font-medium outline-none focus:bg-white focus:border-[#5f1340]"
-                  />
-                </div>
-                <div>
-                  <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Bahan / Material</label>
-                  <CustomMaterialSelect
-                    value={itemSpecs.material}
-                    onChange={(val) => setItemSpecs({ ...itemSpecs, material: val })}
-                    availableMaterials={availableMaterials}
-                  />
-                </div>
-                {!isMeterService && (
-                  <div>
-                    <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Ukuran / Size</label>
-                    <input
-                      type="text"
-                      placeholder="L, XL..."
-                      value={itemSpecs.size}
-                      onChange={(e) => setItemSpecs({ ...itemSpecs, size: e.target.value })}
-                      className="w-full px-2.5 py-1.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-lg text-xs font-medium outline-none focus:bg-white focus:border-[#5f1340]"
-                    />
+                  <div className={`grid grid-cols-2 ${isMeterService ? 'sm:grid-cols-3' : 'sm:grid-cols-4'} gap-2`}>
+                    <div>
+                      <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Merk / Brand</label>
+                      <input
+                        type="text"
+                        placeholder="Contoh : Uniqlo, Zara"
+                        value={itemSpecs.brand}
+                        onChange={(e) => setItemSpecs({ ...itemSpecs, brand: e.target.value })}
+                        className="w-full px-2.5 py-1.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-lg text-xs font-medium outline-none focus:bg-white focus:border-[#5f1340]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Warna</label>
+                      <input
+                        type="text"
+                        placeholder="Contoh : Putih, Navy"
+                        value={itemSpecs.color}
+                        onChange={(e) => setItemSpecs({ ...itemSpecs, color: e.target.value })}
+                        className="w-full px-2.5 py-1.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-lg text-xs font-medium outline-none focus:bg-white focus:border-[#5f1340]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Bahan / Material</label>
+                      <CustomMaterialSelect
+                        value={itemSpecs.material}
+                        onChange={(val) => setItemSpecs({ ...itemSpecs, material: val })}
+                        availableMaterials={availableMaterials}
+                      />
+                    </div>
+                    {!isMeterService && (
+                      <div>
+                        <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Ukuran / Size</label>
+                        <input
+                          type="text"
+                          placeholder="Contoh : L, XL"
+                          value={itemSpecs.size}
+                          onChange={(e) => setItemSpecs({ ...itemSpecs, size: e.target.value })}
+                          className="w-full px-2.5 py-1.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-lg text-xs font-medium outline-none focus:bg-white focus:border-[#5f1340]"
+                        />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
 
-            {/* Combined Full-Card Clickable Toggles (Cleanox & Dry Clean) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {/* Cleanox Card Toggle */}
-              <button
-                type="button"
-                onClick={() => setItemSpecs((prev) => ({ ...prev, isCleanox: !prev.isCleanox }))}
-                className={`p-3 rounded-2xl border transition-all text-left flex items-center justify-between gap-3 cursor-pointer select-none active:scale-[0.99] ${
-                  itemSpecs.isCleanox
-                    ? 'bg-sky-600 border-sky-600 text-white shadow-md ring-2 ring-sky-300/50'
-                    : 'bg-white border-[#e0e0e0] text-slate-700 hover:border-sky-300 hover:bg-sky-50/40'
-                }`}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="font-extrabold text-xs block">Cleanox By Waschen</span>
-                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setItemSpecs((prev) => ({ ...prev, isCleanox: !prev.isCleanox }))}
+                    className={`p-3 rounded-2xl border transition-all text-left flex items-center justify-between gap-3 cursor-pointer select-none active:scale-[0.99] ${
                       itemSpecs.isCleanox
-                        ? 'bg-white text-sky-700'
-                        : 'bg-slate-100 text-slate-400 border border-slate-200'
+                        ? 'bg-sky-600 border-sky-600 text-white shadow-md ring-2 ring-sky-300/50'
+                        : 'bg-white border-[#e0e0e0] text-slate-700 hover:border-sky-300 hover:bg-sky-50/40'
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="font-extrabold text-xs block">Cleanox By Waschen</span>
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
+                          itemSpecs.isCleanox
+                            ? 'bg-white text-sky-700'
+                            : 'bg-slate-100 text-slate-400 border border-slate-200'
+                        }`}>
+                          {itemSpecs.isCleanox ? 'ON ✓' : 'OFF'}
+                        </span>
+                      </div>
+                      <span className={`text-[10px] block truncate ${itemSpecs.isCleanox ? 'text-sky-100' : 'text-slate-400'}`}>
+                        Dikerjakan khusus tim Cleanox
+                      </span>
+                    </div>
+                    <div className={`w-11 h-6 rounded-full relative p-0.5 transition-colors shrink-0 ${
+                      itemSpecs.isCleanox ? 'bg-white/30' : 'bg-slate-300'
                     }`}>
-                      {itemSpecs.isCleanox ? 'ON ✓' : 'OFF'}
-                    </span>
-                  </div>
-                  <span className={`text-[10px] block truncate ${itemSpecs.isCleanox ? 'text-sky-100' : 'text-slate-400'}`}>
-                    Dikerjakan khusus tim Cleanox
-                  </span>
-                </div>
+                      <div className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                        itemSpecs.isCleanox ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
+                    </div>
+                  </button>
 
-                {/* Big iOS Toggle Switch */}
-                <div className={`w-11 h-6 rounded-full relative p-0.5 transition-colors shrink-0 ${
-                  itemSpecs.isCleanox ? 'bg-white/30' : 'bg-slate-300'
-                }`}>
-                  <div className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
-                    itemSpecs.isCleanox ? 'translate-x-5' : 'translate-x-0'
-                  }`} />
-                </div>
-              </button>
-
-              {/* Dry Clean (DC) Card Toggle */}
-              <button
-                type="button"
-                onClick={() => setItemSpecs((prev) => ({ ...prev, isDryClean: !prev.isDryClean }))}
-                className={`p-3 rounded-2xl border transition-all text-left flex items-center justify-between gap-3 cursor-pointer select-none active:scale-[0.99] ${
-                  itemSpecs.isDryClean
-                    ? 'bg-amber-600 border-amber-600 text-white shadow-md ring-2 ring-amber-300/50'
-                    : 'bg-white border-[#e0e0e0] text-slate-700 hover:border-amber-300 hover:bg-amber-50/40'
-                }`}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="font-extrabold text-xs block">Metode Dry Clean (DC)</span>
-                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
+                  <button
+                    type="button"
+                    onClick={() => setItemSpecs((prev) => ({ ...prev, isDryClean: !prev.isDryClean }))}
+                    className={`p-3 rounded-2xl border transition-all text-left flex items-center justify-between gap-3 cursor-pointer select-none active:scale-[0.99] ${
                       itemSpecs.isDryClean
-                        ? 'bg-white text-amber-800'
-                        : 'bg-slate-100 text-slate-400 border border-slate-200'
+                        ? 'bg-amber-600 border-amber-600 text-white shadow-md ring-2 ring-amber-300/50'
+                        : 'bg-white border-[#e0e0e0] text-slate-700 hover:border-amber-300 hover:bg-amber-50/40'
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="font-extrabold text-xs block">Metode Dry Clean (DC)</span>
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
+                          itemSpecs.isDryClean
+                            ? 'bg-white text-amber-800'
+                            : 'bg-slate-100 text-slate-400 border border-slate-200'
+                        }`}>
+                          {itemSpecs.isDryClean ? 'DC ON ✓' : 'OFF'}
+                        </span>
+                      </div>
+                      <span className={`text-[10px] block truncate ${itemSpecs.isDryClean ? 'text-amber-100' : 'text-slate-400'}`}>
+                        Pencucian khusus metode Dry Clean
+                      </span>
+                    </div>
+                    <div className={`w-11 h-6 rounded-full relative p-0.5 transition-colors shrink-0 ${
+                      itemSpecs.isDryClean ? 'bg-white/30' : 'bg-slate-300'
                     }`}>
-                      {itemSpecs.isDryClean ? 'DC ON ✓' : 'OFF'}
-                    </span>
-                  </div>
-                  <span className={`text-[10px] block truncate ${itemSpecs.isDryClean ? 'text-amber-100' : 'text-slate-400'}`}>
-                    Pencucian khusus metode Dry Clean
-                  </span>
+                      <div className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                        itemSpecs.isDryClean ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
+                    </div>
+                  </button>
                 </div>
-
-                {/* Big iOS Toggle Switch */}
-                <div className={`w-11 h-6 rounded-full relative p-0.5 transition-colors shrink-0 ${
-                  itemSpecs.isDryClean ? 'bg-white/30' : 'bg-slate-300'
-                }`}>
-                  <div className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
-                    itemSpecs.isDryClean ? 'translate-x-5' : 'translate-x-0'
-                  }`} />
-                </div>
-              </button>
-            </div>
+              </>
+            )}
 
             {/* Notes Input */}
             <div>
@@ -545,11 +543,13 @@ export default function ItemConfigModal({
                 Keterangan / Kondisi Fisik Item (Opsional)
               </label>
               <textarea
-                rows="1"
-                placeholder="Misal: ada noda di lengan, kancing lepas..."
+                rows={isKiloan ? 5 : 1}
+                placeholder="Contoh : Ada noda di lengan, kancing lepas"
                 value={itemSpecs.note}
                 onChange={(e) => setItemSpecs({ ...itemSpecs, note: e.target.value })}
-                className="w-full p-2 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl text-xs font-medium outline-none focus:bg-white focus:border-[#5f1340]"
+                className={`w-full p-2 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl text-xs font-medium outline-none focus:bg-white focus:border-[#5f1340] ${
+                  isKiloan ? 'min-h-[120px] resize-y' : ''
+                }`}
               />
             </div>
           </div>

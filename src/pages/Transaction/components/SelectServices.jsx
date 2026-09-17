@@ -136,7 +136,7 @@ export default function SelectServices({
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input
             type="text"
-            placeholder="Cari layanan (Kemeja, Bedcover, Cuci Setrika, Karpet, Sepatu)..."
+            placeholder="Contoh : Kemeja / Bedcover / Cuci Setrika"
             value={serviceSearch}
             onChange={(e) => setServiceSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl text-xs font-semibold text-[#313030] outline-none focus:bg-white focus:border-[#5f1340]"

@@ -16,12 +16,13 @@ export default function CascadingPaymentSelector({
   outlets = [],
   paymentMethods = [],
   selectedCustomer,
-  grandTotal = 0
+  grandTotal = 0,
+  hideMemberBalance = false
 }) {
   // 1. Extract unique main groups directly from DB records in paymentMethods
   const mainGroupList = useMemo(() => {
     if (!paymentMethods || paymentMethods.length === 0) {
-      return [
+      const defaults = [
         { id: 'Tunai', label: 'Tunai' },
         { id: 'Transfer Bank', label: 'Transfer Bank' },
         { id: 'EDC BCA', label: 'EDC BCA' },
@@ -31,6 +32,9 @@ export default function CascadingPaymentSelector({
         { id: 'QRIS Statis BSI', label: 'QRIS Statis BSI' },
         { id: 'Potong Saldo Member', label: 'Potong Saldo Member' }
       ];
+      return hideMemberBalance
+        ? defaults.filter((g) => g.id !== 'Potong Saldo Member')
+        : defaults;
     }
 
     const groups = [];
@@ -38,6 +42,9 @@ export default function CascadingPaymentSelector({
     paymentMethods.forEach((m) => {
       if (m.is_active !== 0 && m.is_active !== false) {
         const gName = m.group || 'Tunai';
+        if (hideMemberBalance && (gName === 'Potong Saldo Member' || m.requires_member_balance === 1)) {
+          return;
+        }
         if (!seen.has(gName)) {
           seen.add(gName);
           groups.push({
@@ -48,9 +55,8 @@ export default function CascadingPaymentSelector({
         }
       }
     });
-
     return groups;
-  }, [paymentMethods]);
+  }, [paymentMethods, hideMemberBalance]);
 
   // 2. Extract sub-items (e.g. Card Types for EDC) matching the selected mainCategory group
   const subItemsForGroup = useMemo(() => {

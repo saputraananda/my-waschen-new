@@ -198,7 +198,7 @@ function AktualModal({ row, usageDate, onClose, onDone }) {
             min="0"
             value={qty}
             onChange={(e) => setQty(e.target.value)}
-            placeholder={tab === 'reset' ? 'Total baru' : 'Jumlah'}
+            placeholder={tab === 'reset' ? 'Contoh : 100' : 'Contoh : 10'}
             className="w-full px-3 py-2.5 border border-[#e0e0e0] rounded-xl text-center text-sm font-black outline-none focus:border-[#5f1340] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />
         </div>
@@ -312,7 +312,7 @@ export default function StockDashboard({
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="Cari nama / kode item..."
+                placeholder="Contoh : Hanger Uk 16 / HRG-001"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340]"

@@ -152,7 +152,7 @@ export default function UploadDepositModal({
               rows={3}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Contoh: Setor ke rekening BCA outlet, tanggal 31 Agustus..."
+              placeholder="Contoh : Setor ke rekening BCA outlet, tanggal 31 Agustus"
               className="w-full px-3 py-2.5 border border-[#e0e0e0] rounded-xl bg-white font-medium outline-none focus:border-[#5f1340] resize-none"
             />
           </div>

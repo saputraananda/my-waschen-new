@@ -65,16 +65,16 @@ export default function FillAddressModal({ customer, onClose, onSaved }) {
         </div>
         <div>
           <label className="text-[11px] font-black text-slate-700">Alamat Singkat</label>
-          <input className={fieldCls} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Jalan Pondok Bambu Asri" />
+          <input className={fieldCls} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Contoh : Jalan Pondok Bambu Asri" />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="text-[11px] font-black text-slate-700">Blok</label>
-            <input className={fieldCls} value={form.block} onChange={(e) => setForm({ ...form, block: e.target.value })} placeholder="A3" />
+            <input className={fieldCls} value={form.block} onChange={(e) => setForm({ ...form, block: e.target.value })} placeholder="Contoh : A3" />
           </div>
           <div>
             <label className="text-[11px] font-black text-slate-700">Nomor Rumah</label>
-            <input className={fieldCls} value={form.houseNumber} onChange={(e) => setForm({ ...form, houseNumber: e.target.value })} placeholder="18" />
+            <input className={fieldCls} value={form.houseNumber} onChange={(e) => setForm({ ...form, houseNumber: e.target.value })} placeholder="Contoh : 18" />
           </div>
         </div>
         <div>
@@ -91,7 +91,7 @@ export default function FillAddressModal({ customer, onClose, onSaved }) {
         </div>
         <div>
           <label className="text-[11px] font-black text-slate-700">Catatan</label>
-          <input className={fieldCls} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Rumah pagar hitam" />
+          <input className={fieldCls} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Contoh : Rumah pagar hitam" />
         </div>
         <div className="flex gap-2 pt-1">
           <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-[#e0e0e0] text-xs font-black text-slate-600 cursor-pointer">
