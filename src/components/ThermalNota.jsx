@@ -99,12 +99,6 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
     try {
       const variantSettings = variant === 'internal' ? settings.internal : settings.customer;
       await printNota(createdOrderReceipt, variantSettings, variant);
-      await showAlert({
-        title: 'Struk Dikirim',
-        message: `Nota ${variant === 'internal' ? 'Internal' : 'Customer'} berhasil dikirim ke printer thermal.`,
-        type: 'success',
-        confirmLabel: 'Selesai'
-      });
     } catch (err) {
       await showAlert({
         title: 'Gagal Cetak',

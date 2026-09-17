@@ -30,8 +30,11 @@ import DateModeFilter from '../../../components/DateModeFilter.jsx';
 import { passesDateModeFilter, getCutoffMonthKey } from '../../../utils/dateCutoffFilter.js';
 import {
   sendCustomerNotaWhatsAppFromOrder,
-  describeCustomerNotaWaResult
+  describeCustomerNotaWaResult,
+  toCustomerNotaReceipt
 } from '../../../utils/customerNotaWhatsApp.js';
+import ThermalNota from '../../../components/ThermalNota.jsx';
+import { mapDbTransactionToReceipt } from '../../../utils/printerSettings.js';
 
 export default function HistoryTransaction({
   transactions,
@@ -62,6 +65,8 @@ export default function HistoryTransaction({
 
   // Modals
   const [selectedReceipt, setSelectedReceipt] = useState(null);
+  const [printReceipt, setPrintReceipt] = useState(null);
+  const [printingNotaId, setPrintingNotaId] = useState(null);
   const [deleteModalOrder, setDeleteModalOrder] = useState(null);
   const [deleteReason, setDeleteReason] = useState('');
   const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
@@ -130,6 +135,28 @@ export default function HistoryTransaction({
       });
     } finally {
       setSendingNotaWaId(null);
+    }
+  };
+
+  const openThermalPrint = async (order, e) => {
+    if (e) e.stopPropagation();
+    if (!order?.id) return;
+    setPrintingNotaId(order.id);
+    try {
+      const res = await axios.get(`/api/transactions/${order.id}`);
+      if (res.data?.success && res.data.data) {
+        setPrintReceipt(mapDbTransactionToReceipt(
+          res.data.data,
+          order.branch || localStorage.getItem('activeOutletName') || ''
+        ));
+        return;
+      }
+      setPrintReceipt(toCustomerNotaReceipt(order));
+    } catch (err) {
+      console.warn('fetch receipt for thermal:', err);
+      setPrintReceipt(toCustomerNotaReceipt(order));
+    } finally {
+      setPrintingNotaId(null);
     }
   };
 
@@ -652,14 +679,12 @@ export default function HistoryTransaction({
                       <div className="inline-flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedReceipt(order);
-                          }}
-                          className="p-2 rounded-xl border border-[#e0e0e0] bg-white hover:bg-[#5f1340] hover:text-white text-slate-700 transition-all cursor-pointer shadow-2xs inline-flex items-center justify-center group/print"
+                          onClick={(e) => openThermalPrint(order, e)}
+                          disabled={printingNotaId === order.id}
+                          className="p-2 rounded-xl border border-[#e0e0e0] bg-white hover:bg-[#5f1340] hover:text-white text-slate-700 transition-all cursor-pointer shadow-2xs inline-flex items-center justify-center group/print disabled:opacity-50"
                           title="Cetak Struk Nota Bluetooth"
                         >
-                          <Printer className="h-4 w-4" />
+                          <Printer className={`h-4 w-4 ${printingNotaId === order.id ? 'animate-pulse' : ''}`} />
                         </button>
 
                         <button
@@ -864,18 +889,12 @@ export default function HistoryTransaction({
                 <span>{sendingNotaWaId === selectedReceipt.id ? 'Menyiapkan…' : 'Kirim Nota Digital'}</span>
               </button>
               <button
-                onClick={async () => {
-                  await showAlert({
-                    title: 'Struk Dikirim',
-                    message: 'Struk transaksi berhasil dikirim ke Printer Thermal Bluetooth Waschen!',
-                    type: 'success',
-                    confirmLabel: 'Selesai'
-                  });
-                  setSelectedReceipt(null);
-                }}
-                className="flex-1 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] text-white rounded-xl font-black text-xs flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
+                type="button"
+                onClick={() => openThermalPrint(selectedReceipt)}
+                disabled={printingNotaId === selectedReceipt.id}
+                className="flex-1 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] text-white rounded-xl font-black text-xs flex items-center justify-center gap-2 cursor-pointer shadow-2xs disabled:opacity-50"
               >
-                <Printer className="h-4 w-4" />
+                <Printer className={`h-4 w-4 ${printingNotaId === selectedReceipt.id ? 'animate-pulse' : ''}`} />
                 <span>Cetak Thermal</span>
               </button>
             </div>
@@ -1133,6 +1152,11 @@ export default function HistoryTransaction({
       <ModalLacakNota
         isOpen={isLacakModalOpen}
         onClose={() => setIsLacakModalOpen(false)}
+      />
+
+      <ThermalNota
+        createdOrderReceipt={printReceipt}
+        onClose={() => setPrintReceipt(null)}
       />
 
       {showPayPinModal && (

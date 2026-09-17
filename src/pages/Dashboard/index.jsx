@@ -17,6 +17,9 @@ import BadgeShift from './components/BadgeShift.jsx';
 import { useShift } from '../../context/ShiftContext.jsx';
 import { matchesNotaQueueTab } from '../../utils/notaQueueMeta.js';
 import { getCutoffMonthKey } from '../../utils/dateCutoffFilter.js';
+import ThermalNota from '../../components/ThermalNota.jsx';
+import { mapDbTransactionToReceipt } from '../../utils/printerSettings.js';
+import { toCustomerNotaReceipt } from '../../utils/customerNotaWhatsApp.js';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -27,6 +30,8 @@ export default function Dashboard() {
 
   // Modal Lacak Nota State
   const [isLacakNotaModalOpen, setIsLacakNotaModalOpen] = useState(false);
+  const [printReceipt, setPrintReceipt] = useState(null);
+  const [printingNotaId, setPrintingNotaId] = useState(null);
 
   // Filter tanggal bersama: Ringkasan Operasional + Antrean Cucian
   const [dateMode, setDateMode] = useState('cutoff');
@@ -341,10 +346,24 @@ export default function Dashboard() {
     showAlert({ title, message, type });
   };
 
-  // Print Thermal Slip Trigger
-  const handlePrintNota = (order) => {
-    showToast('Cetak Nota Thermal', `Mengirim perintah cetak nota ${order.id} ke printer bluetooth POS...`, 'info');
-  };
+  // Print Thermal — langsung buka modal ThermalNota (preview + cetak)
+  const handlePrintNota = useCallback(async (order) => {
+    if (!order?.id) return;
+    setPrintingNotaId(order.id);
+    try {
+      const res = await axios.get(`/api/transactions/${order.id}`);
+      if (res.data?.success && res.data.data) {
+        setPrintReceipt(mapDbTransactionToReceipt(res.data.data, order.branch || activeOutletName));
+        return;
+      }
+      setPrintReceipt(toCustomerNotaReceipt(order));
+    } catch (err) {
+      console.warn('fetch receipt for thermal:', err);
+      setPrintReceipt(toCustomerNotaReceipt(order));
+    } finally {
+      setPrintingNotaId(null);
+    }
+  }, [activeOutletName]);
 
   // Calculate Key Summary Metrics (petty cash / churn tetap; ringkasan di StatCard)
   // Cash log sum calculations
@@ -460,6 +479,11 @@ export default function Dashboard() {
       <ModalLacakNota
         isOpen={isLacakNotaModalOpen}
         onClose={() => setIsLacakNotaModalOpen(false)}
+      />
+
+      <ThermalNota
+        createdOrderReceipt={printReceipt}
+        onClose={() => setPrintReceipt(null)}
       />
 
     </div>

@@ -338,7 +338,7 @@ export default function LoginPage() {
                                 spellCheck={false}
                                 value={username}
                                 onChange={(e) => setUsername(e.target.value)}
-                                placeholder="Contoh : username"
+                                placeholder="Username"
                                 className="w-full pl-11 pr-4 py-3 sm:py-2.5 bg-white border border-[#e0e0e0] rounded-lg text-[#313030] placeholder-slate-400 focus:outline-none focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340] transition-all duration-200 text-base sm:text-sm shadow-sm"
                             />
                         </div>
@@ -363,7 +363,7 @@ export default function LoginPage() {
                                 autoComplete="current-password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                placeholder="Contoh : ••••••"
+                                placeholder="Kata sandi"
                                 className="w-full pl-11 pr-11 py-3 sm:py-2.5 bg-white border border-[#e0e0e0] rounded-lg text-[#313030] placeholder-slate-400 focus:outline-none focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340] transition-all duration-200 text-base sm:text-sm shadow-sm"
                             />
                             <button
