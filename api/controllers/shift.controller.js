@@ -1,6 +1,6 @@
 import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
-import { buildUploadPublicUrl, DEPOSIT_REPORT_FRONTLINER_SUBDIR } from '../middleware/upload.js';
+import { buildUploadPublicUrl, DEPOSIT_REPORT_FRONTLINER_SUBDIR, replaceUploadUrl, safeUnlinkAbsPath } from '../middleware/upload.js';
 import path from 'path';
 
 const formatRp = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
@@ -212,13 +212,15 @@ export const uploadDepositProof = async (req, res) => {
     }
 
     const [rows] = await myWaschenPool.query(
-      `SELECT id, close_type, status FROM tr_cashier_shift WHERE id = ?`,
+      `SELECT id, close_type, status, deposit_proof_url FROM tr_cashier_shift WHERE id = ?`,
       [shiftId]
     );
     if (!rows.length) {
+      await safeUnlinkAbsPath(req.file.path);
       return res.status(404).json({ success: false, message: 'Shift tidak ditemukan' });
     }
     if (rows[0].status !== 'Closed' || rows[0].close_type !== 'Final') {
+      await safeUnlinkAbsPath(req.file.path);
       return res.status(400).json({ success: false, message: 'Bukti setoran hanya berlaku untuk closing Final' });
     }
 
@@ -235,6 +237,8 @@ export const uploadDepositProof = async (req, res) => {
        WHERE id = ?`,
       [proofUrl, notes || null, parseInt(uploadedBy) || null, shiftId]
     );
+
+    await replaceUploadUrl(rows[0].deposit_proof_url, proofUrl);
 
     const [updated] = await myWaschenPool.query(
       'SELECT * FROM tr_cashier_shift WHERE id = ?',
@@ -254,6 +258,7 @@ export const uploadDepositProof = async (req, res) => {
     });
   } catch (error) {
     console.error('uploadDepositProof:', error);
+    if (req.file?.path) await safeUnlinkAbsPath(req.file.path);
     return res.status(500).json({ success: false, message: error.message });
   }
 };

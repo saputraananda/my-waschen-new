@@ -7,7 +7,7 @@ import {
   resolvePaymentStatus,
   buildPaymentProofUrl
 } from '../utils/paymentLog.js';
-import { uploadPaymentReceipt } from '../middleware/upload.js';
+import { uploadPaymentReceipt, replaceUploadUrl, safeUnlinkAbsPath } from '../middleware/upload.js';
 
 export const uploadPaymentProofMiddleware = uploadPaymentReceipt;
 
@@ -85,10 +85,11 @@ export const uploadPaymentProof = async (req, res) => {
 
     const proofUrl = buildPaymentProofUrl(path.basename(req.file.filename || req.file.path));
     const [orderRows] = await myWaschenPool.query(
-      'SELECT id, outlet_id FROM tr_transaction WHERE id = ? OR order_no = ? LIMIT 1',
+      'SELECT id, outlet_id, payment_proof_url FROM tr_transaction WHERE id = ? OR order_no = ? LIMIT 1',
       [id, id]
     );
     if (!orderRows.length) {
+      await safeUnlinkAbsPath(req.file.path);
       return res.status(404).json({ success: false, message: 'Nota tidak ditemukan' });
     }
 
@@ -97,6 +98,8 @@ export const uploadPaymentProof = async (req, res) => {
       'UPDATE tr_transaction SET payment_proof_url = ?, updated_at = NOW() WHERE id = ?',
       [proofUrl, order.id]
     );
+
+    await replaceUploadUrl(order.payment_proof_url, proofUrl);
 
     emitDashboardRefresh('transaction:updated', { outletId: order.outlet_id, transactionId: order.id });
 
@@ -107,6 +110,7 @@ export const uploadPaymentProof = async (req, res) => {
     });
   } catch (error) {
     console.error('Error uploadPaymentProof:', error);
+    if (req.file?.path) await safeUnlinkAbsPath(req.file.path);
     return res.status(500).json({ success: false, message: 'Gagal upload bukti pembayaran', error: error.message });
   }
 };
@@ -306,6 +310,11 @@ export const updateTransactionPayment = async (req, res) => {
         outletId: order.outlet_id,
         customerId: order.customer_id
       });
+    }
+
+    // Hapus file bukti lama jika diganti URL baru
+    if (proofUrl && order.payment_proof_url && proofUrl !== order.payment_proof_url) {
+      await replaceUploadUrl(order.payment_proof_url, proofUrl);
     }
 
     return res.status(200).json({

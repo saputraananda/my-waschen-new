@@ -15,7 +15,7 @@ import masterRoutes from './routes/master.routes.js';
 import historyRoutes from './routes/history.routes.js';
 import printerRoutes from './routes/printer.routes.js';
 import inventoryRoutes from './routes/inventory.routes.js';
-import { getBaseUploadDir, getUploadUrlPrefix, uploadPaymentReceipt, buildUploadPublicUrl } from './middleware/upload.js';
+import { getBaseUploadDir, getUploadUrlPrefix, uploadPaymentReceipt, buildUploadPublicUrl, safeUnlinkUploadUrl } from './middleware/upload.js';
 
 // Load environment variables
 dotenv.config();
@@ -30,13 +30,18 @@ app.use(express.json());
 app.use(getUploadUrlPrefix(), express.static(getBaseUploadDir()));
 
 // General upload endpoint for payment proofs / images
-app.post('/api/upload', uploadPaymentReceipt, (req, res) => {
+// Optional body field oldUrl: hapus file lama saat ganti bukti
+app.post('/api/upload', uploadPaymentReceipt, async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'File tidak diunggah' });
   }
   const filename = req.file.filename || path.basename(req.file.path);
   const relativePath = `assets/payment_receipt/${filename}`;
   const publicUrl = buildUploadPublicUrl(relativePath);
+  const oldUrl = req.body?.oldUrl || req.body?.old_url || null;
+  if (oldUrl) {
+    await safeUnlinkUploadUrl(oldUrl);
+  }
   return res.json({ success: true, url: publicUrl, filename });
 });
 

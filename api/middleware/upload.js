@@ -49,6 +49,86 @@ export const buildUploadPublicUrl = (relativePath) => {
 };
 
 /**
+ * Resolve public upload URL → absolute path under UPLOAD_BASE_DIR.
+ * Accepts: "/uploads/...", "uploads/...", or full https URL with that pathname.
+ * Returns null if outside root / invalid.
+ */
+export function resolveUploadUrlToAbsPath(publicUrl) {
+  if (!publicUrl || typeof publicUrl !== 'string') return null;
+
+  let pathname = publicUrl.trim();
+  try {
+    if (/^https?:\/\//i.test(pathname)) {
+      pathname = new URL(pathname).pathname;
+    }
+  } catch {
+    return null;
+  }
+
+  pathname = pathname.replace(/\\/g, '/');
+  const prefix = getUploadUrlPrefix();
+  if (pathname === prefix) return null;
+
+  let relative;
+  if (pathname.startsWith(`${prefix}/`)) {
+    relative = pathname.slice(prefix.length).replace(/^\/+/, '');
+  } else if (!pathname.includes('..') && /^\/?[a-zA-Z0-9_./-]+$/.test(pathname)) {
+    relative = pathname.replace(/^\/+/, '');
+  } else {
+    return null;
+  }
+
+  if (!relative || relative.includes('\0')) return null;
+
+  const base = path.resolve(getBaseUploadDir());
+  const abs = path.resolve(base, relative);
+  const relToBase = path.relative(base, abs);
+  if (!relToBase || relToBase.startsWith('..') || path.isAbsolute(relToBase)) return null;
+  return abs;
+}
+
+/** Best-effort unlink by public URL; never throws. */
+export async function safeUnlinkUploadUrl(publicUrl) {
+  const abs = resolveUploadUrlToAbsPath(publicUrl);
+  if (!abs) return false;
+  try {
+    await fs.promises.unlink(abs);
+    return true;
+  } catch (err) {
+    if (err?.code !== 'ENOENT') {
+      console.warn('[safeUnlinkUploadUrl]', abs, err?.message || err);
+    }
+    return false;
+  }
+}
+
+/** Best-effort unlink by absolute disk path (e.g. req.file.path). */
+export async function safeUnlinkAbsPath(absPath) {
+  if (!absPath) return false;
+  try {
+    const base = path.resolve(getBaseUploadDir());
+    const abs = path.resolve(absPath);
+    const rel = path.relative(base, abs);
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return false;
+    await fs.promises.unlink(abs);
+    return true;
+  } catch (err) {
+    if (err?.code !== 'ENOENT') {
+      console.warn('[safeUnlinkAbsPath]', absPath, err?.message || err);
+    }
+    return false;
+  }
+}
+
+/**
+ * Hapus file lama jika URL berubah (setelah DB update sukses).
+ */
+export async function replaceUploadUrl(oldUrl, newUrl) {
+  if (!oldUrl || !newUrl || String(oldUrl) === String(newUrl)) return false;
+  return safeUnlinkUploadUrl(oldUrl);
+}
+
+/**
  * Automatically creates target subfolder inside UPLOAD_BASE_DIR if it doesn't exist yet
  *
  * @param {string} subFolder - Relative subfolder path (e.g. 'assets/evidence', 'assets/payment_receipt')

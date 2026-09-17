@@ -7,6 +7,7 @@ import { computeAccumulatedWorkPercentage, refreshHeaderWorkPercentage, nextLife
 import { consumeServiceBom } from '../utils/inventoryStock.js';
 import { generateAccessCode } from '../utils/accessCode.js';
 import { buildCustomerTrackingUrl } from '../utils/customerTrackingUrl.js';
+import { replaceUploadUrl, safeUnlinkAbsPath } from '../middleware/upload.js';
 import path from 'path';
 
 const resolveCashierName = async (employeeId) => {
@@ -1478,6 +1479,7 @@ export const settlePaymentBatch = async (req, res) => {
     const batchId = batchResult.insertId;
 
     const settledTransactions = [];
+    const orphanedProofUrls = [];
 
     for (const item of items) {
       const [orderRows] = await connection.query(
@@ -1492,6 +1494,10 @@ export const settlePaymentBatch = async (req, res) => {
       const amountToPay = parseFloat(item.amountToPay) || (grandTotal - currentPaid);
       const newPaidAmount = Math.min(grandTotal, currentPaid + amountToPay);
       const newStatus = newPaidAmount >= grandTotal ? 'Lunas' : 'DP';
+
+      if (paymentProofUrl && order.payment_proof_url && paymentProofUrl !== order.payment_proof_url) {
+        orphanedProofUrls.push(order.payment_proof_url);
+      }
 
       await connection.query(
         `UPDATE tr_transaction 
@@ -1539,6 +1545,10 @@ export const settlePaymentBatch = async (req, res) => {
     }
 
     await connection.commit();
+
+    for (const oldUrl of orphanedProofUrls) {
+      await replaceUploadUrl(oldUrl, paymentProofUrl);
+    }
 
     emitDashboardRefresh('transaction:updated', {
       outletId,
@@ -1733,10 +1743,11 @@ export const uploadPaymentProof = async (req, res) => {
 
     const proofUrl = buildPaymentProofUrl(path.basename(req.file.filename || req.file.path));
     const [orderRows] = await myWaschenPool.query(
-      'SELECT id, outlet_id FROM tr_transaction WHERE id = ? OR order_no = ? LIMIT 1',
+      'SELECT id, outlet_id, payment_proof_url FROM tr_transaction WHERE id = ? OR order_no = ? LIMIT 1',
       [id, id]
     );
     if (!orderRows.length) {
+      await safeUnlinkAbsPath(req.file.path);
       return res.status(404).json({ success: false, message: 'Nota tidak ditemukan' });
     }
 
@@ -1745,6 +1756,8 @@ export const uploadPaymentProof = async (req, res) => {
       'UPDATE tr_transaction SET payment_proof_url = ?, updated_at = NOW() WHERE id = ?',
       [proofUrl, order.id]
     );
+
+    await replaceUploadUrl(order.payment_proof_url, proofUrl);
 
     emitDashboardRefresh('transaction:updated', { outletId: order.outlet_id, transactionId: order.id });
 
@@ -1755,6 +1768,7 @@ export const uploadPaymentProof = async (req, res) => {
     });
   } catch (error) {
     console.error('Error uploadPaymentProof:', error);
+    if (req.file?.path) await safeUnlinkAbsPath(req.file.path);
     return res.status(500).json({
       success: false,
       message: 'Gagal upload bukti pembayaran',

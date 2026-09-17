@@ -1,7 +1,7 @@
 import path from 'path';
 import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
-import { buildUploadPublicUrl, PETTY_CASH_EVIDENCE_SUBDIR } from '../middleware/upload.js';
+import { buildUploadPublicUrl, PETTY_CASH_EVIDENCE_SUBDIR, safeUnlinkAbsPath, safeUnlinkUploadUrl } from '../middleware/upload.js';
 
 const APPROVED_STATUS = 'Disetujui';
 const PENDING_STATUS = 'Pengajuan';
@@ -184,6 +184,7 @@ export const addPettyCashEntry = async (req, res) => {
 
     const numAmount = parseFloat(amount);
     if (!type || !description || isNaN(numAmount) || numAmount <= 0) {
+      if (req.file?.path) await safeUnlinkAbsPath(req.file.path);
       return res.status(400).json({
         success: false,
         message: 'Tipe (Masuk/Keluar), Keterangan, dan Nominal wajib diisi dengan benar'
@@ -235,6 +236,7 @@ export const addPettyCashEntry = async (req, res) => {
     });
   } catch (error) {
     console.error('Error recording petty cash entry:', error);
+    if (req.file?.path) await safeUnlinkAbsPath(req.file.path);
     return res.status(500).json({
       success: false,
       message: 'Gagal mengajukan transaksi kas kecil',
@@ -283,11 +285,16 @@ export const reviewPettyCashEntry = async (req, res) => {
     if (action === 'reject') {
       await connection.query(
         `UPDATE tr_petty_cash
-         SET status = ?, rejected_reason = ?, approved_by_employee_id = ?, approved_at = NOW(), updated_at = NOW()
+         SET status = ?, rejected_reason = ?, approved_by_employee_id = ?, approved_at = NOW(),
+             receipt_photo_url = NULL, updated_at = NOW()
          WHERE id = ?`,
         [REJECTED_STATUS, rejectedReason || 'Ditolak', reviewerId, id]
       );
       await connection.commit();
+
+      if (entry.receipt_photo_url) {
+        await safeUnlinkUploadUrl(entry.receipt_photo_url);
+      }
 
       emitDashboardRefresh('petty-cash:updated', { outletId: entry.outlet_id, status: REJECTED_STATUS });
 

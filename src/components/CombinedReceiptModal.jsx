@@ -113,7 +113,10 @@ export default function CombinedReceiptModal({
 
     try {
       const formData = new FormData();
-      formData.append('image', file);
+      formData.append('proof', file);
+      if (paymentProofUrl) {
+        formData.append('oldUrl', paymentProofUrl);
+      }
       const res = await axios.post('/api/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
