@@ -25,7 +25,7 @@ export const mainPool = mysql.createPool({
   timezone: '+07:00',
   waitForConnections: true,
   connectionLimit: 10,
-  maxIdle: 10,
+  maxIdle: 2,                   // harus < connectionLimit agar idleTimeout mereap koneksi nganggur
   idleTimeout: 60000,
   queueLimit: 0,
   enableKeepAlive: true,
@@ -42,7 +42,7 @@ export const myWaschenPool = mysql.createPool({
   timezone: '+07:00',
   waitForConnections: true,
   connectionLimit: 10,
-  maxIdle: 10,
+  maxIdle: 2,                   // harus < connectionLimit agar idleTimeout mereap koneksi nganggur
   idleTimeout: 60000,
   queueLimit: 0,
   enableKeepAlive: true,
