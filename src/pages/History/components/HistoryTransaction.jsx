@@ -1133,7 +1133,6 @@ export default function HistoryTransaction({
       <ModalLacakNota
         isOpen={isLacakModalOpen}
         onClose={() => setIsLacakModalOpen(false)}
-        autoOpenScanner
       />
 
       {showPayPinModal && (

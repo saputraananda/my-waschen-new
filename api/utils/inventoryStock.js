@@ -61,29 +61,41 @@ export async function recalcStockSisa(connection, stockId, usageDateYmd) {
 }
 
 export async function ensureStockRow(connection, outletId, itemId) {
-  const [existing] = await connection.query(
-    `SELECT id, qty_opening, qty_current, min_stock, par_stock, period_start, is_active
-     FROM tr_inventory_stock
-     WHERE outlet_id = ? AND item_id = ?
-     LIMIT 1`,
-    [outletId, itemId]
-  );
+  const selectSql = `
+    SELECT id, qty_opening, qty_current, min_stock, par_stock, period_start, is_active
+    FROM tr_inventory_stock
+    WHERE outlet_id = ? AND item_id = ?
+    LIMIT 1`;
+
+  const [existing] = await connection.query(selectSql, [outletId, itemId]);
   if (existing.length) return existing[0];
 
-  const [ins] = await connection.query(
-    `INSERT INTO tr_inventory_stock (outlet_id, item_id, qty_opening, qty_current, min_stock, par_stock, is_active)
-     VALUES (?, ?, 0, 0, 0, 0, 1)`,
-    [outletId, itemId]
-  );
-  return {
-    id: ins.insertId,
-    qty_opening: 0,
-    qty_current: 0,
-    min_stock: 0,
-    par_stock: 0,
-    period_start: null,
-    is_active: 1
-  };
+  try {
+    const [ins] = await connection.query(
+      `INSERT IGNORE INTO tr_inventory_stock
+         (outlet_id, item_id, qty_opening, qty_current, min_stock, par_stock, is_active)
+       VALUES (?, ?, 0, 0, 0, 0, 1)`,
+      [outletId, itemId]
+    );
+    if (ins.insertId) {
+      return {
+        id: ins.insertId,
+        qty_opening: 0,
+        qty_current: 0,
+        min_stock: 0,
+        par_stock: 0,
+        period_start: null,
+        is_active: 1
+      };
+    }
+  } catch (err) {
+    if (err?.code !== 'ER_LOCK_DEADLOCK' && err?.code !== 'ER_DUP_ENTRY') throw err;
+  }
+
+  // Race / deadlock: baris mungkin sudah dibuat transaksi lain
+  const [again] = await connection.query(selectSql, [outletId, itemId]);
+  if (again.length) return again[0];
+  throw new Error('Gagal membuat baris stok inventory');
 }
 
 /**

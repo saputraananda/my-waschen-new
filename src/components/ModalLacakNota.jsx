@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { formatName } from '../utils/FormatName';
@@ -283,6 +284,14 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '', a
     }
   }, [isOpen, stopScanner]);
 
+  const handleCancelScanner = useCallback(async () => {
+    await stopScanner();
+    // Tombol Scan dari tabel: batal kamera = tutup semua (hindari modal Lacak Status menimpa)
+    if (autoOpenScanner && !trackedOrder) {
+      onClose?.();
+    }
+  }, [stopScanner, autoOpenScanner, trackedOrder, onClose]);
+
   const handleOpenWA = (phone, name, orderNo, status) => {
     let rawPhone = (phone || '').replace(/[^0-9]/g, '');
     if (rawPhone.startsWith('0')) rawPhone = '62' + rawPhone.slice(1);
@@ -307,8 +316,61 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '', a
 
   const currentStageIndex = trackedOrder ? getStageIndex(trackedOrder.work_status || trackedOrder.workStatus) : 0;
 
-  return (
-    <div className="fixed inset-0 z-50 bg-[#313030]/60 backdrop-blur-sm flex justify-center items-center p-3 sm:p-5 md:p-6 overflow-y-auto">
+  const scannerOverlay = isScannerOpen ? (
+    <div className="fixed inset-0 z-[300] bg-black/80 flex justify-center items-center p-3 sm:p-4">
+      <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-md shadow-2xl overflow-hidden max-h-[85dvh] flex flex-col my-auto relative z-[301]">
+        <div className="p-4 border-b border-[#e0e0e0] flex justify-between items-center bg-[#f8f8f8] shrink-0">
+          <div className="flex items-center gap-2">
+            <Camera className="h-4 w-4 text-[#5f1340]" />
+            <div>
+              <h4 className="text-sm font-black text-[#313030]">Scan Barcode / QR Nota</h4>
+              <p className="text-[10px] text-slate-400">Arahkan kamera ke QR tracking / barcode struk</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleCancelScanner}
+            className="p-1.5 hover:bg-slate-200 rounded-xl text-slate-500 cursor-pointer"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-4 flex flex-col gap-3">
+          {scannerError ? (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-bold">
+              {scannerError}
+            </div>
+          ) : (
+            <p className="text-[11px] text-slate-500 font-medium text-center">
+              Mendeteksi otomatis — nota akan dilacak setelah terbaca
+            </p>
+          )}
+
+          <div
+            id={SCANNER_ELEMENT_ID}
+            className="w-full overflow-hidden rounded-2xl border border-[#e0e0e0] bg-black min-h-[280px] relative z-[1]"
+          />
+
+          <button
+            type="button"
+            onClick={handleCancelScanner}
+            className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-xl text-xs cursor-pointer"
+          >
+            Batal
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  // Saat kamera aktif: hanya overlay scanner (jangan tampilkan modal Lacak Status di belakang)
+  if (isScannerOpen) {
+    return createPortal(scannerOverlay, document.body);
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[200] bg-[#313030]/70 flex justify-center items-center p-3 sm:p-5 md:p-6 overflow-y-auto">
       <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-3xl shadow-2xl overflow-hidden animate-fade-in flex flex-col max-h-[84dvh] sm:max-h-[86dvh] md:max-h-[88dvh] my-auto">
         
         {/* Modal Header Bar */}
@@ -647,54 +709,7 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '', a
           </button>
         </div>
       </div>
-
-      {isScannerOpen && (
-        <div className="fixed inset-0 z-[70] bg-[#313030]/80 backdrop-blur-sm flex justify-center items-center p-3 sm:p-4">
-          <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-md shadow-2xl overflow-hidden max-h-[85dvh] flex flex-col my-auto">
-            <div className="p-4 border-b border-[#e0e0e0] flex justify-between items-center bg-[#f8f8f8] shrink-0">
-              <div className="flex items-center gap-2">
-                <Camera className="h-4 w-4 text-[#5f1340]" />
-                <div>
-                  <h4 className="text-sm font-black text-[#313030]">Scan Barcode / QR Nota</h4>
-                  <p className="text-[10px] text-slate-400">Arahkan kamera ke QR tracking / barcode struk</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={stopScanner}
-                className="p-1.5 hover:bg-slate-200 rounded-xl text-slate-500 cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="p-4 flex flex-col gap-3">
-              {scannerError ? (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-bold">
-                  {scannerError}
-                </div>
-              ) : (
-                <p className="text-[11px] text-slate-500 font-medium text-center">
-                  Mendeteksi otomatis — nota akan dilacak setelah terbaca
-                </p>
-              )}
-
-              <div
-                id={SCANNER_ELEMENT_ID}
-                className="w-full overflow-hidden rounded-2xl border border-[#e0e0e0] bg-black min-h-[280px]"
-              />
-
-              <button
-                type="button"
-                onClick={stopScanner}
-                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-xl text-xs cursor-pointer"
-              >
-                Batal
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    </div>,
+    document.body
   );
 }

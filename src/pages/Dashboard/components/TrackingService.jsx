@@ -352,10 +352,7 @@ export default function TrackingService({
       <div className="p-4 sm:p-5 border-b border-[#e0e0e0]/70 bg-slate-50/50 flex flex-col gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="text-base font-extrabold text-[#313030] tracking-tight">Antrean Cucian Hari Ini</h3>
-            <span className="px-2.5 py-0.5 rounded-full bg-[#5f1340]/10 text-[#5f1340] text-[10px] font-black border border-[#5f1340]/15">
-              {displayOrders.length} Order
-            </span>
+            <h3 className="text-base font-extrabold text-[#313030] tracking-tight">Tabel Transaksi</h3>
           </div>
           <p className="text-xs text-slate-400 font-medium mt-0.5">Filter berdasarkan progress nota, pembayaran & pengambilan barang</p>
         </div>
@@ -1085,7 +1082,6 @@ export default function TrackingService({
       <ModalLacakNota
         isOpen={isLacakModalOpen}
         onClose={() => setIsLacakModalOpen(false)}
-        autoOpenScanner
       />
 
       {showPayPinModal && (

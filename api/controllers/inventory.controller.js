@@ -107,7 +107,7 @@ export const createInventoryItem = async (req, res) => {
     if (seedOutlets) {
       await connection.query(
         `INSERT IGNORE INTO tr_inventory_stock (outlet_id, item_id, qty_opening, qty_current, min_stock, par_stock, is_active)
-         SELECT o.id, ?, 0, 0, 0, 0, 1 FROM mst_outlet o`,
+         SELECT o.id, ?, 0, 0, 0, 0, 1 FROM mst_outlet o ORDER BY o.id ASC`,
         [itemId]
       );
     }
@@ -561,24 +561,39 @@ export const ensureOutletStockRows = async (req, res) => {
       return res.status(400).json({ success: false, message: 'outletId wajib' });
     }
 
-    const [result] = await myWaschenPool.query(
-      `INSERT IGNORE INTO tr_inventory_stock (outlet_id, item_id, qty_opening, qty_current, min_stock, par_stock, is_active)
-       SELECT ?, i.id, 0, 0, 0, 0, 1
-       FROM mst_inventory_item i
-       WHERE i.is_active = 1`,
-      [outletId]
-    );
+    const sql = `
+      INSERT IGNORE INTO tr_inventory_stock
+        (outlet_id, item_id, qty_opening, qty_current, min_stock, par_stock, is_active)
+      SELECT ?, i.id, 0, 0, 0, 0, 1
+      FROM mst_inventory_item i
+      WHERE i.is_active = 1
+      ORDER BY i.id ASC`;
+
+    const maxAttempts = 3;
+    let result = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        [result] = await myWaschenPool.query(sql, [outletId]);
+        break;
+      } catch (err) {
+        // MySQL: deadlock saat concurrent ensure / ensureStockRow / seed item
+        if (err?.code !== 'ER_LOCK_DEADLOCK' || attempt === maxAttempts) throw err;
+        await new Promise((r) => setTimeout(r, 40 * attempt + Math.floor(Math.random() * 40)));
+      }
+    }
 
     return res.status(200).json({
       success: true,
       message: 'Baris stok outlet disinkronkan',
-      data: { affectedRows: result.affectedRows }
+      data: { affectedRows: result?.affectedRows || 0 }
     });
   } catch (error) {
     console.error('ensureOutletStockRows:', error);
     return res.status(500).json({
       success: false,
-      message: 'Gagal sinkron stok outlet',
+      message: error?.code === 'ER_LOCK_DEADLOCK'
+        ? 'Server sibuk (deadlock stok). Coba refresh lagi.'
+        : 'Gagal sinkron stok outlet',
       error: error.message
     });
   }

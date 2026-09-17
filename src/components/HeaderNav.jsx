@@ -11,7 +11,8 @@ import {
   ArrowLeft,
   FileText,
   Download,
-  Printer
+  Printer,
+  RefreshCw
 } from 'lucide-react';
 
 export default function HeaderNav({
@@ -159,6 +160,16 @@ export default function HeaderNav({
 
         {/* Shift Details & Profile Dropdown */}
         <div className="flex items-center gap-2 sm:gap-4 text-xs font-bold text-slate-600 shrink-0">
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            title="Muat ulang halaman"
+            className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-[#e0e0e0] hover:border-[#5f1340]/40 text-[#313030] font-bold text-[11px] sm:text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+          >
+            <RefreshCw className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#5f1340]" />
+            <span>Refresh</span>
+          </button>
+
           <div className="text-left leading-tight hidden md:block pr-2">
             <span className="text-[11px] font-bold text-[#313030] block">{shiftLabel}</span>
           </div>
