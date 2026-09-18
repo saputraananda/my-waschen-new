@@ -8,6 +8,7 @@ import { consumeServiceBom } from '../utils/inventoryStock.js';
 import { generateAccessCode } from '../utils/accessCode.js';
 import { buildCustomerTrackingUrl } from '../utils/customerTrackingUrl.js';
 import { replaceUploadUrl, safeUnlinkAbsPath } from '../middleware/upload.js';
+import { toWibYmdCompact, formatWibTime } from '../utils/wib.js';
 import path from 'path';
 
 const resolveCashierName = async (employeeId) => {
@@ -34,11 +35,7 @@ const resolveCashierName = async (employeeId) => {
  * Example: WLRH202608250001, WLCG202608250001
  */
 const generateOrderNo = async (outletId = 2) => {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  const dateStr = `${yyyy}${mm}${dd}`;
+  const dateStr = toWibYmdCompact();
 
   // 1. Get outlet_code from DB
   let outletCode = 'CG';
@@ -629,7 +626,7 @@ export const getTransactions = async (req, res) => {
         ...order,
         items,
         logs: logs.map(l => l.notes || l.status),
-        createdAtFormatted: new Date(order.order_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+        createdAtFormatted: formatWibTime(order.order_date)
       };
     }));
 
@@ -1431,7 +1428,7 @@ export const settlePaymentBatch = async (req, res) => {
 
     await connection.beginTransaction();
 
-    const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const datePrefix = toWibYmdCompact();
     const [countRows] = await connection.query(
       "SELECT COUNT(*) AS total FROM tr_payment_batch WHERE DATE(created_at) = CURDATE()"
     );

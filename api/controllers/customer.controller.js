@@ -1,6 +1,7 @@
 import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 import { normalizePhone, composeFullAddress } from '../utils/phone.js';
+import { getWibYearMonth, formatWibDateLong } from '../utils/wib.js';
 
 const CUSTOMER_SELECT = `
   SELECT c.*,
@@ -129,9 +130,9 @@ const resolveOutletIdForCustomer = async (preferredOutletId, homeBranch) => {
 };
 
 const generateCustomerCode = async (outletId = 2) => {
-  const now = new Date();
-  const yy = String(now.getFullYear()).slice(-2);
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const { year, month } = getWibYearMonth();
+  const yy = String(year).slice(-2);
+  const mm = String(month).padStart(2, '0');
   const yymm = `${yy}${mm}`;
   const outletCode = await resolveOutletCode(outletId);
   const prefix = `CUS${outletCode}${yymm}`;
@@ -263,11 +264,7 @@ export const getCustomerById = async (req, res) => {
         orderId: o.order_no,
         dbId: o.id,
         amount: parseFloat(o.grand_total) || 0,
-        date: new Date(o.order_date).toLocaleDateString('id-ID', {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric'
-        }),
+        date: formatWibDateLong(o.order_date) || '-',
         items: itemsLabel,
         category: o.order_category,
         paymentStatus: o.payment_status,

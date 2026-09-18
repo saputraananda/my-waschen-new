@@ -1,4 +1,5 @@
 import { myWaschenPool, mainPool } from '../db/pool.js';
+import { getWibYearMonth } from '../utils/wib.js';
 
 const activeOrder = 'ORDER BY id ASC';
 
@@ -114,9 +115,9 @@ export const getOutlets = async (req, res) => {
 export const getTargetRevenue = async (req, res) => {
   try {
     const { outlet, outlet_id, tahun, bulan } = req.query;
-    const now = new Date();
-    const currentYear = tahun ? parseInt(tahun) : now.getFullYear();
-    const currentMonth = bulan ? parseInt(bulan) : (now.getMonth() + 1);
+    const { year: wibYear, month: wibMonth } = getWibYearMonth();
+    const currentYear = tahun ? parseInt(tahun) : wibYear;
+    const currentMonth = bulan ? parseInt(bulan) : wibMonth;
 
     let targetNominal = 0;
     const targetOutletId = outlet_id || (outlet && !isNaN(outlet) ? parseInt(outlet) : null);

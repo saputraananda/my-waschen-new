@@ -1,11 +1,13 @@
+import { getWibYearMonth } from './wib.js';
+
 /**
  * Tier spending organik: VIP, Gold, Reguler, One-Time
  * Dipisah dari membership (Diamond/Gold paket deposit).
  */
 
 const currentPeriod = () => {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const { year, month } = getWibYearMonth();
+  return `${year}-${String(month).padStart(2, '0')}`;
 };
 
 export const resolveSpendingTierId = (tiers, { monthlySpending, totalOrders }) => {

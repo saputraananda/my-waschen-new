@@ -1,6 +1,7 @@
 import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 import { buildUploadPublicUrl, DEPOSIT_REPORT_FRONTLINER_SUBDIR, replaceUploadUrl, safeUnlinkAbsPath } from '../middleware/upload.js';
+import { todayWibISO, formatWibWeekdayUpper, formatWibDateLong } from '../utils/wib.js';
 import path from 'path';
 
 const formatRp = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
@@ -63,12 +64,9 @@ const buildReportText = async ({ outletId, shift, transactions, pettyExpenses, s
     if (rows.length) outletName = rows[0].full_name || rows[0].name;
   } catch (_) { /* ignore */ }
 
-  const dayNames = ['MINGGU', 'SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU'];
   const closedAt = shift.closed_at ? new Date(shift.closed_at) : new Date();
-  const hari = dayNames[closedAt.getDay()];
-  const tanggal = closedAt.toLocaleDateString('id-ID', {
-    day: '2-digit', month: 'long', year: 'numeric'
-  });
+  const hari = formatWibWeekdayUpper(closedAt);
+  const tanggal = formatWibDateLong(closedAt);
 
   const byMethod = {};
   let tunai = 0;
@@ -793,7 +791,7 @@ export const closeShift = async (req, res) => {
 export const getDailyReport = async (req, res) => {
   try {
     const outletId = parseInt(req.query.outlet_id) || 2;
-    const date = req.query.date || new Date().toISOString().slice(0, 10);
+    const date = req.query.date || todayWibISO();
 
     const [shifts] = await myWaschenPool.query(
       `SELECT * FROM tr_cashier_shift

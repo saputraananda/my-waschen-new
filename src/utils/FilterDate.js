@@ -1,21 +1,24 @@
 /**
- * Helpers filter / format tanggal untuk Riwayat & Dashboard.
+ * Helpers filter / format tanggal untuk Riwayat & Dashboard — selalu WIB.
  */
+import { toWibDateKey, todayWibISO, WIB_TZ } from './wib.js';
+
 export function toDateInputValue(date = new Date()) {
-  const d = date instanceof Date ? date : new Date(date);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toISOString().slice(0, 10);
+  return toWibDateKey(date) || '';
 }
 
 export function formatDateId(date, options = { dateStyle: 'medium', timeStyle: 'short' }) {
+  if (date == null || date === '') return '-';
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleString('id-ID', options);
+  return d.toLocaleString('id-ID', { timeZone: WIB_TZ, ...options });
 }
 
 export function matchesDateFilter(orderDate, dateFilterYmd) {
   if (!dateFilterYmd) return true;
-  const d = orderDate instanceof Date ? orderDate : new Date(orderDate);
-  if (Number.isNaN(d.getTime())) return false;
-  return toDateInputValue(d) === dateFilterYmd;
+  const key = toWibDateKey(orderDate);
+  if (!key) return false;
+  return key === dateFilterYmd;
 }
+
+export { todayWibISO, toWibDateKey };

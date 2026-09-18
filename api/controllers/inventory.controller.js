@@ -1,8 +1,9 @@
 import { myWaschenPool } from '../db/pool.js';
 import { applyStockMovement, ensureStockRow, recalcStockSisa } from '../utils/inventoryStock.js';
+import { todayWibISO, formatWibTime } from '../utils/wib.js';
 
 function todayYmd() {
-  return new Date().toISOString().slice(0, 10);
+  return todayWibISO();
 }
 
 function parseUsageDate(raw) {
@@ -487,7 +488,7 @@ export const saveStockOpname = async (req, res) => {
     const currentQty = parseFloat(existing?.qty_used) || 0;
     const newQty = isReset ? Math.max(0, deltaRaw) : Math.max(0, currentQty + delta);
 
-    const timeLabel = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    const timeLabel = formatWibTime(new Date()) || '';
     let logLine;
     if (isReset) {
       logLine = `${timeLabel} set ${newQty} (dari ${currentQty})`;

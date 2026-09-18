@@ -1,21 +1,13 @@
 /**
  * Cutoff Waschen: tanggal 26 bulan sebelumnya → 25 bulan berjalan
  * (atau 26 bulan ini → 25 bulan berikutnya jika hari ≥ 26).
+ * Semua kunci tanggal memakai kalender Asia/Jakarta.
  */
+import { toWibDateKey } from './wib.js';
 
 const pad2 = (n) => String(n).padStart(2, '0');
 
-export const toDateKey = (value) => {
-  if (!value) return '';
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`;
-  }
-  const s = String(value).trim();
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-};
+export const toDateKey = (value) => toWibDateKey(value) || '';
 
 export const formatDateKeyId = (key) => {
   if (!key) return '—';
@@ -30,27 +22,25 @@ export const formatDateKeyId = (key) => {
  * @returns {{ start: string, end: string, label: string }} YYYY-MM-DD
  */
 export const getCutoffRange = (ref = new Date()) => {
-  const y = ref.getFullYear();
-  const m = ref.getMonth(); // 0-based
-  const day = ref.getDate();
+  const key = toWibDateKey(ref);
+  const [y, m, day] = (key || '1970-01-01').split('-').map(Number);
+  const monthIndex = m - 1; // 0-based
 
   let startY;
-  let startM; // 0-based
+  let startM;
   let endY;
   let endM;
 
   if (day >= 26) {
-    // 26 bulan ini → 25 bulan depan
     startY = y;
-    startM = m;
-    endY = m === 11 ? y + 1 : y;
-    endM = m === 11 ? 0 : m + 1;
+    startM = monthIndex;
+    endY = monthIndex === 11 ? y + 1 : y;
+    endM = monthIndex === 11 ? 0 : monthIndex + 1;
   } else {
-    // 26 bulan lalu → 25 bulan ini
-    startY = m === 0 ? y - 1 : y;
-    startM = m === 0 ? 11 : m - 1;
+    startY = monthIndex === 0 ? y - 1 : y;
+    startM = monthIndex === 0 ? 11 : monthIndex - 1;
     endY = y;
-    endM = m;
+    endM = monthIndex;
   }
 
   const start = `${startY}-${pad2(startM + 1)}-26`;
@@ -62,16 +52,8 @@ export const getCutoffRange = (ref = new Date()) => {
   };
 };
 
-/**
- * Bulan cutoff = bulan tanggal akhir (25). Format 'YYYY-MM'.
- * @param {Date} [ref=new Date()]
- */
 export const getCutoffMonthKey = (ref = new Date()) => getCutoffRange(ref).end.slice(0, 7);
 
-/**
- * Periode cutoff untuk bulan pilihan user: 26 bulan sebelumnya → 25 bulan tersebut.
- * @param {string} monthKey 'YYYY-MM'
- */
 export const getCutoffRangeForMonth = (monthKey) => {
   const [y, m] = String(monthKey || '').split('-').map(Number);
   if (!y || !m || m < 1 || m > 12) return getCutoffRange();
@@ -98,10 +80,6 @@ export const getOrderDateKey = (order) => {
   );
 };
 
-/**
- * @param {object} order
- * @param {{ mode: 'cutoff'|'range'|'all', start?: string, end?: string, cutoffMonth?: string }} filter
- */
 export const passesDateModeFilter = (order, filter) => {
   if (!filter || filter.mode === 'all') return true;
 
@@ -118,7 +96,6 @@ export const passesDateModeFilter = (order, filter) => {
   if (filter.mode === 'range') {
     const start = filter.start || '';
     const end = filter.end || '';
-    if (!start && !end) return true;
     if (start && key < start) return false;
     if (end && key > end) return false;
     return true;

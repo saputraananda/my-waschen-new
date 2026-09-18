@@ -4,22 +4,24 @@
  * qty selalu positif; arah ditentukan movement_type.
  */
 
+import { todayWibISO, toWibDateKey, getWibYearMonth } from './wib.js';
+
 /**
  * Pastikan baris tr_inventory_stock ada untuk outlet+item.
  */
 function monthStartYmd(dateYmd) {
-  const d = dateYmd ? new Date(`${dateYmd}T00:00:00`) : new Date();
-  if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 8) + '01';
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  return `${y}-${m}-01`;
+  const key = toWibDateKey(dateYmd) || todayWibISO();
+  const { year, month } = getWibYearMonth(`${key}T12:00:00+07:00`);
+  // Jika dateYmd adalah string YYYY-MM-DD, ambil Y-M langsung
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(dateYmd || ''))) {
+    return `${String(dateYmd).slice(0, 7)}-01`;
+  }
+  return `${year}-${String(month).padStart(2, '0')}-01`;
 }
 
 export function resolvePeriodStart(stockRow, usageDateYmd) {
   if (stockRow?.period_start) {
-    const ps = stockRow.period_start instanceof Date
-      ? stockRow.period_start.toISOString().slice(0, 10)
-      : String(stockRow.period_start).slice(0, 10);
+    const ps = toWibDateKey(stockRow.period_start);
     if (ps) return ps;
   }
   return monthStartYmd(usageDateYmd);
@@ -38,7 +40,7 @@ export async function recalcStockSisa(connection, stockId, usageDateYmd) {
 
   const stock = rows[0];
   const periodStart = resolvePeriodStart(stock, usageDateYmd);
-  const endDate = usageDateYmd || new Date().toISOString().slice(0, 10);
+  const endDate = usageDateYmd || todayWibISO();
 
   const [[sumRow]] = await connection.query(
     `SELECT COALESCE(SUM(qty_used), 0) AS total

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav';
 import { formatEmployeeName } from '../../utils/FormatName.js';
+import { todayWibISO } from '../../utils/wib.js';
 import { Copy, FileText, Banknote } from 'lucide-react';
 
 export default function DailyReport() {
@@ -11,7 +12,7 @@ export default function DailyReport() {
   const [activeOutletName, setActiveOutletName] = useState(localStorage.getItem('activeOutletName') || '');
   const [activeOutletId, setActiveOutletId] = useState(localStorage.getItem('activeOutletId') || '2');
   const [outlets, setOutlets] = useState([]);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayWibISO());
   const [shifts, setShifts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState(null);

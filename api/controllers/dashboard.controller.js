@@ -1,4 +1,5 @@
 import { myWaschenPool, mainPool } from '../db/pool.js';
+import { getWibYearMonth } from '../utils/wib.js';
 
 /**
  * GET /api/dashboard/stats
@@ -64,9 +65,7 @@ export const getDashboardStats = async (req, res) => {
     // 6. Monthly Target from mst_target_waschen (by outlet_id)
     let monthlyTarget = 50000000;
     try {
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth() + 1;
+      const { year: currentYear, month: currentMonth } = getWibYearMonth();
 
       let targetSql = '';
       let targetParams = [];

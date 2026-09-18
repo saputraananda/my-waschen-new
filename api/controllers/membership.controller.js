@@ -1,4 +1,5 @@
 import { myWaschenPool } from '../db/pool.js';
+import { todayWibISO, toWibDateKey, addWibDays } from '../utils/wib.js';
 
 /**
  * GET /api/memberships/packages
@@ -222,18 +223,17 @@ export const createMembership = async (req, res) => {
       finalTier = currentTier;
     }
 
-    // Hitung tanggal akhir (end_date)
-    const today = new Date();
-    let startDate = today;
-    let endDate = new Date();
+    // Hitung tanggal akhir (end_date) — kalender WIB
+    const todayKey = todayWibISO();
+    let startDate = todayKey;
+    let endDate;
 
-    if (customer.active_end_date && new Date(customer.active_end_date) > today) {
+    const activeEndKey = toWibDateKey(customer.active_end_date);
+    if (activeEndKey && activeEndKey > todayKey) {
       // Perpanjang dari tanggal kadaluarsa aktif saat ini
-      const baseDate = new Date(customer.active_end_date);
-      baseDate.setDate(baseDate.getDate() + validityDays);
-      endDate = baseDate;
+      endDate = addWibDays(activeEndKey, validityDays);
     } else {
-      endDate.setDate(today.getDate() + validityDays);
+      endDate = addWibDays(todayKey, validityDays);
     }
 
     // Nonaktifkan record membership lama jika ada
@@ -253,8 +253,8 @@ export const createMembership = async (req, res) => {
         customerId,
         finalPackageId,
         outletId || 2,
-        startDate.toISOString().split('T')[0],
-        endDate.toISOString().split('T')[0],
+        startDate,
+        endDate,
         topUpAmount
       ]
     );

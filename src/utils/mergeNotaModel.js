@@ -1,5 +1,6 @@
 import { NOTA_WIDTH, wrapNotaText, padNotaRow } from './notaModel.js';
 import { rupiah } from './notaLayout.js';
+import { formatWibDateTime } from './wib.js';
 
 function T(text, extra = {}) {
   return { type: 'text', text: String(text ?? ''), align: 'left', bold: false, size: 'normal', ...extra };
@@ -15,15 +16,7 @@ function header(qrValue, lines) {
 
 function formatBatchDate(batchData) {
   const raw = batchData?.createdAt || batchData?.created_at || batchData?.settledAt;
-  const d = raw ? new Date(raw) : new Date();
-  if (Number.isNaN(d.getTime())) return new Date().toLocaleString('id-ID');
-  return d.toLocaleString('id-ID', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  return formatWibDateTime(raw || new Date()) || '-';
 }
 
 /**
