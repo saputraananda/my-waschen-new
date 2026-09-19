@@ -47,9 +47,11 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`=========================================`);
-  console.log(`  My Waschen Server Status: Running     `);
-  console.log(`  Port: http://localhost:${PORT}        `);
-  console.log(`  Socket.io: enabled                   `);
-  console.log(`=========================================`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`=========================================`);
+    console.log(`  My Waschen Server Status: Running     `);
+    console.log(`  Port: http://localhost:${PORT}        `);
+    console.log(`  Socket.io: enabled                   `);
+    console.log(`=========================================`);
+  }
 });
