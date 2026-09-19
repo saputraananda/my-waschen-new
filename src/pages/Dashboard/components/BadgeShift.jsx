@@ -2,17 +2,34 @@ import React, { useEffect, useState } from 'react';
 import { AlertCircle, Clock, User, Wallet } from 'lucide-react';
 import { formatEmployeeName } from '../../../utils/FormatName.js';
 import { formatDateId } from '../../../utils/FilterDate.js';
+import axios from 'axios';
 
 function getMinutesNow() {
   const now = new Date();
   return now.getHours() * 60 + now.getMinutes();
 }
 
+function timeToMin(t) {
+  if (!t) return null;
+  const m = String(t).match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+function formatDot(t) {
+  if (!t) return '--.--';
+  const m = String(t).match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return String(t);
+  return `${m[1].padStart(2, '0')}.${m[2]}`;
+}
+
+const FALLBACK_SHIFTS = [
+  { shift_number: 1, name: 'Shift Pagi', open_time: '08:00:00', close_time: '17:00:00', remind_open: 1, remind_close: 1 },
+  { shift_number: 2, name: 'Shift Siang', open_time: '10:30:00', close_time: '20:00:00', remind_open: 1, remind_close: 1 }
+];
+
 /**
- * Badge shift:
- * - Loading (shift belum dicek) → skeleton netral, BUKAN "Belum Open"
- * - Belum open (setelah dicek) → reminder open shift
- * - Shift aktif + lewat jam closing → kedip close shift
+ * Badge shift — jam open/close dari mst_time_shift (Alsa Master Absen dan Shift).
  */
 export default function BadgeShift({
   shift,
@@ -22,19 +39,17 @@ export default function BadgeShift({
   onOpenShift
 }) {
   const [minutes, setMinutes] = useState(getMinutesNow);
+  const [shiftsCfg, setShiftsCfg] = useState(FALLBACK_SHIFTS);
 
   useEffect(() => {
     const tick = () => setMinutes(getMinutesNow());
     tick();
-
     const intervalId = setInterval(tick, 30_000);
-
     const onVisible = () => {
       if (document.visibilityState === 'visible') tick();
     };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', tick);
-
     return () => {
       clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onVisible);
@@ -42,10 +57,22 @@ export default function BadgeShift({
     };
   }, []);
 
-  const afterOpenReminder = minutes >= 8 * 60;
+  useEffect(() => {
+    let cancelled = false;
+    axios.get('/api/masters/time-config', { timeout: 10000 })
+      .then((res) => {
+        const list = res.data?.data?.shifts;
+        if (!cancelled && Array.isArray(list) && list.length) setShiftsCfg(list);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const shift1 = shiftsCfg.find((s) => Number(s.shift_number) === 1) || FALLBACK_SHIFTS[0];
+  const openRemindMin = timeToMin(shift1.open_time) ?? 8 * 60;
+  const afterOpenReminder = Number(shift1.remind_open) !== 0 && minutes >= openRemindMin;
   const isOpen = shift && shift.status === 'Open';
 
-  // Masih loading / optimistic belum dikonfirmasi API — jangan tampilkan "Belum Open"
   if (!shiftChecked && !isOpen) {
     return (
       <div className="w-full flex items-center gap-3 px-4 py-3 bg-slate-50 border border-[#e0e0e0] rounded-2xl shadow-xs">
@@ -59,7 +86,6 @@ export default function BadgeShift({
     );
   }
 
-  // Belum open shift — hanya setelah API selesai dicek
   if (!isOpen) {
     return (
       <button
@@ -76,7 +102,7 @@ export default function BadgeShift({
           <div className="min-w-0">
             <span className={`text-xs font-black block truncate ${afterOpenReminder ? 'text-sky-900' : 'text-amber-900'}`}>
               {afterOpenReminder
-                ? 'Belum Open Shift — sudah lewat jam 08.00'
+                ? `Belum Open Shift — sudah lewat jam ${formatDot(shift1.open_time)}`
                 : 'Belum Open Shift'}
             </span>
             <span className={`text-[10px] font-medium flex items-center gap-1 mt-0.5 ${afterOpenReminder ? 'text-sky-700' : 'text-amber-700'}`}>
@@ -95,17 +121,19 @@ export default function BadgeShift({
   }
 
   const sn = Number(shift.shift_number) || 1;
-  const threshold = sn === 1 ? 17 * 60 : 20 * 60;
-  const isPastClosing = minutes >= threshold;
+  const cfg = shiftsCfg.find((s) => Number(s.shift_number) === sn) || (sn === 2 ? FALLBACK_SHIFTS[1] : FALLBACK_SHIFTS[0]);
+  const closeMin = timeToMin(cfg.close_time) ?? (sn === 1 ? 17 * 60 : 20 * 60);
+  const isPastClosing = Number(cfg.remind_close) !== 0 && minutes >= closeMin;
   const isBackup = currentEmployeeId
     && Number(shift.cashier_employee_id) !== Number(currentEmployeeId);
 
   const openerLabel = formatEmployeeName(shift.opener_name);
   const lastActiveLabel = formatEmployeeName(shift.last_active_name);
+  const shiftName = cfg.name || (sn === 1 ? 'Shift Pagi' : 'Shift Siang');
 
   const closingLabel = sn === 1
-    ? 'Shift Pagi belum Closing (lewat jam 17.00) — pilih Handover atau Finalisasi'
-    : 'Shift Siang belum Closing Final (lewat jam 20.00)';
+    ? `${shiftName} belum Closing (lewat jam ${formatDot(cfg.close_time)}) — pilih Handover atau Finalisasi`
+    : `${shiftName} belum Closing Final (lewat jam ${formatDot(cfg.close_time)})`;
 
   return (
     <div className="space-y-2">
@@ -114,57 +142,33 @@ export default function BadgeShift({
           <User className="h-4 w-4 text-[#5f1340] shrink-0 mt-0.5" />
           <div className="min-w-0 text-xs">
             <span className="font-black text-[#313030] block">
-              Shift {sn === 1 ? 'Pagi' : 'Siang'} · dibuka oleh {openerLabel}
+              {shiftName} · dibuka oleh {openerLabel}
             </span>
             <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
               {shift.opened_at
-                ? `Sejak ${formatDateId(shift.opened_at, { dateStyle: 'medium', timeStyle: 'short' })}`
-                : 'Sesi kas outlet aktif'}
-              {shift.last_active_name && shift.last_active_name !== shift.opener_name && (
-                <> · terakhir aktif: {lastActiveLabel}</>
-              )}
+                ? `Sejak ${formatDateId(shift.opened_at)}`
+                : 'Shift aktif'}
+              {lastActiveLabel ? ` · terakhir aktif: ${lastActiveLabel}` : ''}
             </span>
-            {isBackup && (
-              <span className="text-[10px] text-amber-700 font-bold block mt-1">
-                Anda melanjutkan shift ini sebagai kasir pengganti — saat closing, Anda yang menutup shift.
-              </span>
-            )}
           </div>
         </div>
-        {onOpenClose && (
-          <button
-            type="button"
-            onClick={onOpenClose}
-            className="px-3 py-1.5 bg-[#5f1340]/10 text-[#5f1340] text-[10px] font-black rounded-xl shrink-0 hover:bg-[#5f1340]/15 cursor-pointer"
-          >
-            Closing Shift
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onOpenClose}
+          className="shrink-0 px-3 py-1.5 rounded-xl bg-[#5f1340] text-white text-[10px] font-black hover:bg-[#4a0f32]"
+        >
+          {isBackup ? 'Close (Backup)' : 'Close Shift'}
+        </button>
       </div>
 
       {isPastClosing && (
         <button
           type="button"
           onClick={onOpenClose}
-          className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 px-3.5 sm:px-4 py-3 bg-amber-50 border border-amber-300 rounded-2xl text-left cursor-pointer hover:bg-amber-100 transition-colors shadow-xs animate-pulse"
+          className="w-full flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-rose-50 border border-rose-200 text-left animate-pulse"
         >
-          <div className="flex items-start sm:items-center gap-2.5 min-w-0">
-            <AlertCircle className="h-5 w-5 text-amber-700 shrink-0 mt-0.5 sm:mt-0" />
-            <div className="min-w-0 flex-1">
-              <span className="text-xs font-black text-amber-900 block leading-snug">{closingLabel}</span>
-              <span className="text-[10px] text-amber-700 font-medium flex items-center gap-1 mt-0.5">
-                <Clock className="h-3 w-3 shrink-0" />
-                <span>
-                  {isBackup
-                    ? 'Kasir pembuka sudah logout — tutup shift sebagai pengganti'
-                    : 'Klik untuk membuka modal Closing Shift'}
-                </span>
-              </span>
-            </div>
-          </div>
-          <span className="px-3.5 py-1.5 bg-amber-600 text-white text-[10px] sm:text-xs font-black rounded-xl shrink-0 self-end sm:self-auto text-center shadow-xs">
-            Closing Sekarang
-          </span>
+          <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+          <span className="text-[11px] font-bold text-rose-800">{closingLabel}</span>
         </button>
       )}
     </div>

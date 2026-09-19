@@ -409,6 +409,30 @@ export const openShift = async (req, res) => {
       }
     }
 
+    // Enforce jam open dari mst_time_shift (jika aktif)
+    try {
+      const [shiftCfg] = await myWaschenPool.query(
+        `SELECT open_time, close_time, enforce_open, name
+         FROM mst_time_shift WHERE shift_number = ? AND is_active = 1 LIMIT 1`,
+        [sn]
+      );
+      if (shiftCfg.length && Number(shiftCfg[0].enforce_open) === 1) {
+        const ot = String(shiftCfg[0].open_time || '');
+        const m = ot.match(/^(\d{1,2}):(\d{2})/);
+        if (m) {
+          const openMin = Number(m[1]) * 60 + Number(m[2]);
+          const now = new Date();
+          const nowMin = now.getHours() * 60 + now.getMinutes();
+          if (nowMin < openMin) {
+            return res.status(400).json({
+              success: false,
+              message: `Belum waktunya open ${shiftCfg[0].name || `Shift ${sn}`}. Jam open: ${m[1].padStart(2, '0')}:${m[2]}.`
+            });
+          }
+        }
+      }
+    } catch (_) { /* tabel master opsional */ }
+
     const [result] = await myWaschenPool.query(
       `INSERT INTO tr_cashier_shift
        (outlet_id, cashier_employee_id, shift_number, opened_at,
@@ -653,6 +677,30 @@ export const closeShift = async (req, res) => {
     if (sn === 2 && resolvedCloseType !== 'Final') {
       return res.status(400).json({ success: false, message: 'Shift Siang harus close bertipe Final' });
     }
+
+    // Enforce jam close dari mst_time_shift (jika aktif)
+    try {
+      const [shiftCfg] = await myWaschenPool.query(
+        `SELECT close_time, enforce_close, name
+         FROM mst_time_shift WHERE shift_number = ? AND is_active = 1 LIMIT 1`,
+        [sn]
+      );
+      if (shiftCfg.length && Number(shiftCfg[0].enforce_close) === 1) {
+        const ct = String(shiftCfg[0].close_time || '');
+        const m = ct.match(/^(\d{1,2}):(\d{2})/);
+        if (m) {
+          const closeMin = Number(m[1]) * 60 + Number(m[2]);
+          const now = new Date();
+          const nowMin = now.getHours() * 60 + now.getMinutes();
+          if (nowMin < closeMin) {
+            return res.status(400).json({
+              success: false,
+              message: `Belum waktunya close ${shiftCfg[0].name || `Shift ${sn}`}. Jam close: ${m[1].padStart(2, '0')}:${m[2]}.`
+            });
+          }
+        }
+      }
+    } catch (_) { /* tabel master opsional */ }
 
     // Nota milik shift ini. Nota delivery sudah diklaim saat open shift
     // (lihat adoptOrphanTransactions), jadi cukup filter shift_id.

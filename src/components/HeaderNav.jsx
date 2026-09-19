@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import axios from 'axios';
 import waschenLogo from '../assets/images/waschen.webp';
 import { formatEmployeeName } from '../utils/FormatName.js';
 import { logoutSession } from '../utils/authSession.js';
@@ -79,19 +80,49 @@ export default function HeaderNav({
     navigate('/dashboard');
   };
 
+  const [shiftTimes, setShiftTimes] = useState({
+    1: { name: 'Shift Pagi', open: '08.00', close: '17.00' },
+    2: { name: 'Shift Siang', open: '10.30', close: '20.00' }
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    axios.get('/api/masters/time-config', { timeout: 10000 })
+      .then((res) => {
+        const list = res.data?.data?.shifts || [];
+        if (cancelled || !list.length) return;
+        const map = {};
+        list.forEach((s) => {
+          const sn = Number(s.shift_number);
+          const ot = String(s.open_time || '').slice(0, 5).replace(':', '.');
+          const ct = String(s.close_time || '').slice(0, 5).replace(':', '.');
+          map[sn] = { name: s.name || `Shift ${sn}`, open: ot, close: ct };
+        });
+        setShiftTimes((prev) => ({ ...prev, ...map }));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   const shiftLabel = (() => {
     if (!activeShift) {
       if (shiftCtx?.mustGateShift && shiftCtx?.shiftChecked === false) {
         return 'Cek shift…';
       }
       const sn = localStorage.getItem('shiftNumber');
-      if (sn === '2') return 'Shift Siang (10.30 - 20.00)';
-      if (sn === '1') return 'Shift Pagi (08.00 - 17.00)';
+      if (sn === '2') {
+        const t = shiftTimes[2];
+        return `${t.name} (${t.open} - ${t.close})`;
+      }
+      if (sn === '1') {
+        const t = shiftTimes[1];
+        return `${t.name} (${t.open} - ${t.close})`;
+      }
       return 'Belum Open Shift';
     }
-    return Number(activeShift.shift_number) === 2
-      ? 'Shift Siang (10.30 - 20.00)'
-      : 'Shift Pagi (08.00 - 17.00)';
+    const sn = Number(activeShift.shift_number) === 2 ? 2 : 1;
+    const t = shiftTimes[sn];
+    return `${t.name} (${t.open} - ${t.close})`;
   })();
 
   return (

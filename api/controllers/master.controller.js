@@ -269,3 +269,83 @@ export const getMaterials = async (req, res) => {
     return res.status(500).json({ success: false, message: 'Gagal mengambil data bahan/material', error: error.message });
   }
 };
+
+function normalizeTime(v) {
+  if (v == null) return null;
+  if (typeof v === 'string') {
+    const m = v.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (!m) return null;
+    return `${String(m[1]).padStart(2, '0')}:${m[2]}:${m[3] || '00'}`;
+  }
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    return `${String(v.getHours()).padStart(2, '0')}:${String(v.getMinutes()).padStart(2, '0')}:${String(v.getSeconds()).padStart(2, '0')}`;
+  }
+  return null;
+}
+
+/** GET /api/masters/time-config — jam absensi/grooming/shift dari master Alsa */
+export const getTimeConfig = async (_req, res) => {
+  try {
+    const [[att]] = await myWaschenPool.query(
+      `SELECT * FROM mst_time_attendance WHERE is_active = 1 ORDER BY id ASC LIMIT 1`
+    );
+    const [[groom]] = await myWaschenPool.query(
+      `SELECT * FROM mst_time_grooming WHERE is_active = 1 ORDER BY id ASC LIMIT 1`
+    );
+    const [shifts] = await myWaschenPool.query(
+      `SELECT * FROM mst_time_shift WHERE is_active = 1 ORDER BY sort_order ASC, shift_number ASC`
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        attendance: att
+          ? {
+              ...att,
+              open_time: normalizeTime(att.open_time),
+              close_time: normalizeTime(att.close_time),
+              lock_start_time: normalizeTime(att.lock_start_time),
+              lock_end_time: normalizeTime(att.lock_end_time),
+              work_date_cutoff_time: normalizeTime(att.work_date_cutoff_time)
+            }
+          : null,
+        grooming: groom
+          ? {
+              ...groom,
+              window1_start: normalizeTime(groom.window1_start),
+              window1_end: normalizeTime(groom.window1_end),
+              window2_start: normalizeTime(groom.window2_start),
+              window2_end: normalizeTime(groom.window2_end),
+              lock_after_time: normalizeTime(groom.lock_after_time)
+            }
+          : null,
+        shifts: (shifts || []).map((s) => ({
+          ...s,
+          open_time: normalizeTime(s.open_time),
+          close_time: normalizeTime(s.close_time),
+          shift_number: Number(s.shift_number),
+          remind_open: Number(s.remind_open) ? 1 : 0,
+          remind_close: Number(s.remind_close) ? 1 : 0,
+          enforce_open: Number(s.enforce_open) ? 1 : 0,
+          enforce_close: Number(s.enforce_close) ? 1 : 0
+        }))
+      }
+    });
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE') {
+      return res.status(200).json({
+        success: true,
+        data: {
+          attendance: null,
+          grooming: null,
+          shifts: [
+            { shift_number: 1, code: 'pagi', name: 'Shift Pagi', open_time: '08:00:00', close_time: '17:00:00', remind_open: 1, remind_close: 1, enforce_open: 0, enforce_close: 0 },
+            { shift_number: 2, code: 'siang', name: 'Shift Siang', open_time: '10:30:00', close_time: '20:00:00', remind_open: 1, remind_close: 1, enforce_open: 0, enforce_close: 0 }
+          ]
+        }
+      });
+    }
+    console.error('getTimeConfig:', error);
+    return res.status(500).json({ success: false, message: 'Gagal mengambil master jam', error: error.message });
+  }
+};

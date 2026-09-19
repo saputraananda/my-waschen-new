@@ -10,7 +10,8 @@ import {
   getCustomerTiers,
   getWorkStatuses,
   getLaundryMethods,
-  getMaterials
+  getMaterials,
+  getTimeConfig
 } from '../controllers/master.controller.js';
 
 const router = express.Router();
@@ -26,5 +27,6 @@ router.get('/customer-tiers', getCustomerTiers);
 router.get('/work-statuses', getWorkStatuses);
 router.get('/laundry-methods', getLaundryMethods);
 router.get('/materials', getMaterials);
+router.get('/time-config', getTimeConfig);
 
 export default router;

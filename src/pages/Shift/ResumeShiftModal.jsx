@@ -1,7 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
 import { formatRupiah } from '../../utils/FormatRupiah.js';
 import { formatEmployeeName } from '../../utils/FormatName.js';
 import { Clock, User, Wallet, ArrowRight, AlertCircle } from 'lucide-react';
+
+function formatDot(t) {
+  if (!t) return '--.--';
+  const m = String(t).match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return String(t);
+  return `${m[1].padStart(2, '0')}.${m[2]}`;
+}
 
 export default function ResumeShiftModal({
   shift,
@@ -11,13 +19,31 @@ export default function ResumeShiftModal({
 }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [shiftLabel, setShiftLabel] = useState('');
 
   const sn = Number(shift?.shift_number) || 1;
-  const shiftLabel = sn === 2 ? 'Shift Siang (10.30 - 20.00)' : 'Shift Pagi (08.00 - 17.00)';
   const openedAt = shift?.opened_at ? new Date(shift.opened_at) : null;
   const isSameOpener = Number(shift?.cashier_employee_id) === Number(currentEmployeeId);
   const lastActiveName = formatEmployeeName(shift?.last_active_name);
   const openerName = formatEmployeeName(shift?.opener_name);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fallback = sn === 2
+      ? 'Shift Siang (10.30 - 20.00)'
+      : 'Shift Pagi (08.00 - 17.00)';
+    setShiftLabel(fallback);
+    axios.get('/api/masters/time-config', { timeout: 10000 })
+      .then((res) => {
+        const list = res.data?.data?.shifts || [];
+        const cfg = list.find((s) => Number(s.shift_number) === sn);
+        if (!cancelled && cfg) {
+          setShiftLabel(`${cfg.name || `Shift ${sn}`} (${formatDot(cfg.open_time)} - ${formatDot(cfg.close_time)})`);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [sn]);
 
   const handleConfirm = async () => {
     setSubmitting(true);
