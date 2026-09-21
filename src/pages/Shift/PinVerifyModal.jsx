@@ -17,7 +17,7 @@ export default function PinVerifyModal({
   onCancel,
   onVerified,
   title = 'Konfirmasi PIN Kasir',
-  description = 'Masukkan PIN frontliner (jumlah digit bebas) untuk atribusi kasir.',
+  description = 'Masukkan PIN 4 digit frontliner untuk atribusi kasir.',
   submitLabel = 'Lanjut Simpan Nota'
 }) {
   const [pin, setPin] = useState('');
@@ -27,8 +27,8 @@ export default function PinVerifyModal({
   const handleSubmit = async (e) => {
     e.preventDefault();
     const cleanPin = String(pin || '').replace(/\D/g, '');
-    if (!cleanPin) {
-      setError('PIN wajib diisi');
+    if (cleanPin.length !== 4) {
+      setError('PIN harus 4 digit');
       return;
     }
     setLoading(true);
@@ -99,7 +99,8 @@ export default function PinVerifyModal({
             inputMode="numeric"
             autoFocus
             value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            maxLength={4}
             placeholder="Contoh : 1234"
             className="w-full px-4 py-3 border border-[#e0e0e0] rounded-xl text-center text-lg font-black tracking-[0.35em] outline-none focus:border-[#5f1340]"
           />

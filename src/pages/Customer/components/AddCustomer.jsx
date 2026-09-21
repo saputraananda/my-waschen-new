@@ -6,7 +6,7 @@ import { normalizePhone, composeFullAddress } from '../../../utils/NormalizePhon
 import { ArrowLeft, Save, RotateCcw } from 'lucide-react';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 
-const GREETINGS = ['Pak', 'Bu', 'Mas', 'Mba', 'Kakak', 'Nyonya', 'Nona', 'Ananda', 'Tuan', 'Mr.', 'Mrs.'];
+const GREETINGS = ['Tuan', 'Nyonya', 'Nona'];
 
 const emptyForm = (activeOutletName, defaults = {}) => ({
   name: '',

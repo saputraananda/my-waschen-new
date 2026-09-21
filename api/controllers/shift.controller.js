@@ -894,8 +894,8 @@ export const verifyPin = async (req, res) => {
     const mode = String(req.body.mode || 'pin').toLowerCase();
     const pin = String(codePin || '').trim().replace(/\D/g, '');
 
-    if (!pin) {
-      return res.status(400).json({ success: false, message: 'codePin wajib diisi' });
+    if (pin.length !== 4) {
+      return res.status(400).json({ success: false, message: 'PIN harus 4 digit' });
     }
 
     const outletFilter = outletId != null && outletId !== '' && !Number.isNaN(Number(outletId))
