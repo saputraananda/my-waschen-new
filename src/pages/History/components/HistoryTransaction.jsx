@@ -38,6 +38,7 @@ import { mapDbTransactionToReceipt } from '../../../utils/printerSettings.js';
 
 export default function HistoryTransaction({
   transactions,
+  transactionsLoading = false,
   setTransactions,
   outlets,
   fetchTransactions
@@ -554,7 +555,7 @@ export default function HistoryTransaction({
       {/* Table / empty state ringkas */}
       {displayOrders.length === 0 ? (
         <div className="px-5 py-6 text-center text-xs text-slate-400 font-semibold">
-          Tidak ada data riwayat transaksi yang sesuai dengan filter.
+          {transactionsLoading ? 'Memuat riwayat transaksi…' : 'Tidak ada data riwayat transaksi yang sesuai dengan filter.'}
         </div>
       ) : (
       <div className="overflow-x-auto">

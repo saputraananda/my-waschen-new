@@ -523,6 +523,8 @@ export const createTransaction = async (req, res) => {
 export const getTransactions = async (req, res) => {
   try {
     const { outlet_id, work_status, payment_status, category, search, limit } = req.query;
+    // lite=1: daftar ringkas (riwayat). Tanpa item, log, dan subquery batch pembayaran.
+    const lite = req.query.lite === '1' || req.query.lite === 'true';
 
     let sql = `
       SELECT t.*, 
@@ -538,7 +540,11 @@ export const getTransactions = async (req, res) => {
              COALESCE(o.full_name, o.name, c.home_branch, 'Outlet Waschen') as outlet_name,
              sp.name as speed_name,
              p.name as parfume_name,
-             COALESCE(NULLIF(TRIM(r.employee_name), ''), CONCAT('Kasir #', t.cashier_employee_id)) as cashier_name,
+             COALESCE(
+               (SELECT NULLIF(TRIM(employee_name), '') FROM mst_role WHERE employee_id = t.cashier_employee_id LIMIT 1),
+               CONCAT('Kasir #', t.cashier_employee_id)
+             ) as cashier_name
+             ${lite ? '' : `,
              (
                SELECT b.batch_no
                FROM tr_payment_batch_item bi
@@ -554,14 +560,13 @@ export const getTransactions = async (req, res) => {
                WHERE bi.transaction_id = t.id
                ORDER BY bi.id DESC
                LIMIT 1
-             ) as payment_batch_id
+             ) as payment_batch_id`}
       FROM tr_transaction t
       LEFT JOIN mst_customer c ON c.id = t.customer_id
       LEFT JOIN mst_customer_tier ct ON c.spending_tier_id = ct.id
       LEFT JOIN mst_outlet o ON o.id = t.outlet_id
       LEFT JOIN mst_service_speed sp ON t.speed_id = sp.id
       LEFT JOIN mst_parfume p ON t.parfume_id = p.id
-      LEFT JOIN mst_role r ON r.employee_id = t.cashier_employee_id
       WHERE 1=1
     `;
     const params = [];
@@ -607,27 +612,56 @@ export const getTransactions = async (req, res) => {
 
     const [rows] = await myWaschenPool.query(sql, params);
 
-    // Attach items & logs count
-    const enriched = await Promise.all(rows.map(async (order) => {
-      const [logs] = await myWaschenPool.query(
-        'SELECT notes, status, created_at FROM tr_transaction_status_log WHERE transaction_id = ? ORDER BY id ASC',
-        [order.id]
+    if (lite) {
+      return res.status(200).json({
+        success: true,
+        data: rows.map((order) => ({
+          ...order,
+          items: [],
+          logs: [],
+          createdAtFormatted: formatWibTime(order.order_date)
+        }))
+      });
+    }
+
+    // Item & log diambil sekali untuk seluruh halaman, bukan 2 query per nota.
+    const ids = rows.map((order) => order.id);
+    const logsByTxn = new Map();
+    const itemsByTxn = new Map();
+    if (ids.length) {
+      const [allLogs] = await myWaschenPool.query(
+        `SELECT transaction_id, notes, status
+         FROM tr_transaction_status_log
+         WHERE transaction_id IN (?)
+         ORDER BY id ASC`,
+        [ids]
       );
-      const [items] = await myWaschenPool.query(
+      const [allItems] = await myWaschenPool.query(
         `SELECT td.*,
                 COALESCE(td.service_name, s.name) as service_name,
                 s.code as service_code
          FROM tr_transaction_detail td
          LEFT JOIN mst_service s ON s.id = td.service_id
-         WHERE td.transaction_id = ?`,
-        [order.id]
+         WHERE td.transaction_id IN (?)`,
+        [ids]
       );
-      return {
-        ...order,
-        items,
-        logs: logs.map(l => l.notes || l.status),
-        createdAtFormatted: formatWibTime(order.order_date)
-      };
+      for (const log of allLogs) {
+        const list = logsByTxn.get(log.transaction_id) || [];
+        list.push(log.notes || log.status);
+        logsByTxn.set(log.transaction_id, list);
+      }
+      for (const item of allItems) {
+        const list = itemsByTxn.get(item.transaction_id) || [];
+        list.push(item);
+        itemsByTxn.set(item.transaction_id, list);
+      }
+    }
+
+    const enriched = rows.map((order) => ({
+      ...order,
+      items: itemsByTxn.get(order.id) || [],
+      logs: logsByTxn.get(order.id) || [],
+      createdAtFormatted: formatWibTime(order.order_date)
     }));
 
     return res.status(200).json({

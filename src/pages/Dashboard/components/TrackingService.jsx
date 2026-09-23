@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
+  ChevronLeft,
+  ChevronRight,
   Printer,
   CheckCircle2,
   Clock,
@@ -29,8 +31,9 @@ import TransactionBarcodeCard from '../../../components/TransactionBarcodeCard.j
 import ModalLacakNota from '../../../components/ModalLacakNota.jsx';
 import ChangeFulfillmentModal from '../../../components/ChangeFulfillmentModal.jsx';
 import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
+import { useShiftOptional } from '../../../context/ShiftContext.jsx';
 import DateModeFilter from '../../../components/DateModeFilter.jsx';
-import { passesDateModeFilter } from '../../../utils/dateCutoffFilter.js';
+import { passesDateModeFilter, formatDateKeyId, getOrderDateKey } from '../../../utils/dateCutoffFilter.js';
 import {
   sendCustomerNotaWhatsAppFromOrder,
   describeCustomerNotaWaResult
@@ -39,6 +42,7 @@ import {
 export default function TrackingService({
   filteredOrders,
   orders,
+  ordersLoading = false,
   searchQuery,
   setSearchQuery,
   activeFilterTab,
@@ -56,6 +60,13 @@ export default function TrackingService({
 }) {
   const navigate = useNavigate();
   const { showAlert } = useAppDialog();
+  const shiftCtx = useShiftOptional();
+  const ensureShiftForOrder = shiftCtx?.ensureShiftForOrder;
+  /** Shift belum dibuka → munculkan modal Open Shift dan batalkan aksi, sama
+   *  seperti stat card & menu cepat di dashboard. */
+  const guardShift = () => (
+    typeof ensureShiftForOrder === 'function' ? ensureShiftForOrder() : true
+  );
   const [selectedOrderModal, setSelectedOrderModal] = useState(null);
   const [isLacakModalOpen, setIsLacakModalOpen] = useState(false);
   const [workStatusOptions, setWorkStatusOptions] = useState(DEFAULT_WORK_STATUSES);
@@ -81,6 +92,8 @@ export default function TrackingService({
   const [sendingNotaWa, setSendingNotaWa] = useState(false);
   const [fulfillmentModalOpen, setFulfillmentModalOpen] = useState(false);
   const [showPayPinModal, setShowPayPinModal] = useState(false);
+  const [pageSize, setPageSize] = useState(50);
+  const [page, setPage] = useState(1);
 
   const normalizePaymentStatus = (status) => {
     if (status === 'Belum Lunas') return 'Outstanding';
@@ -132,6 +145,7 @@ export default function TrackingService({
   };
 
   const openOrderModal = (order) => {
+    if (!guardShift()) return;
     setSelectedOrderModal(order);
   };
 
@@ -179,6 +193,8 @@ export default function TrackingService({
 
   const openPaymentModal = async (order, e) => {
     if (e) e.stopPropagation();
+    // Tombol bayar menghentikan propagasi, jadi guard row tidak kena — cek lagi.
+    if (!guardShift()) return;
     const initialBalance = parseFloat(
       order.memberBalance ?? order.member_balance ?? order.customerBalance ?? order.deposit_balance ?? order.customer_deposit_balance ?? 0
     ) || 0;
@@ -340,6 +356,17 @@ export default function TrackingService({
   // filteredOrders sudah difilter tab antrean di Dashboard; di sini hanya filter tanggal
   const displayOrders = filteredOrders.filter(passesDateFilter);
 
+  const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(displayOrders.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = pageSize === 'all' ? 0 : (currentPage - 1) * pageSize;
+  const pagedOrders = pageSize === 'all'
+    ? displayOrders
+    : displayOrders.slice(pageStart, pageStart + pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, activeFilterTab, dateMode, rangeStart, rangeEnd, cutoffMonth, pageSize]);
+
   const getTabCount = (tabName) => {
     const baseList = orders.filter(passesDateFilter);
     if (tabName === 'Semua') return baseList.length;
@@ -438,7 +465,7 @@ export default function TrackingService({
       {/* Table / empty state ringkas */}
       {displayOrders.length === 0 ? (
         <div className="px-5 py-6 text-center text-xs text-slate-400 font-semibold">
-          Tidak ada data antrean yang sesuai dengan filter.
+          {ordersLoading ? 'Memuat transaksi…' : 'Tidak ada data antrean yang sesuai dengan filter.'}
         </div>
       ) : (
       <div className="overflow-x-auto">
@@ -446,6 +473,7 @@ export default function TrackingService({
           <thead>
             <tr className="border-b border-[#e0e0e0]/70 text-[10px] uppercase font-extrabold text-slate-400 tracking-wider bg-slate-50/70">
               <th className="py-3.5 px-6">No. Struk Nota</th>
+              <th className="py-3.5 px-6">Tanggal Pembuatan Nota</th>
               <th className="py-3.5 px-6 text-center">Pelanggan</th>
               <th className="py-3.5 px-6 text-center">Status Pengerjaan</th>
               <th className="py-3.5 px-6">Tagihan</th>
@@ -454,7 +482,7 @@ export default function TrackingService({
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e0e0e0]/40 text-xs font-medium">
-              {displayOrders.map((order) => {
+              {pagedOrders.map((order) => {
                 const workPct = getWorkPercentage(order.workStatus);
                 const pctTone = percentageTone(workPct);
 
@@ -475,6 +503,13 @@ export default function TrackingService({
                           </span>
                         )}
                       </div>
+                    </td>
+
+                    <td className="py-3.5 px-6 whitespace-nowrap">
+                      <span className="font-bold text-[#313030] block">{formatDateKeyId(getOrderDateKey(order))}</span>
+                      {order.createdAt && order.createdAt !== '-' && (
+                        <span className="text-[10px] text-slate-400 font-semibold">{order.createdAt}</span>
+                      )}
                     </td>
 
                     {/* Pelanggan */}
@@ -570,8 +605,50 @@ export default function TrackingService({
       )}
 
       {/* Table footer */}
-      <div className="px-4 py-2.5 border-t border-[#e0e0e0]/70 bg-slate-50/50 flex justify-between items-center text-[10px] text-slate-400 font-bold">
-        <span>Menampilkan {displayOrders.length} dari {orders.length} transaksi terdaftar</span>
+      <div className="px-4 py-2.5 border-t border-[#e0e0e0]/70 bg-slate-50/50 flex flex-wrap justify-between items-center gap-2 text-[10px] text-slate-400 font-bold">
+        <span>
+          Menampilkan {pagedOrders.length === 0 ? 0 : pageStart + 1}–{pageStart + pagedOrders.length} dari {displayOrders.length} transaksi
+        </span>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5">
+            <span>Baris</span>
+            <select
+              value={String(pageSize)}
+              onChange={(e) => setPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+              className="px-2 py-1 rounded-lg border border-[#e0e0e0] bg-white text-[11px] font-bold text-[#313030] outline-none focus:border-[#5f1340] cursor-pointer"
+            >
+              <option value="10">10</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="all">All</option>
+            </select>
+          </label>
+          {pageSize !== 'all' && (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setPage(Math.max(1, currentPage - 1))}
+                className="p-1.5 rounded-lg border border-[#e0e0e0] bg-white disabled:opacity-40 hover:bg-slate-100 cursor-pointer disabled:cursor-not-allowed"
+                aria-label="Halaman sebelumnya"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <span className="min-w-[4.5rem] text-center text-[#313030]">
+                {currentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
+                className="p-1.5 rounded-lg border border-[#e0e0e0] bg-white disabled:opacity-40 hover:bg-slate-100 cursor-pointer disabled:cursor-not-allowed"
+                aria-label="Halaman berikutnya"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Modal Rincian Status Per Item */}

@@ -10,7 +10,6 @@ import Banner from './components/Banner.jsx';
 import Menu from './components/Menu.jsx';
 import StatCard from './components/StatCard.jsx';
 import PettyCashCard from './components/PettyCashCard.jsx';
-import CustomerChurn from './components/CustomerChurn.jsx';
 import TrackingService from './components/TrackingService.jsx';
 import ModalLacakNota from '../../components/ModalLacakNota.jsx';
 import BadgeShift from './components/BadgeShift.jsx';
@@ -27,6 +26,7 @@ export default function Dashboard() {
   const { showAlert } = useAppDialog();
   const [userProfile, setUserProfile] = useState(null);
   const refreshTimerRef = useRef(null);
+  const fetchSeqRef = useRef(0);
 
   // Modal Lacak Nota State
   const [isLacakNotaModalOpen, setIsLacakNotaModalOpen] = useState(false);
@@ -58,9 +58,7 @@ export default function Dashboard() {
 
   // Live orders state from database
   const [orders, setOrders] = useState([]);
-
-  // Live customers state from database
-  const [customers, setCustomers] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
 
   // Live cash logs & float from database (initial_petty_cash, bukan initial_cash)
   const [cashLogs, setCashLogs] = useState([]);
@@ -70,8 +68,6 @@ export default function Dashboard() {
   const [activeFilterTab, setActiveFilterTab] = useState('Semua');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Customer Churn Filter State
-  const [churnFilter, setChurnFilter] = useState('Semua');
 
   // Authenticate & Session Check
   useEffect(() => {
@@ -106,17 +102,18 @@ export default function Dashboard() {
   }, [navigate]);
 
   const fetchLiveDashboardData = useCallback(async () => {
-    try {
-      const [trxRes, custRes, pettyRes] = await Promise.all([
-        axios.get('/api/transactions'),
-        axios.get('/api/customers'),
-        axios.get('/api/petty-cash', {
-          params: { outlet_id: localStorage.getItem('activeOutletId') || undefined }
-        })
-      ]);
+    const getJson = async (url, config) => {
+      const opts = { timeout: 20000, ...config };
+      try {
+        return await axios.get(url, opts);
+      } catch (err) {
+        // 4xx bukan masalah jaringan — jangan diulang.
+        if (err.response && err.response.status < 500) throw err;
+        return axios.get(url, opts);
+      }
+    };
 
-      if (trxRes.data && trxRes.data.success) {
-        const mappedOrders = (trxRes.data.data || []).map(o => ({
+    const mapOrders = (rows) => (rows || []).map(o => ({
           id: o.order_no,
           dbId: o.id,
           customerId: o.customer_id,
@@ -171,43 +168,49 @@ export default function Dashboard() {
             }
           ]
         }));
-        setOrders(mappedOrders);
-      }
 
-      if (custRes.data && custRes.data.success) {
-        const mappedCusts = (custRes.data.data || []).map(c => ({
-          id: c.customer_code || `CUST-${String(c.id).padStart(3, '0')}`,
-          dbId: c.id,
-          name: c.name,
-          phone: c.phone,
-          tier: c.tier || 'Regular',
-          memberBalance: parseFloat(c.deposit_balance) || 0
-        }));
-        setCustomers(mappedCusts);
-      }
+    const seq = ++fetchSeqRef.current;
+    setOrdersLoading(true);
+    const ordersTask = getJson('/api/transactions')
+      .then((trxRes) => {
+        if (seq !== fetchSeqRef.current) return;
+        if (trxRes.data && trxRes.data.success) setOrders(mapOrders(trxRes.data.data));
+      })
+      .catch((err) => {
+        console.error('Gagal mengambil transaksi dashboard:', err);
+      })
+      .finally(() => {
+        if (seq === fetchSeqRef.current) setOrdersLoading(false);
+      });
 
-      if (pettyRes.data && pettyRes.data.success) {
+    const pettyTask = getJson('/api/petty-cash', {
+      params: { outlet_id: localStorage.getItem('activeOutletId') || undefined }
+    })
+      .then((pettyRes) => {
+        if (!pettyRes.data?.success) return;
         if (pettyRes.data.data) {
           const mappedLogs = pettyRes.data.data
             .filter((p) => (p.status || 'Disetujui') === 'Disetujui')
             .map(p => ({
-            id: p.id,
-            type: p.type,
-            category: p.category,
-            amount: parseFloat(p.amount) || 0,
-            desc: p.description || 'Pencatatan kas',
-            isPettyCash: Number(p.is_petty_cash ?? p.isPettyCash ?? 1) !== 0,
-            time: new Date(p.transaction_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-          }));
+              id: p.id,
+              type: p.type,
+              category: p.category,
+              amount: parseFloat(p.amount) || 0,
+              desc: p.description || 'Pencatatan kas',
+              isPettyCash: Number(p.is_petty_cash ?? p.isPettyCash ?? 1) !== 0,
+              time: new Date(p.transaction_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+            }));
           setCashLogs(mappedLogs);
         }
         if (typeof pettyRes.data.initialPettyCash === 'number' || typeof pettyRes.data.initialFloat === 'number') {
           setInitialPettyCashFloat(pettyRes.data.initialPettyCash ?? pettyRes.data.initialFloat);
         }
-      }
-    } catch (err) {
-      console.error('Gagal mengambil live data dashboard:', err);
-    }
+      })
+      .catch((err) => {
+        console.error('Gagal mengambil petty cash dashboard:', err);
+      });
+
+    await Promise.allSettled([ordersTask, pettyTask]);
   }, []);
 
   // Realtime: refresh dashboard when backend emits changes
@@ -244,78 +247,6 @@ export default function Dashboard() {
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     };
   }, [activeOutletId, fetchLiveDashboardData]);
-
-  // Calculate Churn Status for each customer
-  const customersWithChurn = customers.map(c => {
-    const custOrders = orders.filter(o =>
-      (o.dbId && c.dbId && Number(o.dbId) === Number(c.dbId)) ||
-      (o.customerName && c.name && o.customerName.toLowerCase() === c.name.toLowerCase()) ||
-      (o.customerPhone && c.phone && o.customerPhone === c.phone)
-    );
-
-    let lastOrderDate = null;
-    let daysSinceLast = null;
-    let churnStatus = 'Lost';
-
-    if (custOrders.length > 0) {
-      const sorted = [...custOrders].sort((a, b) => new Date(b.rawDate || b.createdAt) - new Date(a.rawDate || a.createdAt));
-      lastOrderDate = new Date(sorted[0].rawDate || sorted[0].createdAt);
-      const diffMs = new Date() - lastOrderDate;
-      daysSinceLast = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
-
-      if (daysSinceLast < 21) {
-        churnStatus = 'Active';
-      } else if (daysSinceLast <= 45) {
-        churnStatus = 'Warning';
-      } else if (daysSinceLast <= 60) {
-        churnStatus = 'Churn';
-      } else if (daysSinceLast <= 90) {
-        churnStatus = 'Dormant';
-      } else {
-        churnStatus = 'Lost';
-      }
-    } else {
-      churnStatus = 'Lost';
-    }
-
-    return {
-      ...c,
-      lastOrderDate,
-      daysSinceLast,
-      churnStatus
-    };
-  });
-
-  const churnCounts = {
-    Semua: customersWithChurn.length,
-    Active: customersWithChurn.filter(c => c.churnStatus === 'Active').length,
-    Warning: customersWithChurn.filter(c => c.churnStatus === 'Warning').length,
-    Churn: customersWithChurn.filter(c => c.churnStatus === 'Churn').length,
-    Dormant: customersWithChurn.filter(c => c.churnStatus === 'Dormant').length,
-    Lost: customersWithChurn.filter(c => c.churnStatus === 'Lost').length
-  };
-
-  const filteredChurnCustomers = customersWithChurn.filter(c => {
-    if (churnFilter === 'Semua') return true;
-    return c.churnStatus === churnFilter;
-  });
-
-  const renderChurnBadge = (status, days) => {
-    const daysText = days !== null ? `${days} hari lalu` : 'Belum Transaksi';
-    switch (status) {
-      case 'Active':
-        return <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[8px] font-black px-1.5 py-0.5 rounded shadow-2xs">Active &bull; {daysText}</span>;
-      case 'Warning':
-        return <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[8px] font-black px-1.5 py-0.5 rounded shadow-2xs">Warning &bull; {daysText}</span>;
-      case 'Churn':
-        return <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[8px] font-black px-1.5 py-0.5 rounded shadow-2xs">Churn &bull; {daysText}</span>;
-      case 'Dormant':
-        return <span className="bg-purple-50 text-purple-700 border border-purple-200 text-[8px] font-black px-1.5 py-0.5 rounded shadow-2xs">Dormant &bull; {daysText}</span>;
-      case 'Lost':
-      default:
-        return <span className="bg-slate-100 text-slate-600 border border-slate-200 text-[8px] font-black px-1.5 py-0.5 rounded shadow-2xs">Lost &bull; {daysText}</span>;
-    }
-  };
 
   // Fetch monthly target from mst_target_waschen
   useEffect(() => {
@@ -365,7 +296,7 @@ export default function Dashboard() {
     }
   }, [activeOutletName]);
 
-  // Calculate Key Summary Metrics (petty cash / churn tetap; ringkasan di StatCard)
+  // Calculate Key Summary Metrics (petty cash; ringkasan di StatCard)
   // Cash log sum calculations
   const balanceLogs = cashLogs.filter((c) => c.isPettyCash !== false);
   const totalCashIn = balanceLogs.filter(c => c.type === 'Masuk').reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
@@ -401,77 +332,71 @@ export default function Dashboard() {
         onRequestCloseShift={openCloseModal}
       />
 
-      {/* Main Workspace Layout */}
-      <main className="relative z-10 max-w-[1600px] w-full mx-auto p-3 sm:p-4 lg:p-6 flex-grow grid grid-cols-1 xl:grid-cols-4 gap-5 lg:gap-6">
+      {/* Main Workspace Layout — baris atas 3:1, sisanya full width satu kolom. */}
+      <main className="relative z-10 max-w-[1600px] w-full mx-auto p-3 sm:p-4 lg:p-6 flex-grow flex flex-col gap-5 lg:gap-6">
 
-        {/* Left / Middle Main Column */}
-        <div className="xl:col-span-3 flex flex-col gap-5 lg:gap-6">
-          {mustGateShift && (
-            <BadgeShift
-              shift={activeShift}
-              shiftChecked={shiftChecked}
-              currentEmployeeId={localStorage.getItem('employeeId')}
-              onOpenClose={openCloseModal}
-              onOpenShift={() => requestOpenShift()}
+        {/* Baris atas: badge shift + Banner di kiri, Petty Cash di kanan.
+            Badge ikut kolom kiri supaya Petty Cash tetap mulai dari atas. */}
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-5 lg:gap-6 items-start">
+          <div className="xl:col-span-3 flex flex-col gap-5 lg:gap-6">
+            {mustGateShift && (
+              <BadgeShift
+                shift={activeShift}
+                shiftChecked={shiftChecked}
+                currentEmployeeId={localStorage.getItem('employeeId')}
+                onOpenClose={openCloseModal}
+                onOpenShift={() => requestOpenShift()}
+              />
+            )}
+
+            <Banner
+              userProfile={userProfile}
+              navigate={navigate}
+              onOpenLacakNotaModal={() => setIsLacakNotaModalOpen(true)}
+              onOrderClick={startOrderFlow}
             />
-          )}
+          </div>
 
-          <Banner
-            userProfile={userProfile}
-            navigate={navigate}
-            onOpenLacakNotaModal={() => setIsLacakNotaModalOpen(true)}
-            onOrderClick={startOrderFlow}
-          />
-
-          <Menu navigate={navigate} onOrderClick={startOrderFlow} />
-
-          <StatCard
-            orders={orders}
-            monthlyTarget={monthlyTarget}
-            activeOutletId={activeOutletId}
-            activeOutletName={activeOutletName}
-            dateFilter={dateFilter}
-            setActiveFilterTab={setActiveFilterTab}
-          />
-
-          <TrackingService
-            filteredOrders={filteredOrders}
-            orders={orders}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            activeFilterTab={activeFilterTab}
-            setActiveFilterTab={setActiveFilterTab}
-            handlePrintNota={handlePrintNota}
-            fetchLiveDashboardData={fetchLiveDashboardData}
-            dateMode={dateMode}
-            setDateMode={setDateMode}
-            rangeStart={rangeStart}
-            setRangeStart={setRangeStart}
-            rangeEnd={rangeEnd}
-            setRangeEnd={setRangeEnd}
-            cutoffMonth={cutoffMonth}
-            setCutoffMonth={setCutoffMonth}
-          />
+          <div className="xl:col-span-1">
+            <PettyCashCard
+              netCashInDrawer={netCashInDrawer}
+              initialPettyCashFloat={initialPettyCashFloat}
+              totalCashOut={totalCashOut}
+              navigate={navigate}
+            />
+          </div>
         </div>
 
-        {/* Right Sidebar Column */}
-        <div className="xl:col-span-1 flex flex-col gap-5 lg:gap-6">
-          <PettyCashCard
-            netCashInDrawer={netCashInDrawer}
-            initialPettyCashFloat={initialPettyCashFloat}
-            totalCashOut={totalCashOut}
-            navigate={navigate}
-          />
+        <Menu navigate={navigate} onOrderClick={startOrderFlow} />
 
-          <CustomerChurn
-            navigate={navigate}
-            churnFilter={churnFilter}
-            setChurnFilter={setChurnFilter}
-            churnCounts={churnCounts}
-            filteredChurnCustomers={filteredChurnCustomers}
-            renderChurnBadge={renderChurnBadge}
-          />
-        </div>
+        <StatCard
+          orders={orders}
+          monthlyTarget={monthlyTarget}
+          activeOutletId={activeOutletId}
+          activeOutletName={activeOutletName}
+          dateFilter={dateFilter}
+          setActiveFilterTab={setActiveFilterTab}
+        />
+
+        <TrackingService
+          filteredOrders={filteredOrders}
+          orders={orders}
+          ordersLoading={ordersLoading}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          activeFilterTab={activeFilterTab}
+          setActiveFilterTab={setActiveFilterTab}
+          handlePrintNota={handlePrintNota}
+          fetchLiveDashboardData={fetchLiveDashboardData}
+          dateMode={dateMode}
+          setDateMode={setDateMode}
+          rangeStart={rangeStart}
+          setRangeStart={setRangeStart}
+          rangeEnd={rangeEnd}
+          setRangeEnd={setRangeEnd}
+          cutoffMonth={cutoffMonth}
+          setCutoffMonth={setCutoffMonth}
+        />
 
       </main>
 

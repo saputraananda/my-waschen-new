@@ -182,7 +182,8 @@ export default function DetailTransaction() {
       // Fetch outstanding notes for the same customer (by customer_id, bukan nama/HP longgar)
       if (raw.customer_id) {
         axios.get('/api/transactions', {
-          params: { customer_id: raw.customer_id }
+          params: { customer_id: raw.customer_id, lite: 1 },
+          timeout: 20000
         }).then(tRes => {
           if (tRes.data?.data) {
             const mappedList = tRes.data.data.map(rawTx => ({
@@ -273,7 +274,8 @@ export default function DetailTransaction() {
     setIsCombinedModalOpen(true);
     try {
       const res = await axios.get('/api/transactions', {
-        params: { search: order.customerPhone || order.customerName }
+        params: { search: order.customerPhone || order.customerName, lite: 1 },
+        timeout: 20000
       });
       if (res.data?.data && res.data.data.length > 0) {
         const mapped = res.data.data.map(raw => ({

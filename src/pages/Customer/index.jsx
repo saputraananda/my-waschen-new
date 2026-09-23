@@ -4,9 +4,11 @@ import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav';
 import ListCustomer from './components/ListCustomer';
 import AddCustomer from './components/AddCustomer';
+import CustomerChurn from './components/CustomerChurn';
 import {
   Users,
-  Plus
+  Plus,
+  TrendingDown
 } from 'lucide-react';
 
 const mapCustomerFromApi = (c, activeOutletName) => {
@@ -45,6 +47,8 @@ const mapCustomerFromApi = (c, activeOutletName) => {
     depositBalance: parseFloat(c.deposit_balance) || 0,
     registeredAt: formatDateId(c.created_at),
     lastTrx: trxCount > 0 && lastDate ? formatDateId(lastDate) : '-',
+    // Tanggal mentah dipakai analisis churn untuk menghitung selisih hari.
+    lastOrderDate: trxCount > 0 ? lastDate : null,
     source: c.source || c.source_name || '-',
     sourceId: c.customer_source_id,
     notes: c.notes || 'Pelanggan terdaftar Waschen.',
@@ -195,6 +199,21 @@ export default function Customer() {
               <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
               <span className="whitespace-nowrap text-[11px] sm:text-xs">Tambah Customer</span>
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                scrollToTop();
+                setActiveTab('churn');
+              }}
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                activeTab === 'churn'
+                  ? 'bg-[#5f1340] text-white shadow-xs'
+                  : 'text-slate-500 hover:text-[#313030]'
+              }`}
+            >
+              <TrendingDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+              <span className="whitespace-nowrap text-[11px] sm:text-xs">Analisis Churn</span>
+            </button>
           </div>
         </div>
 
@@ -218,6 +237,14 @@ export default function Customer() {
             onSwitchToCatalog={() => { setEditingCustomer(null); setActiveTab('catalog'); }}
             customerToEdit={editingCustomer}
             onCustomerUpdated={handleCustomerUpdated}
+          />
+        )}
+
+        {activeTab === 'churn' && (
+          <CustomerChurn
+            customers={customers}
+            activeOutletName={activeOutletName}
+            onEditCustomer={handleEditCustomer}
           />
         )}
       </main>

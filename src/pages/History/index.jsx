@@ -26,6 +26,7 @@ export default function History() {
 
   // Transactions State
   const [transactions, setTransactions] = useState([]);
+  const [transactionsLoading, setTransactionsLoading] = useState(true);
 
   useEffect(() => {
     document.title = 'Riwayat Transaksi POS | Waschen Laundry';
@@ -57,9 +58,17 @@ export default function History() {
   }, [navigate]);
 
   const fetchTransactions = async () => {
+    const load = () => axios.get('/api/transactions', { params: { lite: 1 }, timeout: 20000 });
+    setTransactionsLoading(true);
     try {
-      const res = await axios.get('/api/transactions');
-      if (res.data && res.data.success && res.data.data.length > 0) {
+      let res;
+      try {
+        res = await load();
+      } catch (err) {
+        if (err.response && err.response.status < 500) throw err;
+        res = await load();
+      }
+      if (res.data && res.data.success) {
         const mapped = res.data.data.map(t => ({
           id: t.order_no,
           dbId: t.id,
@@ -107,6 +116,8 @@ export default function History() {
       }
     } catch (err) {
       console.error('Gagal mengambil data transaksi:', err);
+    } finally {
+      setTransactionsLoading(false);
     }
   };
 
@@ -205,6 +216,7 @@ export default function History() {
         {activeTab === 'history' && (
           <HistoryTransaction
             transactions={transactions}
+            transactionsLoading={transactionsLoading}
             setTransactions={setTransactions}
             outlets={outlets}
             fetchTransactions={fetchTransactions}
