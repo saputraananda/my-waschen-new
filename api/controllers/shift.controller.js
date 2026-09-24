@@ -54,7 +54,7 @@ const enrichShiftRow = async (row) => {
   };
 };
 
-const buildReportText = async ({ outletId, shift, transactions, pettyExpenses, salesCashExpenses }) => {
+const buildReportText = async ({ outletId, shift, transactions, pettyExpenses, salesCashExpenses, declaredTunai, declaredNonTunai }) => {
   let outletName = `Outlet #${outletId}`;
   try {
     const [rows] = await myWaschenPool.query(
@@ -82,6 +82,12 @@ const buildReportText = async ({ outletId, shift, transactions, pettyExpenses, s
     byMethod[key] = (byMethod[key] || 0) + amt;
     if (/tunai|cash/i.test(method)) tunai += amt;
     else nonTunai += amt;
+  }
+
+  if (declaredTunai != null && declaredNonTunai != null) {
+    tunai = declaredTunai;
+    nonTunai = declaredNonTunai;
+    total = tunai + nonTunai;
   }
 
   const methodLines = [
@@ -561,9 +567,23 @@ export const getShiftTransactions = async (req, res) => {
 
     const cashierIds = [...new Set(txns.map((t) => t.cashier_employee_id).filter(Boolean))];
     const nameMap = await getEmployeeNames(cashierIds);
+    const roleMap = {};
+    if (cashierIds.length) {
+      const [roleRows] = await myWaschenPool.query(
+        `SELECT employee_id, role FROM mst_role
+         WHERE employee_id IN (${cashierIds.map(() => '?').join(',')})`,
+        cashierIds
+      );
+      for (const r of roleRows) {
+        const id = Number(r.employee_id);
+        const role = String(r.role || '').trim();
+        if (id && role && !roleMap[id]) roleMap[id] = role;
+      }
+    }
     const enriched = txns.map((t) => ({
       ...t,
-      cashier_name: formatEmployeeLabel(t.cashier_employee_id, nameMap)
+      cashier_name: formatEmployeeLabel(t.cashier_employee_id, nameMap),
+      cashier_role: roleMap[Number(t.cashier_employee_id)] || ''
     }));
 
     return res.status(200).json({
@@ -633,6 +653,8 @@ export const closeShift = async (req, res) => {
       actualCash,
       actualPettyCash,
       declaredRevenue,
+      declaredRevenueTunai,
+      declaredRevenueNonTunai,
       closeType,
       closingNotes,
       cashierEmployeeId
@@ -727,11 +749,17 @@ export const closeShift = async (req, res) => {
 
     const cash = parseFloat(actualCash);
     const petty = parseFloat(actualPettyCash);
-    const revenue = parseFloat(declaredRevenue);
-    if (Number.isNaN(cash) || Number.isNaN(petty) || Number.isNaN(revenue)) {
+    const hasSplit = declaredRevenueTunai != null && declaredRevenueTunai !== ''
+      && declaredRevenueNonTunai != null && declaredRevenueNonTunai !== '';
+    const revenueTunai = hasSplit ? parseFloat(declaredRevenueTunai) : null;
+    const revenueNonTunai = hasSplit ? parseFloat(declaredRevenueNonTunai) : null;
+    const revenue = hasSplit
+      ? revenueTunai + revenueNonTunai
+      : parseFloat(declaredRevenue);
+    if (Number.isNaN(cash) || Number.isNaN(petty) || Number.isNaN(revenue) || (hasSplit && (Number.isNaN(revenueTunai) || Number.isNaN(revenueNonTunai)))) {
       return res.status(400).json({
         success: false,
-        message: 'actualCash, actualPettyCash, dan declaredRevenue wajib diisi angka'
+        message: 'Cash, petty cash, revenue tunai, dan revenue non tunai wajib diisi angka'
       });
     }
 
@@ -768,7 +796,9 @@ export const closeShift = async (req, res) => {
       shift: closedShiftPreview,
       transactions: txns,
       pettyExpenses: pettyOut,
-      salesCashExpenses: 0
+      salesCashExpenses: 0,
+      declaredTunai: hasSplit ? revenueTunai : undefined,
+      declaredNonTunai: hasSplit ? revenueNonTunai : undefined
     });
 
     const closedById = parseInt(cashierEmployeeId) || null;

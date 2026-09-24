@@ -1802,8 +1802,7 @@ export const uploadPaymentProof = async (req, res) => {
     if (req.file?.path) await safeUnlinkAbsPath(req.file.path);
     return res.status(500).json({
       success: false,
-      message: 'Gagal upload bukti pembayaran',
-      error: error.message
+      message: 'Gagal upload bukti pembayaran'
     });
   }
 };

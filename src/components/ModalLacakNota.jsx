@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { formatName } from '../utils/FormatName';
+import { extractOrderNo } from '../utils/extractOrderNo.js';
 import { formatWorkPercentage, getWorkPercentage } from '../utils/workStatusMeta.js';
 import TransactionBarcodeCard from './TransactionBarcodeCard.jsx';
 import {
@@ -28,49 +29,6 @@ import {
 } from 'lucide-react';
 
 const SCANNER_ELEMENT_ID = 'waschen-nota-scanner';
-
-/**
- * Ambil nomor nota dari hasil scan QR/barcode.
- * QR nota POS berisi URL: `{origin}/dashboard?trackingNo=WLCG202608310001`
- * Fallback: plain order_no / barcode / pola legacy WS-...
- */
-const extractOrderNo = (raw) => {
-  const text = String(raw || '').trim();
-  if (!text) return '';
-
-  try {
-    const url = new URL(text);
-    const tracking =
-      url.searchParams.get('trackingNo') ||
-      url.searchParams.get('tracking_no') ||
-      url.searchParams.get('orderNo') ||
-      url.searchParams.get('order_no') ||
-      url.searchParams.get('nota') ||
-      url.searchParams.get('barcode');
-    if (tracking) return decodeURIComponent(tracking).trim();
-  } catch {
-    // bukan URL absolut
-  }
-
-  const qsMatch = text.match(
-    /[?&#](?:trackingNo|tracking_no|orderNo|order_no|nota|barcode)=([^&#]+)/i
-  );
-  if (qsMatch?.[1]) {
-    try {
-      return decodeURIComponent(qsMatch[1]).trim();
-    } catch {
-      return qsMatch[1].trim();
-    }
-  }
-
-  const wsMatch = text.match(/WS-\d+/i);
-  if (wsMatch) return wsMatch[0].toUpperCase();
-
-  const wlMatch = text.match(/\bWL[A-Z]{0,4}\d{8,}\b/i);
-  if (wlMatch) return wlMatch[0].toUpperCase();
-
-  return text;
-};
 
 const DEFAULT_WORKFLOW = [
   { id: 'Antrean', label: 'Antrean', icon: Clock, desc: 'Nota Diterima' },

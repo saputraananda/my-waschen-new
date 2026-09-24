@@ -15,7 +15,9 @@ import masterRoutes from './routes/master.routes.js';
 import historyRoutes from './routes/history.routes.js';
 import printerRoutes from './routes/printer.routes.js';
 import inventoryRoutes from './routes/inventory.routes.js';
-import { getBaseUploadDir, getUploadUrlPrefix, uploadPaymentReceipt, buildUploadPublicUrl, safeUnlinkUploadUrl } from './middleware/upload.js';
+import qcRoutes from './routes/qc.routes.js';
+import { getBaseUploadDir, getUploadUrlPrefix, uploadPaymentReceipt, verifyUploadContents, buildUploadPublicUrl, safeUnlinkUploadUrl } from './middleware/upload.js';
+import { requirePosAuth } from './middleware/requireAuth.js';
 
 // Load environment variables
 dotenv.config();
@@ -31,7 +33,7 @@ app.use(getUploadUrlPrefix(), express.static(getBaseUploadDir()));
 
 // General upload endpoint for payment proofs / images
 // Optional body field oldUrl: hapus file lama saat ganti bukti
-app.post('/api/upload', uploadPaymentReceipt, async (req, res) => {
+app.post('/api/upload', requirePosAuth, uploadPaymentReceipt, verifyUploadContents, async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'File tidak diunggah' });
   }
@@ -58,5 +60,6 @@ app.use('/api/masters', masterRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/printer-settings', printerRoutes);
 app.use('/api/inventory', inventoryRoutes);
+app.use('/api/qc', qcRoutes);
 
 export default app;

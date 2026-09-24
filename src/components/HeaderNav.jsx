@@ -104,6 +104,17 @@ export default function HeaderNav({
     return () => { cancelled = true; };
   }, []);
 
+  const isManagement = localStorage.getItem('companyId') === '1';
+  let outletOptions = Array.isArray(outlets) ? outlets : [];
+  if (isManagement && outletOptions.length === 0) {
+    try {
+      const saved = JSON.parse(localStorage.getItem('outlets') || '[]');
+      if (Array.isArray(saved)) outletOptions = saved;
+    } catch {
+      outletOptions = [];
+    }
+  }
+
   const shiftLabel = (() => {
     if (!activeShift) {
       if (shiftCtx?.mustGateShift && shiftCtx?.shiftChecked === false) {
@@ -150,32 +161,35 @@ export default function HeaderNav({
           />
           <div className="h-4 sm:h-5 w-[1px] bg-[#e0e0e0] shrink-0 hidden xs:block" />
 
-          {/* Branch Selector / Name Display */}
-          {localStorage.getItem('companyId') === '1' && outlets && outlets.length > 0 ? (
-            <div className="relative min-w-0 flex-1 max-w-[150px] xs:max-w-[200px] sm:max-w-none">
+          {/* Management (company_id=1): pilih outlet yang diaudit. Staff tetap terkunci di outlet sendiri. */}
+          {isManagement && outletOptions.length > 0 ? (
+            <div className="relative min-w-0 flex-1 max-w-[220px] sm:max-w-[280px]">
               <select
-                value={activeOutletId}
+                aria-label="Pilih outlet untuk diaudit"
+                title="Pilih outlet untuk diaudit"
+                value={String(activeOutletId || localStorage.getItem('activeOutletId') || '')}
                 onChange={(e) => {
                   const selectedId = e.target.value;
-                  const outlet = outlets.find(o => String(o.id) === String(selectedId));
-                  const outletName = outlet ? outlet.full_name || outlet.name : 'Waschen Laundry Citra Gran';
+                  const outlet = outletOptions.find(o => String(o.id) === String(selectedId));
+                  const outletName = outlet ? (outlet.full_name || outlet.name) : 'Waschen Laundry Citra Gran';
                   localStorage.setItem('activeOutletId', selectedId);
                   localStorage.setItem('activeOutletName', outletName);
                   if (setActiveOutletId) setActiveOutletId(selectedId);
                   if (setActiveOutletName) setActiveOutletName(outletName);
                   if (shiftCtx?.setOutletId) shiftCtx.setOutletId(selectedId);
                   if (shiftCtx?.refreshShift) shiftCtx.refreshShift();
+                  window.dispatchEvent(new Event('waschen:outlet-changed'));
                 }}
-                className="w-full bg-transparent hover:bg-slate-100 border border-transparent hover:border-[#e0e0e0] rounded-xl pl-1.5 pr-5 py-1 text-xs md:text-sm font-extrabold text-[#313030] outline-none cursor-pointer appearance-none transition-colors truncate"
+                className="w-full bg-[#f8f8f8] hover:bg-white border border-[#e0e0e0] hover:border-[#5f1340]/40 rounded-xl pl-2.5 pr-7 py-1.5 text-xs md:text-sm font-extrabold text-[#313030] outline-none cursor-pointer appearance-none transition-colors truncate"
               >
-                {outlets.map(o => (
-                  <option key={o.id} value={o.id}>
+                {outletOptions.map(o => (
+                  <option key={o.id} value={String(o.id)}>
                     {o.full_name || o.name}
                   </option>
                 ))}
               </select>
-              <div className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
-                <ChevronDown className="h-3 w-3" />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-[#5f1340]">
+                <ChevronDown className="h-3.5 w-3.5" />
               </div>
             </div>
           ) : (

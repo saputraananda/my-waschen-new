@@ -227,6 +227,14 @@ export function buildCustomerNotaModel(receipt, settings) {
     rows.push(T('Terima kasih', { align: 'center' }));
   }
 
+  if (/^tunai$/i.test(String(receipt.paymentMethod || '').trim())) {
+    rows.push({ type: 'blank' });
+    rows.push(T('Tanda Terima Konsumen', { align: 'center', bold: true }));
+    rows.push({ type: 'blank' });
+    rows.push({ type: 'blank' });
+    rows.push(T('________________________', { align: 'center' }));
+  }
+
   return rows;
 }
 

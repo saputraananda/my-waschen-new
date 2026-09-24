@@ -14,7 +14,8 @@ import {
   uploadPaymentProof,
   ensureDigitalNotaAccess
 } from '../controllers/transaction.controller.js';
-import { uploadPaymentReceipt } from '../middleware/upload.js';
+import { uploadPaymentReceipt, verifyUploadContents } from '../middleware/upload.js';
+import { requirePosAuth } from '../middleware/requireAuth.js';
 
 const router = express.Router();
 
@@ -23,7 +24,7 @@ router.get('/', getTransactions);
 router.post('/settle-batch', settlePaymentBatch);
 router.get('/batch/:batchNo', getPaymentBatchByNo);
 router.post('/:orderNo/digital-nota-access', ensureDigitalNotaAccess);
-router.post('/:id/payment-proof', uploadPaymentReceipt, uploadPaymentProof);
+router.post('/:id/payment-proof', requirePosAuth, uploadPaymentReceipt, verifyUploadContents, uploadPaymentProof);
 router.get('/:orderNo', getTransactionDetail);
 router.patch('/:id/items/:itemId/status', updateItemWorkStatus);
 router.put('/:id/items/:itemId/status', updateItemWorkStatus);

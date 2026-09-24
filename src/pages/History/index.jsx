@@ -54,11 +54,18 @@ export default function History() {
       })
       .catch(err => console.error('Gagal mengambil data outlet:', err));
 
-    fetchTransactions();
   }, [navigate]);
 
-  const fetchTransactions = async () => {
-    const load = () => axios.get('/api/transactions', { params: { lite: 1 }, timeout: 20000 });
+  useEffect(() => {
+    fetchTransactions(activeOutletId);
+  }, [activeOutletId]);
+
+  const fetchTransactions = async (outletId = localStorage.getItem('activeOutletId')) => {
+    const load = () => axios.get('/api/transactions', {
+      params: { lite: 1, outlet_id: outletId || undefined },
+      timeout: 20000
+    });
+    setTransactions([]);
     setTransactionsLoading(true);
     try {
       let res;

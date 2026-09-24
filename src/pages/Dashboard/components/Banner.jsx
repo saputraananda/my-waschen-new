@@ -49,7 +49,7 @@ export default function Banner({ userProfile, navigate, onOpenLacakNotaModal, on
 
   return (
     <div
-      className="bg-gradient-to-r from-[#420a2c] via-[#5f1340] to-[#340722] border border-[#5f1340]/40 rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 text-white shadow-xl shadow-[#5f1340]/20 relative overflow-hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-6 group"
+      className="h-full bg-gradient-to-r from-[#420a2c] via-[#5f1340] to-[#340722] border border-[#5f1340]/40 rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 text-white shadow-xl shadow-[#5f1340]/20 relative overflow-hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-6 group"
       style={{
         backgroundImage: `
           radial-gradient(rgba(255, 255, 255, 0.08) 1.5px, transparent 1.5px),

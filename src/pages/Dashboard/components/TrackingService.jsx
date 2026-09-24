@@ -27,6 +27,7 @@ import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 import { STATUS_STEPS, DEFAULT_WORK_STATUSES, getWorkPercentage, percentageTone, formatWorkPercentage } from '../../../utils/workStatusMeta.js';
 import { NOTA_QUEUE_TABS, matchesNotaQueueTab, getNotaQueueLabel } from '../../../utils/notaQueueMeta.js';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
+import PaymentProofFields from '../../../components/PaymentProofFields.jsx';
 import TransactionBarcodeCard from '../../../components/TransactionBarcodeCard.jsx';
 import ModalLacakNota from '../../../components/ModalLacakNota.jsx';
 import ChangeFulfillmentModal from '../../../components/ChangeFulfillmentModal.jsx';
@@ -87,6 +88,7 @@ export default function TrackingService({
     overpaymentAction: 'change'
   });
   const [proofFile, setProofFile] = useState(null);
+  const [cashProof, setCashProof] = useState(null);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
   const [sendingNotaWa, setSendingNotaWa] = useState(false);
@@ -206,6 +208,7 @@ export default function TrackingService({
       customerBalance: initialBalance
     };
     setPaymentModalOrder(modalOrder);
+    setCashProof(null);
     setMainCategory('Tunai');
     setEdcCardType('Debit Card');
     setIsCrossTransfer(false);
@@ -264,7 +267,37 @@ export default function TrackingService({
       });
       return;
     }
+    if (mainCategory !== 'Tunai' && !proofFile) {
+      showAlert({
+        title: 'Bukti Pembayaran Wajib',
+        message: 'Foto atau PDF bukti bayar wajib untuk pembayaran selain tunai.',
+        type: 'warning'
+      });
+      return;
+    }
     setShowPayPinModal(true);
+  };
+
+  const saveCashProof = async () => {
+    if (!cashProof?.txnId || !proofFile) return;
+    setIsSubmittingPayment(true);
+    try {
+      const fd = new FormData();
+      fd.append('proof', proofFile);
+      await axios.post(`/api/history/transactions/${cashProof.txnId}/payment-proof`, fd, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+      });
+      setCashProof(null);
+      setProofFile(null);
+      setPaymentModalOrder(null);
+      setPaymentDetail(null);
+      setSelectedOrderModal(null);
+      if (typeof fetchLiveDashboardData === 'function') fetchLiveDashboardData();
+    } catch (err) {
+      showAlert({ title: 'Gagal Upload', message: err.response?.data?.message || 'Gagal upload bukti pembayaran', type: 'error' });
+    } finally {
+      setIsSubmittingPayment(false);
+    }
   };
 
   const handleSubmitPaymentUpdate = async (cashierEmployeeId) => {
@@ -310,10 +343,12 @@ export default function TrackingService({
       const txnId = paymentModalOrder.dbId || paymentModalOrder.id;
       let proofUrl = paymentDetail?.order?.payment_proof_url || paymentModalOrder.paymentProofUrl || null;
 
-      if (proofFile) {
+      if (proofFile && mainCategory !== 'Tunai') {
         const fd = new FormData();
         fd.append('proof', proofFile);
-        const up = await axios.post(`/api/history/transactions/${txnId}/payment-proof`, fd);
+        const up = await axios.post(`/api/history/transactions/${txnId}/payment-proof`, fd, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+        });
         proofUrl = up.data?.data?.paymentProofUrl || proofUrl;
       }
 
@@ -329,6 +364,16 @@ export default function TrackingService({
       });
 
       const updated = res.data?.data;
+      if (mainCategory === 'Tunai') {
+        setCashProof({ txnId, orderNo: paymentModalOrder.id });
+        setProofFile(null);
+        showAlert({
+          title: 'Pembayaran Tunai Tersimpan',
+          message: 'Cetak nota, minta tanda tangan konsumen, lalu unggah fotonya.',
+          type: 'success'
+        });
+        return;
+      }
       showAlert({
         title: 'Pembayaran Diperbarui',
         message: `Nota ${paymentModalOrder.id} — ${updated?.paymentStatus || 'OK'}`,
@@ -1008,6 +1053,7 @@ export default function TrackingService({
 
                   {normalizePaymentStatus(paymentModalOrder.paymentStatus) !== 'Lunas' && (
                     <>
+                      {!cashProof && <>
                       <CascadingPaymentSelector
                         mainCategory={mainCategory}
                         setMainCategory={setMainCategory}
@@ -1069,26 +1115,24 @@ export default function TrackingService({
                           className="w-full px-4 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-xs font-medium outline-none focus:border-[#5f1340]"
                         />
                       </div>
+                      </>}
 
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                          Upload Bukti Pembayaran
-                        </label>
-                        <label className="flex flex-col items-center justify-center w-full p-4 border-2 border-dashed border-[#e0e0e0] rounded-xl cursor-pointer hover:border-[#5f1340]/40 transition-all">
-                          <Upload className="h-4 w-4 text-slate-400 mb-1" />
-                          <span className="text-[10px] font-bold text-slate-500">
-                            {proofFile ? proofFile.name : 'Upload foto/PDF bukti bayar'}
-                          </span>
-                          <input
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp,application/pdf"
-                            className="hidden"
-                            onChange={(e) => setProofFile(e.target.files?.[0] || null)}
-                          />
-                        </label>
-                      </div>
+                      {cashProof ? (
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-bold text-slate-600 leading-relaxed">
+                            Pembayaran tunai tersimpan. Unggah foto nota yang sudah ditandatangani konsumen.
+                          </p>
+                          <PaymentProofFields orderNo={cashProof.orderNo} file={proofFile} onFile={setProofFile} />
+                        </div>
+                      ) : mainCategory === 'Tunai' ? (
+                        <p className="text-[11px] font-bold text-slate-500 leading-relaxed">
+                          Pembayaran tunai: bukti diunggah setelah nota dicetak dan ditandatangani konsumen.
+                        </p>
+                      ) : (
+                        <PaymentProofFields orderNo={paymentModalOrder.id} file={proofFile} onFile={setProofFile} />
+                      )}
 
-                      {parseRupiah(paymentForm.additionalAmount) > (paymentDetail?.remaining || 0) && (
+                      {!cashProof && parseRupiah(paymentForm.additionalAmount) > (paymentDetail?.remaining || 0) && (
                         <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
                           <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
                             <Coins className="h-4 w-4" />
@@ -1142,12 +1186,12 @@ export default function TrackingService({
                 </button>
                 <button
                   type="button"
-                  disabled={isSubmittingPayment}
-                  onClick={requestSubmitPaymentUpdate}
+                  disabled={isSubmittingPayment || (cashProof && !proofFile)}
+                  onClick={cashProof ? saveCashProof : requestSubmitPaymentUpdate}
                   className="flex-1 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 text-white font-black rounded-xl text-xs cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <CheckCircle2 className="h-4 w-4" />
-                  <span>{isSubmittingPayment ? 'Menyimpan...' : 'Simpan Pembayaran'}</span>
+                  <span>{isSubmittingPayment ? 'Menyimpan...' : cashProof ? 'Simpan Bukti' : 'Simpan Pembayaran'}</span>
                 </button>
               </div>
             )}

@@ -55,7 +55,7 @@ export default function UploadDepositModal({
       fd.append('uploadedBy', String(parseInt(employeeId, 10) || ''));
 
       const res = await axios.post(`/api/shifts/${pendingDeposit.id}/deposit-proof`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
       });
 
       if (res.data?.success) {

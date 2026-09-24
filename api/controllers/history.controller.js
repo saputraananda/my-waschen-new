@@ -7,7 +7,7 @@ import {
   resolvePaymentStatus,
   buildPaymentProofUrl
 } from '../utils/paymentLog.js';
-import { uploadPaymentReceipt, replaceUploadUrl, safeUnlinkAbsPath } from '../middleware/upload.js';
+import { uploadPaymentReceipt, replaceUploadUrl, safeUnlinkAbsPath, safeUnlinkUploadUrl } from '../middleware/upload.js';
 
 export const uploadPaymentProofMiddleware = uploadPaymentReceipt;
 
@@ -111,7 +111,37 @@ export const uploadPaymentProof = async (req, res) => {
   } catch (error) {
     console.error('Error uploadPaymentProof:', error);
     if (req.file?.path) await safeUnlinkAbsPath(req.file.path);
-    return res.status(500).json({ success: false, message: 'Gagal upload bukti pembayaran', error: error.message });
+    return res.status(500).json({ success: false, message: 'Gagal upload bukti pembayaran' });
+  }
+};
+
+/**
+ * DELETE /api/history/transactions/:id/payment-proof
+ * Kosongkan URL di nota dan hapus file di server.
+ */
+export const deletePaymentProof = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [orderRows] = await myWaschenPool.query(
+      'SELECT id, outlet_id, payment_proof_url FROM tr_transaction WHERE id = ? OR order_no = ? LIMIT 1',
+      [id, id]
+    );
+    if (!orderRows.length) {
+      return res.status(404).json({ success: false, message: 'Nota tidak ditemukan' });
+    }
+
+    const order = orderRows[0];
+    await myWaschenPool.query(
+      'UPDATE tr_transaction SET payment_proof_url = NULL, updated_at = NOW() WHERE id = ?',
+      [order.id]
+    );
+    if (order.payment_proof_url) await safeUnlinkUploadUrl(order.payment_proof_url);
+
+    emitDashboardRefresh('transaction:updated', { outletId: order.outlet_id, transactionId: order.id });
+    return res.status(200).json({ success: true, message: 'Bukti pembayaran dihapus' });
+  } catch (error) {
+    console.error('Error deletePaymentProof:', error);
+    return res.status(500).json({ success: false, message: 'Gagal menghapus bukti pembayaran' });
   }
 };
 

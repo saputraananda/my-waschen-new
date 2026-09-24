@@ -12,6 +12,7 @@ import { STATUS_STEPS, DEFAULT_WORK_STATUSES, getWorkPercentage, percentageTone,
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 import { getBankAccountForOutlet, getAllBankAccounts, OUTLET_BANK_ACCOUNTS } from '../../../utils/bankAccounts.js';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
+import PaymentProofFields from '../../../components/PaymentProofFields.jsx';
 import TransactionBarcodeCard from '../../../components/TransactionBarcodeCard.jsx';
 import ChangeFulfillmentModal from '../../../components/ChangeFulfillmentModal.jsx';
 import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
@@ -32,7 +33,8 @@ import {
   Building2,
   ArrowRightLeft,
   MessageCircle,
-  Truck
+  Truck,
+  Trash2
 } from 'lucide-react';
 import {
   sendCustomerNotaWhatsAppFromOrder,
@@ -48,7 +50,7 @@ export default function DetailTransaction() {
   const { orderNo } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { showAlert } = useAppDialog();
+  const { showAlert, showConfirm } = useAppDialog();
 
   const [userProfile, setUserProfile] = useState(null);
   const [outlets, setOutlets] = useState([]);
@@ -86,6 +88,9 @@ export default function DetailTransaction() {
     overpaymentAction: 'change'
   });
   const [proofFile, setProofFile] = useState(null);
+  const [proofBusy, setProofBusy] = useState(false);
+  const [proofOpen, setProofOpen] = useState(false);
+  const [cashProof, setCashProof] = useState(null);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
   const [sendingNotaWa, setSendingNotaWa] = useState(false);
@@ -322,6 +327,7 @@ export default function DetailTransaction() {
 
   const openPaymentModal = async () => {
     if (!order) return;
+    setCashProof(null);
     setPaymentModalOpen(true);
     setPaymentForm({
       additionalAmount: '',
@@ -373,7 +379,36 @@ export default function DetailTransaction() {
       });
       return;
     }
+    if (mainCategory !== 'Tunai' && !proofFile) {
+      showAlert({
+        title: 'Bukti Pembayaran Wajib',
+        message: 'Foto atau PDF bukti bayar wajib untuk pembayaran selain tunai.',
+        type: 'warning'
+      });
+      return;
+    }
     setShowPayPinModal(true);
+  };
+
+  const saveCashProof = async () => {
+    if (!cashProof?.txnId || !proofFile) return;
+    setIsSubmittingPayment(true);
+    try {
+      const fd = new FormData();
+      fd.append('proof', proofFile);
+      await axios.post(`/api/history/transactions/${cashProof.txnId}/payment-proof`, fd, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+      });
+      setCashProof(null);
+      setProofFile(null);
+      setPaymentModalOpen(false);
+      setPaymentDetail(null);
+      fetchDetail();
+    } catch (err) {
+      showToast('Gagal Upload', err.response?.data?.message || 'Gagal upload bukti pembayaran', 'error');
+    } finally {
+      setIsSubmittingPayment(false);
+    }
   };
 
   const handleSubmitPaymentUpdate = async (cashierEmployeeId) => {
@@ -401,10 +436,12 @@ export default function DetailTransaction() {
     setIsSubmittingPayment(true);
     try {
       let proofUrl = paymentDetail?.order?.payment_proof_url || order.paymentProofUrl || null;
-      if (proofFile) {
+      if (proofFile && mainCategory !== 'Tunai') {
         const fd = new FormData();
         fd.append('proof', proofFile);
-        const up = await axios.post(`/api/history/transactions/${order.dbId}/payment-proof`, fd);
+        const up = await axios.post(`/api/history/transactions/${order.dbId}/payment-proof`, fd, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+        });
         proofUrl = up.data?.data?.paymentProofUrl || proofUrl;
       }
 
@@ -429,6 +466,12 @@ export default function DetailTransaction() {
       });
 
       const updated = res.data?.data;
+      if (mainCategory === 'Tunai') {
+        setCashProof({ txnId: order.dbId, orderNo: order.id });
+        setProofFile(null);
+        showToast('Pembayaran Tunai Tersimpan', 'Cetak nota, minta tanda tangan konsumen, lalu unggah fotonya.');
+        return;
+      }
       showToast('Pembayaran Diperbarui', `Nota ${order.id} — ${updated?.paymentStatus || 'OK'}`);
       setPaymentModalOpen(false);
       setPaymentDetail(null);
@@ -437,6 +480,46 @@ export default function DetailTransaction() {
       showToast('Gagal Bayar', err.response?.data?.message || 'Terjadi kesalahan sistem', 'error');
     } finally {
       setIsSubmittingPayment(false);
+    }
+  };
+
+  const saveDetailProof = async (file) => {
+    if (!file || !order || proofBusy) return;
+    setProofBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('proof', file);
+      const up = await axios.post(`/api/history/transactions/${order.dbId || order.id}/payment-proof`, fd, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+      });
+      const url = up.data?.data?.paymentProofUrl || null;
+      if (url) setOrder((prev) => (prev ? { ...prev, paymentProofUrl: url } : prev));
+    } catch (err) {
+      showToast('Gagal Upload', err.response?.data?.message || 'Gagal upload bukti pembayaran', 'error');
+    } finally {
+      setProofBusy(false);
+    }
+  };
+
+  const removeDetailProof = async () => {
+    if (!order?.paymentProofUrl || proofBusy) return;
+    const ok = await showConfirm({
+      title: 'Hapus Bukti Pembayaran',
+      message: 'Foto ini akan dihapus dari nota dan dari server.',
+      confirmLabel: 'Hapus',
+      variant: 'danger'
+    });
+    if (!ok) return;
+    setProofBusy(true);
+    try {
+      await axios.delete(`/api/history/transactions/${order.dbId || order.id}/payment-proof`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+      });
+      setOrder((prev) => (prev ? { ...prev, paymentProofUrl: null } : prev));
+    } catch (err) {
+      showToast('Gagal Hapus', err.response?.data?.message || 'Gagal menghapus bukti pembayaran', 'error');
+    } finally {
+      setProofBusy(false);
     }
   };
 
@@ -682,6 +765,36 @@ export default function DetailTransaction() {
                     className="h-full"
                   />
                 </div>
+              </div>
+
+              <div className={`mt-3 p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl ${proofBusy ? 'opacity-60 pointer-events-none' : ''}`}>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Bukti Pembayaran</span>
+                  {order.paymentProofUrl && (
+                    <button
+                      type="button"
+                      onClick={removeDetailProof}
+                      className="text-[10px] font-black text-rose-600 inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="h-3 w-3" /> Hapus
+                    </button>
+                  )}
+                </div>
+                {order.paymentProofUrl && (
+                  <button type="button" onClick={() => setProofOpen(true)} className="block mb-3 cursor-pointer text-left">
+                    {/\.pdf($|\?)/i.test(order.paymentProofUrl) ? (
+                      <span className="text-xs font-black text-[#5f1340] underline">Lihat PDF bukti bayar</span>
+                    ) : (
+                      <img src={order.paymentProofUrl} alt="Bukti pembayaran" className="h-32 w-44 object-cover rounded-xl border border-[#e0e0e0] bg-white" />
+                    )}
+                  </button>
+                )}
+                <PaymentProofFields
+                  orderNo={order.id}
+                  file={null}
+                  onFile={(file) => { if (file) saveDetailProof(file); }}
+                  label={order.paymentProofUrl ? 'Ganti foto / PDF' : 'Tambah foto / PDF'}
+                />
               </div>
             </div>
 
@@ -1013,6 +1126,7 @@ export default function DetailTransaction() {
                         </div>
                       )}
 
+                      {!cashProof && <>
                       <CascadingPaymentSelector
                         mainCategory={mainCategory}
                         setMainCategory={setMainCategory}
@@ -1065,15 +1179,23 @@ export default function DetailTransaction() {
                           className="w-full px-4 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-xs outline-none focus:border-[#5f1340]"
                         />
                       </div>
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Bukti Pembayaran</label>
-                        <label className="flex flex-col items-center justify-center w-full p-4 border-2 border-dashed border-[#e0e0e0] rounded-xl cursor-pointer hover:border-[#5f1340]/40">
-                          <Upload className="h-4 w-4 text-slate-400 mb-1" />
-                          <span className="text-[10px] font-bold text-slate-500">{proofFile ? proofFile.name : 'Upload foto/PDF'}</span>
-                          <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={(e) => setProofFile(e.target.files?.[0] || null)} />
-                        </label>
-                      </div>
-                      {parseRupiah(paymentForm.additionalAmount) > (paymentDetail?.remaining || remaining || 0) && (
+                      </>}
+
+                      {cashProof ? (
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-bold text-slate-600 leading-relaxed">
+                            Pembayaran tunai tersimpan. Unggah foto nota yang sudah ditandatangani konsumen.
+                          </p>
+                          <PaymentProofFields orderNo={cashProof.orderNo} file={proofFile} onFile={setProofFile} />
+                        </div>
+                      ) : mainCategory === 'Tunai' ? (
+                        <p className="text-[11px] font-bold text-slate-500 leading-relaxed">
+                          Pembayaran tunai: bukti diunggah setelah nota dicetak dan ditandatangani konsumen.
+                        </p>
+                      ) : (
+                        <PaymentProofFields orderNo={order.id} file={proofFile} onFile={setProofFile} />
+                      )}
+                      {!cashProof && parseRupiah(paymentForm.additionalAmount) > (paymentDetail?.remaining || remaining || 0) && (
                         <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
                           <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
                             <Coins className="h-4 w-4" />
@@ -1095,12 +1217,12 @@ export default function DetailTransaction() {
               )}
             </div>
 
-            {paymentStatus !== 'Lunas' && !isLoadingPayment && (
+            {(paymentStatus !== 'Lunas' || cashProof) && !isLoadingPayment && (
               <div className="p-4 border-t border-[#e0e0e0] bg-[#f8f8f8] flex gap-2 shrink-0">
-                <button type="button" onClick={() => { setPaymentModalOpen(false); setPaymentDetail(null); }} className="px-4 py-2.5 bg-white border border-[#e0e0e0] text-slate-700 font-bold rounded-xl text-xs cursor-pointer">Batal</button>
-                <button type="button" disabled={isSubmittingPayment} onClick={requestSubmitPaymentUpdate} className="flex-1 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 text-white font-black rounded-xl text-xs cursor-pointer flex items-center justify-center gap-1.5">
+                <button type="button" onClick={() => { setPaymentModalOpen(false); setPaymentDetail(null); setCashProof(null); }} className="px-4 py-2.5 bg-white border border-[#e0e0e0] text-slate-700 font-bold rounded-xl text-xs cursor-pointer">Batal</button>
+                <button type="button" disabled={isSubmittingPayment || (cashProof && !proofFile)} onClick={cashProof ? saveCashProof : requestSubmitPaymentUpdate} className="flex-1 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 text-white font-black rounded-xl text-xs cursor-pointer flex items-center justify-center gap-1.5">
                   <CheckCircle2 className="h-4 w-4" />
-                  {isSubmittingPayment ? 'Menyimpan...' : 'Simpan Pembayaran'}
+                  {isSubmittingPayment ? 'Menyimpan...' : cashProof ? 'Simpan Bukti' : 'Simpan Pembayaran'}
                 </button>
               </div>
             )}
@@ -1147,6 +1269,21 @@ export default function DetailTransaction() {
         customerName={mergeReceipt?.customerName || mergeReceipt?.customer_name || order?.customerName}
         customerPhone={mergeReceipt?.customerPhone || mergeReceipt?.customer_phone || order?.customerPhone}
       />
+
+      {proofOpen && order?.paymentProofUrl && (
+        <div className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4" onClick={() => setProofOpen(false)}>
+          <div className="relative max-w-[min(92vw,380px)]" onClick={(e) => e.stopPropagation()}>
+            <button type="button" onClick={() => setProofOpen(false)} aria-label="Tutup" className="absolute top-2 right-2 z-10 w-7 h-7 rounded-full bg-black/60 text-white grid place-items-center cursor-pointer">
+              <X className="h-3.5 w-3.5" />
+            </button>
+            {/\.pdf($|\?)/i.test(order.paymentProofUrl) ? (
+              <iframe title="Bukti pembayaran" src={order.paymentProofUrl} className="w-[min(92vw,380px)] h-[70vh] bg-white rounded-2xl" />
+            ) : (
+              <img src={order.paymentProofUrl} alt="Bukti pembayaran" className="max-h-[78vh] w-auto max-w-full rounded-2xl block" />
+            )}
+          </div>
+        </div>
+      )}
 
       <ChangeFulfillmentModal
         open={fulfillmentModalOpen}

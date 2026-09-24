@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { formatRupiah, parseRupiah } from '../utils/FormatRupiah.js';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from './CascadingPaymentSelector.jsx';
+import PaymentProofFields from './PaymentProofFields.jsx';
 import PinVerifyModal from '../pages/Shift/PinVerifyModal.jsx';
 
 export default function CombinedReceiptModal({
@@ -35,6 +36,7 @@ export default function CombinedReceiptModal({
   const [paidAmountInput, setPaidAmountInput] = useState('');
   const [overpaymentAction, setOverpaymentAction] = useState('change');
   const [paymentProofUrl, setPaymentProofUrl] = useState('');
+  const [proofFile, setProofFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -118,7 +120,7 @@ export default function CombinedReceiptModal({
         formData.append('oldUrl', paymentProofUrl);
       }
       const res = await axios.post('/api/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
       });
 
       if (res.data && res.data.url) {
@@ -145,6 +147,11 @@ export default function CombinedReceiptModal({
 
     if (paidAmountNum < totalSelectedAmount) {
       setErrorMessage(`Nominal bayar kurang Rp ${(totalSelectedAmount - paidAmountNum).toLocaleString('id-ID')}`);
+      return;
+    }
+
+    if (mainCategory !== 'Tunai' && !proofFile && !paymentProofUrl) {
+      setErrorMessage('Foto atau PDF bukti bayar wajib untuk pembayaran selain tunai.');
       return;
     }
 
@@ -181,6 +188,22 @@ export default function CombinedReceiptModal({
     setErrorMessage('');
 
     try {
+      let proofUrl = mainCategory === 'Tunai' ? '' : paymentProofUrl;
+      if (mainCategory !== 'Tunai' && proofFile) {
+        const formData = new FormData();
+        formData.append('proof', proofFile);
+        if (paymentProofUrl) formData.append('oldUrl', paymentProofUrl);
+        const up = await axios.post('/api/upload', formData, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+        });
+        proofUrl = up.data?.url || proofUrl;
+        if (!proofUrl) {
+          setErrorMessage('Gagal mengunggah bukti pembayaran.');
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
       const resolvedPaymentMethod = resolvePaymentMethodString({
         mainCategory,
         edcCardType,
@@ -195,7 +218,7 @@ export default function CombinedReceiptModal({
         outletId: activeOutletId || parseInt(localStorage.getItem('activeOutletId'), 10) || 2,
         cashierEmployeeId: resolvedCashierId,
         paymentMethod: resolvedPaymentMethod,
-        paymentProofUrl,
+        paymentProofUrl: proofUrl,
         notes,
         paidAmount: paidAmountNum,
         overpaymentToDeposit: overpaymentAction === 'deposit',
@@ -444,40 +467,14 @@ export default function CombinedReceiptModal({
               </div>
             )}
 
-            <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 block">
-                Foto Bukti Transfer (1 Bukti Utuh)
-              </label>
-              <div className="relative">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                  id="batch-payment-proof-input"
-                />
-                <label
-                  htmlFor="batch-payment-proof-input"
-                  className="flex items-center justify-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-slate-100 border border-dashed border-slate-300 rounded-xl text-xs font-bold text-slate-700 cursor-pointer transition-colors"
-                >
-                  {isUploading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin text-[#5f1340]" />
-                      <span>Mengunggah foto...</span>
-                    </>
-                  ) : paymentProofUrl ? (
-                    <>
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                      <span className="text-emerald-700 truncate max-w-[150px]">Foto Ter-upload</span>
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="h-4 w-4 text-slate-400" />
-                      <span>Pilih Foto Bukti Transfer</span>
-                    </>
-                  )}
-                </label>
-              </div>
+            <div className="sm:col-span-2">
+              {mainCategory === 'Tunai' ? (
+                <p className="text-[11px] font-bold text-slate-500 leading-relaxed">
+                  Pembayaran tunai: bukti diunggah setelah nota dicetak dan ditandatangani konsumen.
+                </p>
+              ) : (
+                <PaymentProofFields orderNo="Pelunasan Gabungan" file={proofFile} onFile={setProofFile} />
+              )}
             </div>
           </div>
 

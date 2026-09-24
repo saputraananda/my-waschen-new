@@ -91,7 +91,7 @@ export default function TransactionPage() {
   const [addressModalCustomer, setAddressModalCustomer] = useState(null);
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedTierFilter, setSelectedTierFilter] = useState('Semua');
-  const [selectedBranchFilter, setSelectedBranchFilter] = useState('Semua');
+  const [selectedBranchFilter, setSelectedBranchFilter] = useState(getInitialOutlet);
   const [custCurrentPage, setCustCurrentPage] = useState(1);
   const custItemsPerPage = 9;
   const customersReqRef = useRef(0);
@@ -111,6 +111,7 @@ export default function TransactionPage() {
           name: c.name || '',
           phone: c.phone || '',
           address: c.full_address || c.address || '-',
+          street: c.address || '',
           fullAddress: c.full_address || '',
           block: c.block || '',
           houseNumber: c.house_number || '',
@@ -223,9 +224,6 @@ export default function TransactionPage() {
       localStorage.setItem('activeOutletName', 'Waschen Laundry Citra Gran');
       localStorage.setItem('activeOutletId', '2');
     }
-    // Default branch filter in POS to 'Semua' so all customers are immediately visible
-    setSelectedBranchFilter('Semua');
-
     const autoId = localStorage.getItem('autoSelectCustId');
     if (autoId) {
       setSelectedCustId(autoId);
@@ -316,6 +314,11 @@ export default function TransactionPage() {
     }
     setCurrentStep(2);
   };
+
+  // Filter cabang mengikuti outlet aktif saat kasir ganti outlet di header
+  useEffect(() => {
+    if (activeOutletName) setSelectedBranchFilter(activeOutletName);
+  }, [activeOutletName]);
 
   // Filtered and Tier-Prioritized Customer List
   const tierRank = { VIP: 1, Gold: 2, Reguler: 3, 'One-Time': 4, OneTime: 4 };
@@ -676,6 +679,15 @@ export default function TransactionPage() {
 
     const paidAmountNum = parseRupiah(paidAmountInput);
     const isOutstanding = paymentStatus === 'Outstanding';
+    const isCash = mainCategory === 'Tunai';
+    if (!isOutstanding && !isCash && !paymentProofFile) {
+      showAlert({
+        title: 'Bukti Pembayaran Wajib',
+        message: 'Foto atau PDF bukti bayar wajib dilampirkan, kecuali nota outstanding.',
+        type: 'warning'
+      });
+      return;
+    }
 
     if (paymentStatus === 'Lunas' && !isMemberBalanceMethod) {
       if (paidAmountNum <= 0) {
@@ -821,10 +833,12 @@ export default function TransactionPage() {
       const txnDbId = orderResult?.id;
       const orderId = orderResult?.order_no || `WS-${Date.now().toString().slice(-6)}`;
 
-      if (proofFile && txnDbId) {
+      if (proofFile && txnDbId && !/^tunai$/i.test(String(payload.paymentMethod || ''))) {
         const fd = new FormData();
         fd.append('proof', proofFile);
-        await axios.post(`/api/transactions/${txnDbId}/payment-proof`, fd);
+        await axios.post(`/api/transactions/${txnDbId}/payment-proof`, fd, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+        });
       }
 
       const depositDelta = orderResult?.deposit_delta ?? 0;
@@ -1172,6 +1186,7 @@ export default function TransactionPage() {
                 ? {
                   ...c,
                   address: nextAddress,
+                  street: updated.address || '',
                   fullAddress: updated.full_address || '',
                   block: updated.block || '',
                   houseNumber: updated.house_number || '',

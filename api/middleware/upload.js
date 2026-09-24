@@ -193,10 +193,12 @@ export const createUploader = (subFolder = 'assets/documents', options = {}) => 
   const fileFilter = (req, file, cb) => {
     const ext = path.extname(file.originalname || '').toLowerCase().replace('.', '');
     const mime = (file.mimetype || '').toLowerCase();
-    const extOk = !ext || fileTypes.test(ext);
+    const extOk = Boolean(ext) && fileTypes.test(ext);
     const mimeOk = fileTypes.test(mime);
+    const name = String(file.originalname || '');
+    const nameOk = !name.includes('..') && !/[\\/]/.test(name);
 
-    if (extOk || mimeOk) {
+    if (extOk && mimeOk && nameOk) {
       return cb(null, true);
     }
     cb(new Error(`Tipe file tidak didukung (${file.originalname || mime}). Format yang diperbolehkan: jpeg, jpg, png, webp, pdf`));
@@ -208,6 +210,39 @@ export const createUploader = (subFolder = 'assets/documents', options = {}) => 
     fileFilter
   });
 };
+
+function hasSig(buf, offset, bytes) {
+  if (buf.length < offset + bytes.length) return false;
+  return bytes.every((b, i) => buf[offset + i] === b);
+}
+
+/** Cek isi file, bukan hanya nama/MIME, supaya ekstensi palsu ditolak. */
+export async function verifyUploadContents(req, res, next) {
+  const file = req.file;
+  if (!file?.path) return next();
+  try {
+    const fh = await fs.promises.open(file.path, 'r');
+    const buf = Buffer.alloc(16);
+    await fh.read(buf, 0, 16, 0);
+    await fh.close();
+    const mime = (file.mimetype || '').toLowerCase();
+    const ok = mime === 'application/pdf'
+      ? hasSig(buf, 0, [0x25, 0x50, 0x44, 0x46])
+      : mime === 'image/png'
+        ? hasSig(buf, 0, [0x89, 0x50, 0x4e, 0x47])
+        : mime === 'image/webp'
+          ? hasSig(buf, 0, [0x52, 0x49, 0x46, 0x46]) && hasSig(buf, 8, [0x57, 0x45, 0x42, 0x50])
+          : hasSig(buf, 0, [0xff, 0xd8, 0xff]);
+    if (!ok) {
+      await safeUnlinkAbsPath(file.path);
+      return res.status(400).json({ success: false, message: 'Isi file tidak sesuai format yang diizinkan' });
+    }
+    return next();
+  } catch {
+    await safeUnlinkAbsPath(file.path);
+    return res.status(400).json({ success: false, message: 'File tidak bisa diperiksa' });
+  }
+}
 
 /** Bukti pembayaran → {UPLOAD_BASE_DIR}/assets/payment_receipt */
 export const uploadPaymentReceipt = createUploader(PAYMENT_RECEIPT_SUBDIR, {

@@ -10,10 +10,16 @@ import {
   User,
   CreditCard,
   Clock,
-  MessageCircle
+  MessageCircle,
+  ClipboardCheck,
+  Camera,
+  Upload,
+  Loader2
 } from 'lucide-react';
 import HeaderNav from '../../../components/HeaderNav';
 import ThermalNota from '../../../components/ThermalNota.jsx';
+import QcCameraModal from '../../../components/QcCameraModal.jsx';
+import { buildQcPhotoLines, burnQcPhoto } from '../../../utils/qcPhotoStamp.js';
 import { formatName, formatEmployeeName } from '../../../utils/FormatName.js';
 import { useShift } from '../../../context/ShiftContext.jsx';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
@@ -38,6 +44,9 @@ export default function Complete() {
   const [outlets, setOutlets] = useState([]);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [sendingWa, setSendingWa] = useState(false);
+  const [proofOpen, setProofOpen] = useState(false);
+  const [proofBusy, setProofBusy] = useState(false);
+  const [proofDone, setProofDone] = useState(false);
 
   useEffect(() => {
     document.title = 'Transaksi Berhasil | Waschen Laundry';
@@ -69,6 +78,49 @@ export default function Complete() {
   const cashierDisplay = formatEmployeeName(receipt.cashierFullName || receipt.cashierName, 'Frontliner');
   const isUnpaid = ps === 'Outstanding';
   const isDP = ps === 'DP';
+  const isCash = /^tunai$/i.test(String(receipt.paymentMethod || '').trim()) && !isUnpaid;
+
+  const sendProof = async (file) => {
+    if (!file || proofBusy) return;
+    setProofBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('proof', file);
+      await axios.post(`/api/transactions/${encodeURIComponent(receipt.id)}/payment-proof`, fd, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+      });
+      setProofDone(true);
+    } catch (err) {
+      showAlert({
+        title: 'Gagal Upload',
+        message: err.response?.data?.message || 'Gagal upload bukti pembayaran',
+        type: 'error'
+      });
+    } finally {
+      setProofBusy(false);
+    }
+  };
+
+  const pickProof = async (file) => {
+    if (!file) return;
+    const ok = file.type === 'application/pdf' || /^image\/(jpeg|png|webp)$/.test(file.type);
+    if (!ok) {
+      showAlert({
+        title: 'File Tidak Didukung',
+        message: 'Gunakan foto JPG, PNG, WEBP, atau PDF.',
+        type: 'warning'
+      });
+      return;
+    }
+    try {
+      const stamped = file.type === 'application/pdf'
+        ? file
+        : await burnQcPhoto(file, { orderNo: receipt.id || 'Bukti Bayar', stage: 'payment' });
+      await sendProof(stamped);
+    } catch {
+      showAlert({ title: 'Gagal Memproses Foto', message: 'Foto tidak bisa diproses.', type: 'error' });
+    }
+  };
 
   const handleKirimNotaWa = async () => {
     if (sendingWa) return;
@@ -182,6 +234,45 @@ export default function Complete() {
               <span>Cetak Struk Nota POS</span>
             </button>
 
+            {isCash && (
+              <div className="rounded-2xl border border-[#e0e0e0] bg-white p-4">
+                <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-2">
+                  Bukti Pembayaran Tunai {proofDone ? '' : '(Wajib)'}
+                </p>
+                {proofDone ? (
+                  <p className="text-xs font-bold text-emerald-700 flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4" /> Bukti pembayaran tersimpan.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className={`flex flex-col items-center justify-center p-3 border-2 border-dashed border-[#e0e0e0] rounded-2xl cursor-pointer hover:border-[#5f1340]/40 ${proofBusy ? 'opacity-50 pointer-events-none' : ''}`}>
+                      <Upload className="h-4 w-4 text-slate-400 mb-1" />
+                      <span className="text-[11px] font-bold text-slate-500">Pilih file foto/PDF</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,application/pdf"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          e.target.value = '';
+                          pickProof(file);
+                        }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={proofBusy}
+                      onClick={() => setProofOpen(true)}
+                      className="flex flex-col items-center justify-center p-3 border-2 border-dashed border-[#e0e0e0] rounded-2xl cursor-pointer hover:border-[#5f1340]/40 disabled:opacity-50"
+                    >
+                      {proofBusy ? <Loader2 className="h-4 w-4 text-slate-400 mb-1 animate-spin" /> : <Camera className="h-4 w-4 text-slate-400 mb-1" />}
+                      <span className="text-[11px] font-bold text-slate-500">{proofBusy ? 'Mengunggah…' : 'Ambil foto kamera'}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <button
               type="button"
               onClick={handleKirimNotaWa}
@@ -190,6 +281,15 @@ export default function Complete() {
             >
               <MessageCircle className="h-5 w-5" />
               <span>{sendingWa ? 'Menyiapkan…' : 'Kirim Nota Ke Customer'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate(`/qc?order=${encodeURIComponent(receipt.id || '')}&tab=frontliner`)}
+              className="w-full py-3.5 rounded-2xl bg-white border border-[#5f1340]/30 text-[#5f1340] font-black text-sm flex items-center justify-center gap-2.5 cursor-pointer"
+            >
+              <ClipboardCheck className="h-5 w-5" />
+              <span>QC Item Ini</span>
             </button>
 
             <div className="grid grid-cols-2 gap-3">
@@ -218,6 +318,23 @@ export default function Complete() {
         <ThermalNota
           createdOrderReceipt={receipt}
           onClose={() => setShowPrintModal(false)}
+        />
+      )}
+
+      {isCash && (
+        <QcCameraModal
+          open={proofOpen}
+          title="Ambil Foto Bukti Bayar"
+          buildOverlayLines={(date) => buildQcPhotoLines({
+            orderNo: receipt.id || 'Bukti Bayar',
+            stage: 'payment',
+            date
+          })}
+          onCapture={(file) => {
+            setProofOpen(false);
+            sendProof(file);
+          }}
+          onClose={() => setProofOpen(false)}
         />
       )}
     </div>

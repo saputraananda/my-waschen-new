@@ -17,8 +17,8 @@ import {
 
 const ShiftContext = createContext(null);
 
-/** Path yang boleh diakses tanpa shift (login + dashboard saja). */
-const SHIFT_FREE_PATHS = ['/login', '/', '/dashboard'];
+/** Path yang boleh diakses tanpa shift terbuka. Daily report tetap dibuka setelah close shift. */
+const SHIFT_FREE_PATHS = ['/login', '/', '/dashboard', '/daily-report'];
 
 function isShiftFreePath(pathname) {
   if (!pathname) return false;

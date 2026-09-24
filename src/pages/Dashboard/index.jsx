@@ -53,7 +53,14 @@ export default function Dashboard() {
 
   const [activeOutletName, setActiveOutletName] = useState(getInitialOutlet);
   const [activeOutletId, setActiveOutletId] = useState(localStorage.getItem('activeOutletId') || '2');
-  const [outlets, setOutlets] = useState([]);
+  const [outlets, setOutlets] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('outlets') || '[]');
+      return Array.isArray(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
   const [monthlyTarget, setMonthlyTarget] = useState(50000000);
 
   // Live orders state from database
@@ -98,7 +105,6 @@ export default function Dashboard() {
       })
       .catch(err => console.error('Gagal mengambil outlet dari mst_outlet:', err));
 
-    fetchLiveDashboardData();
   }, [navigate]);
 
   const fetchLiveDashboardData = useCallback(async () => {
@@ -122,6 +128,7 @@ export default function Dashboard() {
           customerType: o.customer_tier || 'Regular',
           memberBalance: parseFloat(o.member_balance ?? o.customer_deposit_balance ?? o.deposit_balance ?? 0) || 0,
           customerBalance: parseFloat(o.member_balance ?? o.customer_deposit_balance ?? o.deposit_balance ?? 0) || 0,
+          outletId: o.outlet_id,
           branch: o.outlet_name || o.home_branch || activeOutletName,
           serviceType: o.speed_name ? `${o.order_category} - ${o.speed_name}` : o.order_category,
           category: o.order_category,
@@ -171,7 +178,10 @@ export default function Dashboard() {
 
     const seq = ++fetchSeqRef.current;
     setOrdersLoading(true);
-    const ordersTask = getJson('/api/transactions')
+    const outletId = localStorage.getItem('activeOutletId') || undefined;
+    const ordersTask = getJson('/api/transactions', {
+      params: { outlet_id: outletId, _: Date.now() }
+    })
       .then((trxRes) => {
         if (seq !== fetchSeqRef.current) return;
         if (trxRes.data && trxRes.data.success) setOrders(mapOrders(trxRes.data.data));
@@ -184,7 +194,7 @@ export default function Dashboard() {
       });
 
     const pettyTask = getJson('/api/petty-cash', {
-      params: { outlet_id: localStorage.getItem('activeOutletId') || undefined }
+      params: { outlet_id: outletId }
     })
       .then((pettyRes) => {
         if (!pettyRes.data?.success) return;
@@ -212,6 +222,14 @@ export default function Dashboard() {
 
     await Promise.allSettled([ordersTask, pettyTask]);
   }, []);
+
+  useEffect(() => {
+    setOrders([]);
+    setCashLogs([]);
+    setInitialPettyCashFloat(0);
+    setMonthlyTarget(0);
+    fetchLiveDashboardData();
+  }, [activeOutletId, fetchLiveDashboardData]);
 
   // Realtime: refresh dashboard when backend emits changes
   useEffect(() => {
@@ -256,6 +274,7 @@ export default function Dashboard() {
         const now = new Date();
         const res = await axios.get('/api/masters/target', {
           params: {
+            outlet_id: activeOutletId || localStorage.getItem('activeOutletId') || undefined,
             outlet,
             tahun: now.getFullYear(),
             bulan: now.getMonth() + 1
@@ -270,7 +289,7 @@ export default function Dashboard() {
     };
 
     fetchTargetRevenue();
-  }, [activeOutletName]);
+  }, [activeOutletId, activeOutletName]);
 
   // Alert helper (AppDialog / AlertModal)
   const showToast = (title, message, type = 'success') => {
@@ -303,8 +322,13 @@ export default function Dashboard() {
   const totalCashOut = balanceLogs.filter(c => c.type === 'Keluar').reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
   const netCashInDrawer = initialPettyCashFloat + totalCashIn - totalCashOut;
 
+  const outletOrders = orders.filter((order) => {
+    if (order.outletId == null || order.outletId === '') return true;
+    return String(order.outletId) === String(activeOutletId);
+  });
+
   // Filter and search orders list
-  const filteredOrders = orders.filter(order => {
+  const filteredOrders = outletOrders.filter(order => {
     const matchesSearch = order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       order.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       order.serviceType.toLowerCase().includes(searchQuery.toLowerCase());
@@ -335,42 +359,42 @@ export default function Dashboard() {
       {/* Main Workspace Layout — baris atas 3:1, sisanya full width satu kolom. */}
       <main className="relative z-10 max-w-[1600px] w-full mx-auto p-3 sm:p-4 lg:p-6 flex-grow flex flex-col gap-5 lg:gap-6">
 
-        {/* Baris atas: badge shift + Banner di kiri, Petty Cash di kanan.
-            Badge ikut kolom kiri supaya Petty Cash tetap mulai dari atas. */}
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-5 lg:gap-6 items-start">
-          <div className="xl:col-span-3 flex flex-col gap-5 lg:gap-6">
-            {mustGateShift && (
-              <BadgeShift
-                shift={activeShift}
-                shiftChecked={shiftChecked}
-                currentEmployeeId={localStorage.getItem('employeeId')}
-                onOpenClose={openCloseModal}
-                onOpenShift={() => requestOpenShift()}
+        <div className="flex flex-col gap-5 lg:gap-6">
+          {mustGateShift && (
+            <BadgeShift
+              shift={activeShift}
+              shiftChecked={shiftChecked}
+              currentEmployeeId={localStorage.getItem('employeeId')}
+              onOpenClose={openCloseModal}
+              onOpenShift={() => requestOpenShift()}
+            />
+          )}
+
+          <div className="grid grid-cols-1 xl:grid-cols-4 gap-5 lg:gap-6 items-stretch">
+            <div className="xl:col-span-3 h-full">
+              <Banner
+                userProfile={userProfile}
+                navigate={navigate}
+                onOpenLacakNotaModal={() => setIsLacakNotaModalOpen(true)}
+                onOrderClick={startOrderFlow}
               />
-            )}
+            </div>
 
-            <Banner
-              userProfile={userProfile}
-              navigate={navigate}
-              onOpenLacakNotaModal={() => setIsLacakNotaModalOpen(true)}
-              onOrderClick={startOrderFlow}
-            />
-          </div>
-
-          <div className="xl:col-span-1">
-            <PettyCashCard
-              netCashInDrawer={netCashInDrawer}
-              initialPettyCashFloat={initialPettyCashFloat}
-              totalCashOut={totalCashOut}
-              navigate={navigate}
-            />
+            <div className="xl:col-span-1 h-full">
+              <PettyCashCard
+                netCashInDrawer={netCashInDrawer}
+                initialPettyCashFloat={initialPettyCashFloat}
+                totalCashOut={totalCashOut}
+                navigate={navigate}
+              />
+            </div>
           </div>
         </div>
 
         <Menu navigate={navigate} onOrderClick={startOrderFlow} />
 
         <StatCard
-          orders={orders}
+          orders={outletOrders}
           monthlyTarget={monthlyTarget}
           activeOutletId={activeOutletId}
           activeOutletName={activeOutletName}
@@ -380,7 +404,7 @@ export default function Dashboard() {
 
         <TrackingService
           filteredOrders={filteredOrders}
-          orders={orders}
+          orders={outletOrders}
           ordersLoading={ordersLoading}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}

@@ -1,5 +1,20 @@
 import React from 'react';
-import { Users, Plus, Search, MapPin, ArrowRight, ChevronLeft, ChevronRight, RefreshCw, Loader2 } from 'lucide-react';
+import { Users, Plus, Search, ArrowRight, ChevronLeft, ChevronRight, RefreshCw, Loader2 } from 'lucide-react';
+
+function customerPickLabel(c) {
+  const street = String(c.street || '').trim();
+  const block = String(c.block || '').trim();
+  const house = String(c.houseNumber || '').trim();
+  const parts = [];
+  if (street && street !== '-') parts.push(street);
+  if (block && !street.toLowerCase().includes(block.toLowerCase())) {
+    parts.push(/^blok\b/i.test(block) ? block : `Blok ${block}`);
+  }
+  if (house && !street.toLowerCase().includes(house.toLowerCase())) {
+    parts.push(/^no\.?\b/i.test(house) ? house : `No. ${house}`);
+  }
+  return parts.join(', ');
+}
 
 export default function SelectCustomer({
   customerSearch,
@@ -143,6 +158,7 @@ export default function SelectCustomer({
         ) : paginatedCustomers.length > 0 ? (
           paginatedCustomers.map((c) => {
             const isCross = c.homeBranch !== activeOutletName;
+            const place = customerPickLabel(c);
             return (
               <div
                 key={c.id}
@@ -161,22 +177,21 @@ export default function SelectCustomer({
                     {c.name.charAt(0).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-black text-sm text-[#313030] group-hover:text-[#5f1340] transition-colors truncate">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-black text-sm text-[#313030] group-hover:text-[#5f1340] transition-colors truncate min-w-0">
                         {formatName(c.name)}
                       </h3>
                       {renderTierBadge(c.tier)}
                     </div>
+                    {place && (
+                      <p className="text-[10px] font-bold text-[#5f1340] leading-snug line-clamp-2 mt-0.5">{place}</p>
+                    )}
                     <span className="text-xs text-slate-400 font-medium block mt-0.5">{c.phone}</span>
                   </div>
                 </div>
 
-                <div className="my-3 py-2.5 border-t border-b border-[#e0e0e0]/70 text-xs text-slate-500 space-y-1">
-                  <div className="flex items-start gap-1.5">
-                    <MapPin className="h-3.5 w-3.5 text-slate-400 mt-0.5 shrink-0" />
-                    <span className="text-[11px] line-clamp-2">{c.address || 'Alamat belum dilengkapi (Walk-in)'}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1">
+                <div className="my-3 py-2.5 border-t border-b border-[#e0e0e0]/70 text-xs text-slate-500">
+                  <div className="flex items-center justify-between text-[10px] text-slate-400">
                     <span>{c.homeBranch}</span>
                     {isCross && (
                       <span className="text-amber-800 bg-amber-50 border border-amber-200 font-bold px-1.5 py-0.5 rounded">

@@ -12,7 +12,8 @@ import {
   getPendingDeposit,
   uploadDepositProof
 } from '../controllers/shift.controller.js';
-import { uploadDepositReport } from '../middleware/upload.js';
+import { uploadDepositReport, verifyUploadContents } from '../middleware/upload.js';
+import { requirePosAuth } from '../middleware/requireAuth.js';
 
 const router = Router();
 
@@ -26,6 +27,6 @@ router.post('/:id/resume', resumeShift);
 router.get('/:id/transactions', getShiftTransactions);
 router.post('/:id/verify-txn', verifyShiftTxn);
 router.post('/:id/close', closeShift);
-router.post('/:id/deposit-proof', uploadDepositReport, uploadDepositProof);
+router.post('/:id/deposit-proof', requirePosAuth, uploadDepositReport, verifyUploadContents, uploadDepositProof);
 
 export default router;

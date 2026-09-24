@@ -17,7 +17,8 @@ export default function CloseShiftModal({
   const [error, setError] = useState('');
   const [actualCash, setActualCash] = useState('');
   const [actualPetty, setActualPetty] = useState('');
-  const [revenue, setRevenue] = useState('');
+  const [revenueTunai, setRevenueTunai] = useState('');
+  const [revenueNonTunai, setRevenueNonTunai] = useState('');
   const [showPinModal, setShowPinModal] = useState(false);
   const [verifiedCloserId, setVerifiedCloserId] = useState(null);
   // Shift 1: pilih Handover (default) atau Finalisasi. Shift 2: selalu Finalisasi.
@@ -39,7 +40,8 @@ export default function CloseShiftModal({
       if (id && !seen.has(id)) {
         seen.set(id, {
           id,
-          name: t.cashier_name || `Karyawan #${id}`
+          name: t.cashier_name || `Karyawan #${id}`,
+          role: t.cashier_role || 'Kasir'
         });
       }
     });
@@ -77,10 +79,16 @@ export default function CloseShiftModal({
       const res = await axios.get(`/api/shifts/${shiftId}/transactions`);
       if (res.data?.success) {
         setTxns(res.data.data || []);
-        const paidTotal = (res.data.data || [])
-          .filter((t) => t.payment_status === 'Lunas')
-          .reduce((s, t) => s + (parseFloat(t.grand_total) || 0), 0);
-        setRevenue(formatRupiah(String(Math.round(paidTotal))));
+        let tunai = 0;
+        let nonTunai = 0;
+        for (const t of res.data.data || []) {
+          if (t.payment_status !== 'Lunas') continue;
+          const amt = parseFloat(t.grand_total) || 0;
+          if (/tunai|cash/i.test(t.payment_method || '')) tunai += amt;
+          else nonTunai += amt;
+        }
+        setRevenueTunai(formatRupiah(String(Math.round(tunai))));
+        setRevenueNonTunai(formatRupiah(String(Math.round(nonTunai))));
       }
     } catch (err) {
       setError(err.response?.data?.message || err.message);
@@ -124,7 +132,9 @@ export default function CloseShiftModal({
       const res = await axios.post(`/api/shifts/${shiftId}/close`, {
         actualCash: parseRupiah(actualCash),
         actualPettyCash: parseRupiah(actualPetty),
-        declaredRevenue: parseRupiah(revenue),
+        declaredRevenueTunai: parseRupiah(revenueTunai),
+        declaredRevenueNonTunai: parseRupiah(revenueNonTunai),
+        declaredRevenue: parseRupiah(revenueTunai) + parseRupiah(revenueNonTunai),
         closeType,
         cashierEmployeeId: resolvedCloserId
       });
@@ -186,7 +196,7 @@ export default function CloseShiftModal({
               <h3 className="text-sm font-black text-[#313030]">
                 Closing Shift {isShiftPagi ? 'Pagi' : 'Siang'}
               </h3>
-              <p className="text-[10px] text-slate-400">Ceklis semua nota, pilih tipe closing, lalu isi cash / petty / revenue</p>
+              <p className="text-[10px] text-slate-400">Ceklis semua nota, pilih tipe closing, lalu isi cash / petty / revenue tunai dan non tunai</p>
             </div>
           </div>
           <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-[#313030]">
@@ -280,19 +290,22 @@ export default function CloseShiftModal({
                     const key = `frontliner-${idx}`;
                     const active = cashierFilter === key;
                     const count = txns.filter((t) => Number(t.cashier_employee_id) === Number(fl.id)).length;
+                    const sameRole = frontliners.filter((x) => x.role === fl.role).length;
+                    const seq = frontliners.slice(0, idx + 1).filter((x) => x.role === fl.role).length;
+                    const label = sameRole > 1 ? `${fl.role} ${seq}` : fl.role;
                     return (
                       <button
                         key={fl.id}
                         type="button"
                         onClick={() => setCashierFilter(key)}
-                        title={formatEmployeeName(fl.name, 'Frontliner')}
+                        title={formatEmployeeName(fl.name)}
                         className={`px-3.5 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer ${
                           active
                             ? 'bg-[#5f1340] text-white shadow-xs'
                             : 'bg-white border border-[#e0e0e0] text-slate-600 hover:border-[#5f1340]/40'
                         }`}
                       >
-                        Frontliner {idx + 1}
+                        {label}
                         <span className={`ml-1.5 text-[9px] ${active ? 'text-white/80' : 'text-slate-400'}`}>
                           ({count})
                         </span>
@@ -366,7 +379,7 @@ export default function CloseShiftModal({
               </table>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Cash Modal (aktual) *</label>
                 <input
@@ -388,14 +401,22 @@ export default function CloseShiftModal({
                 />
               </div>
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
-                  Revenue {isFinalClose ? (isShiftPagi ? 'Finalisasi' : '2 (Finalisasi)') : '1 (Handover)'} *
-                </label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Revenue Tunai *</label>
                 <input
                   required
                   type="text"
-                  value={revenue}
-                  onChange={(e) => setRevenue(formatRupiah(e.target.value))}
+                  value={revenueTunai}
+                  onChange={(e) => setRevenueTunai(formatRupiah(e.target.value))}
+                  className="w-full px-3 py-2.5 border border-[#e0e0e0] rounded-xl font-black text-sm outline-none focus:border-[#5f1340]"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Revenue Non Tunai *</label>
+                <input
+                  required
+                  type="text"
+                  value={revenueNonTunai}
+                  onChange={(e) => setRevenueNonTunai(formatRupiah(e.target.value))}
                   className="w-full px-3 py-2.5 border border-[#e0e0e0] rounded-xl font-black text-sm outline-none focus:border-[#5f1340]"
                 />
               </div>
