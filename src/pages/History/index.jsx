@@ -104,6 +104,8 @@ export default function History() {
           cashierName: t.cashier_name || t.cashier_employee_name || (t.cashier_employee_id ? `Kasir #${t.cashier_employee_id}` : 'Kasir Waschen'),
           createdAt: new Date(t.order_date).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
           rawDate: t.order_date || null,
+          settledAt: t.settled_at || null,
+          paidAt: t.paid_at || null,
           notes: t.special_notes || '-',
           // Delete Request Fields
           isDeleteRequested: t.is_delete_requested === 1 || t.is_delete_requested === true,

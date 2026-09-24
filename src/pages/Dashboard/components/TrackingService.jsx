@@ -399,7 +399,10 @@ export default function TrackingService({
   const passesDateFilter = (order) => passesDateModeFilter(order, dateFilterState);
 
   // filteredOrders sudah difilter tab antrean di Dashboard; di sini hanya filter tanggal
-  const displayOrders = filteredOrders.filter(passesDateFilter);
+  const displayOrders = filteredOrders
+    .filter(passesDateFilter)
+    .slice()
+    .sort((a, b) => (b.rawDate?.getTime?.() || 0) - (a.rawDate?.getTime?.() || 0));
 
   const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(displayOrders.length / pageSize));
   const currentPage = Math.min(page, totalPages);

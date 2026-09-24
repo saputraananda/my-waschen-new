@@ -28,7 +28,8 @@ import PaymentProofFields from '../../../components/PaymentProofFields.jsx';
 import ModalLacakNota from '../../../components/ModalLacakNota.jsx';
 import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
 import DateModeFilter from '../../../components/DateModeFilter.jsx';
-import { passesDateModeFilter, getCutoffMonthKey } from '../../../utils/dateCutoffFilter.js';
+import { passesDateModeFilter, getCutoffMonthKey, formatDateKeyId, toDateKey } from '../../../utils/dateCutoffFilter.js';
+import { formatDateId } from '../../../utils/FilterDate.js';
 import {
   sendCustomerNotaWhatsAppFromOrder,
   describeCustomerNotaWaResult,
@@ -96,6 +97,18 @@ export default function HistoryTransaction({
   const normalizePaymentStatus = (status) => {
     if (status === 'Belum Lunas') return 'Outstanding';
     return status || 'Outstanding';
+  };
+
+  const renderWhen = (value) => {
+    if (!value) return <span className="text-slate-300 font-bold">—</span>;
+    return (
+      <>
+        <span className="font-bold text-[#313030] block">{formatDateKeyId(toDateKey(value))}</span>
+        <span className="text-[10px] text-slate-400 font-semibold">
+          {formatDateId(value, { hour: '2-digit', minute: '2-digit' })}
+        </span>
+      </>
+    );
   };
 
   const matchesPaymentFilter = (order) => {
@@ -427,7 +440,7 @@ export default function HistoryTransaction({
     if (!matchesNotaQueueTab(toQueueOrder(order), activeFilterTab)) return false;
 
     return true;
-  });
+  }).slice().sort((a, b) => (new Date(b.rawDate || 0).getTime() || 0) - (new Date(a.rawDate || 0).getTime() || 0));
 
   // Helper for Status Tab Counts
   const getTabCount = (tabName) => {
@@ -607,11 +620,13 @@ export default function HistoryTransaction({
           <thead>
             <tr className="border-b border-[#e0e0e0]/70 text-[10px] uppercase font-extrabold text-slate-400 tracking-wider bg-slate-50/70">
               <th className="py-3.5 px-6">No. Struk Nota</th>
+              <th className="py-3.5 px-6">Buat Nota</th>
               <th className="py-3.5 px-6 text-center">Pelanggan</th>
               <th className="py-3.5 px-6 text-center">No. WhatsApp</th>
               <th className="py-3.5 px-6 text-center">Status Pengerjaan</th>
               <th className="py-3.5 px-6">Tagihan</th>
               <th className="py-3.5 px-6 text-center">Status Bayar</th>
+              <th className="py-3.5 px-6">Pelunasan</th>
               <th className="py-3.5 px-6 text-center">Aksi</th>
             </tr>
           </thead>
@@ -642,6 +657,10 @@ export default function HistoryTransaction({
                         <QrCode className="h-3 w-3 text-slate-400 shrink-0" />
                         {order.barcode || order.id}
                       </span>
+                    </td>
+
+                    <td className="py-3.5 px-6 whitespace-nowrap">
+                      {renderWhen(order.rawDate)}
                     </td>
 
                     {/* Pelanggan */}
@@ -717,6 +736,10 @@ export default function HistoryTransaction({
                           </button>
                         );
                       })()}
+                    </td>
+
+                    <td className="py-3.5 px-6 whitespace-nowrap">
+                      {renderWhen(order.settledAt || (normalizePaymentStatus(order.paymentStatus) === 'Lunas' ? order.paidAt : null))}
                     </td>
 
                     {/* Aksi Kasir (Center Aligned, Print & Delete Request Icon Buttons) */}

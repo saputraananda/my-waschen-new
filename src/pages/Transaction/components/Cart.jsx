@@ -1,5 +1,5 @@
 import React from 'react';
-import { Receipt, Plus, Trash2, Edit3, Zap, Truck, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Receipt, Trash2, Edit3, Zap, Truck, ArrowLeft, ArrowRight } from 'lucide-react';
 import ItemConfigModal from './ItemConfigModal.jsx';
 
 export default function Cart({
@@ -39,23 +39,12 @@ export default function Cart({
       <div className="lg:col-span-7 flex flex-col gap-5">
         
         <div className="bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-xs flex flex-col gap-4">
-          <div className="flex items-center justify-between pb-3 border-b border-[#e0e0e0]">
-            <div>
-              <h2 className="text-sm font-black text-[#5f1340] uppercase tracking-wider flex items-center gap-2">
-                <Receipt className="h-4 w-4" />
-                <span>Langkah 3: Rincian Item di Keranjang ({cartItems.length})</span>
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">Klik item atau &quot;Edit Rincian&quot; untuk ubah qty, catatan, merk, warna, dll. — sama seperti saat pilih layanan</p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setCurrentStep(2)}
-              className="px-3.5 py-1.5 bg-[#5f1340]/10 hover:bg-[#5f1340] text-[#5f1340] hover:text-white font-black text-xs rounded-xl transition-colors flex items-center gap-1 cursor-pointer"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>Tambah Layanan Lain</span>
-            </button>
+          <div className="pb-3 border-b border-[#e0e0e0]">
+            <h2 className="text-sm font-black text-[#5f1340] uppercase tracking-wider flex items-center gap-2">
+              <Receipt className="h-4 w-4" />
+              <span>Langkah 3: Rincian Item di Keranjang ({cartItems.length})</span>
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">Klik item atau &quot;Edit Rincian&quot; untuk ubah qty, catatan, merk, warna, dll. — sama seperti saat pilih layanan</p>
           </div>
 
           {cartItems.length > 0 ? (

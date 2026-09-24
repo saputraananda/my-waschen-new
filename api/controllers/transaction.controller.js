@@ -603,7 +603,7 @@ export const getTransactions = async (req, res) => {
       params.push(s, s, s, s);
     }
 
-    sql += ' ORDER BY t.id DESC';
+    sql += ' ORDER BY t.order_date DESC, t.id DESC';
 
     if (limit) {
       sql += ' LIMIT ?';
