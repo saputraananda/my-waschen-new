@@ -39,6 +39,19 @@ const io = new Server(server, {
 
 setIO(io);
 
+app.use((err, req, res, next) => {
+  console.error(err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ success: false, message: 'Terjadi kesalahan server' });
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('unhandledRejection', err?.stack || err?.message || err);
+});
+process.on('uncaughtException', (err) => {
+  console.error('uncaughtException', err?.stack || err?.message || err);
+});
+
 io.on('connection', (socket) => {
   socket.on('join:outlet', (outletId) => {
     if (!outletId) return;
