@@ -567,6 +567,11 @@ export default function ItemConfigModal({
                       : ((parseInt(itemSpecs.qty || 0, 10)) * configuringItem.price)
                 ).toLocaleString('id-ID')}
               </span>
+              {!isKiloan && parseInt(itemSpecs.qty, 10) > 1 && (
+                <span className="block text-[10px] font-bold text-slate-500">
+                  Dipecah jadi {parseInt(itemSpecs.qty, 10)} item terpisah (QC per item)
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-2">

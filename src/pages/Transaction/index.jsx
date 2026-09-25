@@ -492,6 +492,8 @@ export default function TransactionPage() {
 
     const isMeter = configuringItem.unit_id === 4 || configuringItem.unit === 'm²' || configuringItem.unit === 'm2' || configuringItem.unit === 'Meter';
     const isKiloan = String(configuringItem.category || '').toLowerCase().includes('kiloan');
+    // Item satuan/meter qty > 1 dipecah jadi N baris qty 1 agar di-QC per potong.
+    const splitCount = isKiloan ? 1 : Math.max(1, parseInt(itemSpecs.qty, 10) || 1);
 
     if (isKiloan) {
       const weight = Math.max(0.5, parseFloat(itemSpecs.weight) || 4);
@@ -504,15 +506,12 @@ export default function TransactionPage() {
     } else if (isMeter) {
       const len = parseFloat(itemSpecs.length) || 1;
       const wid = parseFloat(itemSpecs.width) || 1;
-      const q = Math.max(1, parseInt(itemSpecs.qty, 10) || 1);
       const areaPerPcs = len * wid;
-      const totalArea = areaPerPcs * q;
-      effectivePrice = totalArea * configuringItem.price;
-      qtyDisplay = `${q} Pcs (${totalArea.toFixed(2)} m²)`;
+      effectivePrice = areaPerPcs * configuringItem.price;
+      qtyDisplay = `1 Pcs (${areaPerPcs.toFixed(2)} m²)`;
     } else {
-      const q = Math.max(1, parseInt(itemSpecs.qty, 10) || 1);
-      effectivePrice = q * configuringItem.price;
-      qtyDisplay = `${q} ${configuringItem.unit}`;
+      effectivePrice = configuringItem.price;
+      qtyDisplay = `1 ${configuringItem.unit}`;
     }
 
     const editingCartId = configuringItem.editingCartId;
@@ -538,38 +537,9 @@ export default function TransactionPage() {
           note: itemSpecs.note || '-'
         };
 
-    if (editingCartId) {
-      setCartItems((prev) => prev.map((item) => (
-        item.cartId === editingCartId
-          ? {
-              ...item,
-              ...specsForCart,
-              qty: isMeter ? (parseInt(itemSpecs.qty, 10) || 1) : (isKiloan ? (parseFloat(itemSpecs.weight) || 4) : (parseInt(itemSpecs.qty, 10) || 1)),
-              weight: parseFloat(itemSpecs.weight) || 4,
-              qtyDisplay,
-              effectiveSubtotal: effectivePrice,
-              length: parseFloat(itemSpecs.length) || 1,
-              width: parseFloat(itemSpecs.width) || 1,
-              isExpanded: false
-            }
-          : item
-      )));
-      setConfiguringItem(null);
-      return;
-    }
-
-    const newCartItem = {
-      cartId: `ITEM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      serviceId: configuringItem.id,
-      serviceDbId: configuringItem.dbId,
-      serviceIsCleanox: configuringItem.isCleanox === true,
+    const lineFields = {
       ...specsForCart,
-      name: configuringItem.name,
-      category: configuringItem.category,
-      unit: configuringItem.unit,
-      unitPrice: configuringItem.price,
-      duration: configuringItem.duration,
-      qty: isMeter ? (parseInt(itemSpecs.qty, 10) || 1) : (isKiloan ? (parseFloat(itemSpecs.weight) || 4) : (parseInt(itemSpecs.qty, 10) || 1)),
+      qty: isKiloan ? (parseFloat(itemSpecs.weight) || 4) : 1,
       weight: parseFloat(itemSpecs.weight) || 4,
       qtyDisplay,
       effectiveSubtotal: effectivePrice,
@@ -577,8 +547,32 @@ export default function TransactionPage() {
       width: parseFloat(itemSpecs.width) || 1,
       isExpanded: false
     };
+    const newId = (i) => `ITEM-${Date.now()}-${i}-${Math.floor(Math.random() * 1000)}`;
 
-    setCartItems([...cartItems, newCartItem]);
+    if (editingCartId) {
+      // Edit dengan qty > 1 → baris ini dipecah di tempat (baris pertama tetap cartId lama).
+      setCartItems((prev) => prev.flatMap((item) => (
+        item.cartId === editingCartId
+          ? Array.from({ length: splitCount }, (_, i) => ({ ...item, ...lineFields, cartId: i === 0 ? item.cartId : newId(i) }))
+          : [item]
+      )));
+      setConfiguringItem(null);
+      return;
+    }
+
+    const baseItem = {
+      serviceId: configuringItem.id,
+      serviceDbId: configuringItem.dbId,
+      serviceIsCleanox: configuringItem.isCleanox === true,
+      name: configuringItem.name,
+      category: configuringItem.category,
+      unit: configuringItem.unit,
+      unitPrice: configuringItem.price,
+      duration: configuringItem.duration,
+      ...lineFields
+    };
+
+    setCartItems([...cartItems, ...Array.from({ length: splitCount }, (_, i) => ({ ...baseItem, cartId: newId(i) }))]);
     setConfiguringItem(null);
   };
 
