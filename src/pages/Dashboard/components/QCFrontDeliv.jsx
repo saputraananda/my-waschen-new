@@ -78,7 +78,6 @@ function QcSheet({ target, onClose, onSaved }) {
   const photosRef = useRef([]);
   photosRef.current = photos;
 
-  const photoRequired = qcStatus === 'temuan' || handover;
   const needBags = kiloan && stage === 'frontliner';
   // Kiloan: setrika sudah ditentukan paket layanan, jangan tanya lagi di QC.
   const askIroning = stage === 'frontliner' && !kiloan;
@@ -103,8 +102,8 @@ function QcSheet({ target, onClose, onSaved }) {
 
   const submit = async () => {
     setError('');
-    if (photoRequired && photos.length === 0) {
-      setError(handover ? 'Serah terima wajib minimal 1 foto.' : 'Temuan wajib minimal 1 foto.');
+    if (photos.length === 0) {
+      setError(handover ? 'Serah terima wajib minimal 1 foto.' : 'QC wajib minimal 1 foto.');
       return;
     }
     if (needBags && bags.some((b) => !(Number(b.qty) > 0))) {
@@ -204,7 +203,7 @@ function QcSheet({ target, onClose, onSaved }) {
 
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
-              {handover ? 'Foto bukti diantar (wajib)' : photoRequired ? 'Foto temuan (wajib)' : 'Foto (opsional)'} · maks {MAX_PHOTOS}
+              {handover ? 'Foto bukti diantar (wajib)' : qcStatus === 'temuan' ? 'Foto temuan (wajib)' : 'Foto (wajib)'} · maks {MAX_PHOTOS}
             </p>
             <div className="grid grid-cols-3 gap-2">
               {photos.map((p, i) => (

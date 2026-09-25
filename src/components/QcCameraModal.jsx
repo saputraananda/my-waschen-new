@@ -74,9 +74,8 @@ export default function QcCameraModal({ open, title = 'Ambil Foto QC', buildOver
     const ctx = canvas.getContext('2d');
     if (!ctx) { setCapturing(false); return; }
 
-    if (facingMode === 'user') { ctx.translate(w, 0); ctx.scale(-1, 1); }
+    // Jangan mirror hasil: preview saja yang di-mirror (kamera depan), file tetap orientasi asli.
     ctx.drawImage(video, 0, 0, w, h);
-    if (facingMode === 'user') ctx.setTransform(1, 0, 0, 1, 0, 0);
 
     drawTextOverlay(ctx, w, h, buildOverlayLines ? buildOverlayLines(new Date()) : []);
 
