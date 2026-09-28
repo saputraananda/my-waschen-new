@@ -122,6 +122,8 @@ export default function TransactionPage() {
           branch: c.home_branch || 'Waschen Laundry Citra Gran',
           tier: c.tier || c.tier_label || 'Reguler',
           totalSpending: parseFloat(c.total_spent) || 0,
+          periodSpending: parseFloat(c.monthly_spending) || 0,
+          yearSpending: parseFloat(c.spending_value_year) || 0,
           totalTrx: parseInt(c.total_orders, 10) || 0,
           memberBalance: parseFloat(c.deposit_balance) || 0,
           lastOrder: c.updated_at
@@ -1031,6 +1033,7 @@ export default function TransactionPage() {
                 <div className="min-w-0">
                   <span className="font-extrabold text-xs text-[#313030] block truncate">{formatName(selectedCustomer.name)}</span>
                   <span className="text-[10px] text-emerald-700 font-bold block">Saldo: Rp {(selectedCustomer.memberBalance || 0).toLocaleString('id-ID')}</span>
+                  <span className="text-[10px] text-slate-500 font-bold block truncate">Periode Rp {(selectedCustomer.periodSpending || 0).toLocaleString('id-ID')} · Tahun Rp {(selectedCustomer.yearSpending || 0).toLocaleString('id-ID')}</span>
                 </div>
               </div>
               <button

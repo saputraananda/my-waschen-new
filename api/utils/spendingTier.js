@@ -5,33 +5,26 @@ import { getWibYearMonth } from './wib.js';
  * Dipisah dari membership (Diamond/Gold paket deposit).
  */
 
-const currentPeriod = () => {
-  const { year, month } = getWibYearMonth();
-  return `${year}-${String(month).padStart(2, '0')}`;
-};
+const tierIdByCode = (tiers, code) => tiers.find((t) => t.code === code)?.id || null;
 
-export const resolveSpendingTierId = (tiers, { monthlySpending, totalOrders }) => {
-  const monthly = parseFloat(monthlySpending) || 0;
+/**
+ * VIP/Gold: belanja periode ini, atau spending tahun sudah menutup jatah
+ * bulan ke-N (N × ambang bulanan). Di bawah itu: order ≤ 1 = One-Time, selain itu Reguler.
+ * monthIndex kosong = jalur tahun tidak dipakai (pemanggil lama, mis. migrasi dengan spending 0).
+ */
+export const resolveSpendingTierId = (tiers, { monthlySpending, yearSpending, monthIndex, totalOrders } = {}) => {
+  const period = parseFloat(monthlySpending) || 0;
+  const year = parseFloat(yearSpending) || 0;
   const orders = parseInt(totalOrders, 10) || 0;
+  const month = monthIndex == null || monthIndex === '' ? null : Math.max(1, parseInt(monthIndex, 10) || 1);
+  const vipBar = parseFloat(tiers.find((t) => t.code === 'VIP')?.min_monthly_spending) || 1000000;
+  const goldBar = parseFloat(tiers.find((t) => t.code === 'GOLD')?.min_monthly_spending) || 500000;
+  const qualifies = (bar) => period >= bar || (month != null && year >= bar * month);
 
-  const sorted = [...tiers].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-
-  for (const tier of sorted) {
-    const minMonthly = tier.min_monthly_spending != null ? parseFloat(tier.min_monthly_spending) : null;
-    const maxMonthly = tier.max_monthly_spending != null ? parseFloat(tier.max_monthly_spending) : null;
-    const minOrders = tier.min_total_orders != null ? parseInt(tier.min_total_orders, 10) : null;
-    const maxOrders = tier.max_total_orders != null ? parseInt(tier.max_total_orders, 10) : null;
-
-    if (minMonthly != null && monthly < minMonthly) continue;
-    if (maxMonthly != null && monthly > maxMonthly) continue;
-    if (minOrders != null && orders < minOrders) continue;
-    if (maxOrders != null && orders > maxOrders) continue;
-
-    return tier.id;
-  }
-
-  const oneTime = tiers.find((t) => t.code === 'ONE_TIME');
-  return oneTime?.id || tiers[tiers.length - 1]?.id || null;
+  if (qualifies(vipBar)) return tierIdByCode(tiers, 'VIP');
+  if (qualifies(goldBar)) return tierIdByCode(tiers, 'GOLD');
+  if (orders <= 1) return tierIdByCode(tiers, 'ONE_TIME');
+  return tierIdByCode(tiers, 'REGULER') || tiers[tiers.length - 1]?.id || null;
 };
 
 export async function loadActiveSpendingTiers(connection) {
@@ -46,16 +39,20 @@ export async function loadActiveSpendingTiers(connection) {
 }
 
 /**
- * Update monthly_spending + spending_tier_id setelah transaksi lunas.
+ * Update spending + tier setelah nota dibuat. grand_total sekali per nota.
+ * Periode = bulan kalender WIB. Tahun berganti → spending_value_year mulai dari nota ini.
  */
 export async function applyTransactionSpendingUpdate(connection, customerId, paidAmount) {
   const amount = parseFloat(paidAmount) || 0;
   if (!customerId || amount <= 0) return null;
 
-  const period = currentPeriod();
+  const { year, month } = getWibYearMonth();
+  const period = `${year}-${String(month).padStart(2, '0')}`;
+  const yearKey = String(year);
 
   const [custRows] = await connection.query(
-    `SELECT id, total_orders, total_spent, monthly_spending, monthly_spending_period, spending_tier_id
+    `SELECT id, total_orders, total_spent, monthly_spending, monthly_spending_period,
+            spending_value_year, spending_year, spending_tier_id
      FROM mst_customer WHERE id = ? LIMIT 1`,
     [customerId]
   );
@@ -65,11 +62,15 @@ export async function applyTransactionSpendingUpdate(connection, customerId, pai
   const newTotalOrders = (parseInt(customer.total_orders, 10) || 0) + 1;
   const newTotalSpent = (parseFloat(customer.total_spent) || 0) + amount;
   const samePeriod = customer.monthly_spending_period === period;
+  const sameYear = String(customer.spending_year || '') === yearKey;
   const newMonthlySpending = (samePeriod ? parseFloat(customer.monthly_spending) || 0 : 0) + amount;
+  const newYearSpending = (sameYear ? parseFloat(customer.spending_value_year) || 0 : 0) + amount;
 
   const tiers = await loadActiveSpendingTiers(connection);
   const newTierId = resolveSpendingTierId(tiers, {
     monthlySpending: newMonthlySpending,
+    yearSpending: newYearSpending,
+    monthIndex: month,
     totalOrders: newTotalOrders
   });
 
@@ -79,12 +80,19 @@ export async function applyTransactionSpendingUpdate(connection, customerId, pai
          total_spent = ?,
          monthly_spending = ?,
          monthly_spending_period = ?,
+         spending_value_year = ?,
+         spending_year = ?,
          spending_tier_id = ?,
          last_transaction_at = NOW(),
          updated_at = NOW()
      WHERE id = ?`,
-    [newTotalOrders, newTotalSpent, newMonthlySpending, period, newTierId, customerId]
+    [newTotalOrders, newTotalSpent, newMonthlySpending, period, newYearSpending, yearKey, newTierId, customerId]
   );
 
-  return { spendingTierId: newTierId, monthlySpending: newMonthlySpending, totalOrders: newTotalOrders };
+  return {
+    spendingTierId: newTierId,
+    monthlySpending: newMonthlySpending,
+    yearSpending: newYearSpending,
+    totalOrders: newTotalOrders
+  };
 }

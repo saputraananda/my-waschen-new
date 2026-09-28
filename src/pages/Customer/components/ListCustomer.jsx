@@ -442,6 +442,8 @@ export default function ListCustomer({
                   <div><strong>Terdaftar Pada:</strong> {selectedCustomerDetail.registeredAt || '-'}</div>
                   <div><strong>Terakhir Transaksi:</strong> {(selectedCustomerDetail.trxCount || 0) > 0 ? (selectedCustomerDetail.lastTrx || '-') : '-'}</div>
                   <div><strong>Total Spending:</strong> Rp {(selectedCustomerDetail.totalSpending || 0).toLocaleString('id-ID')}</div>
+                  <div><strong>Spending Periode:</strong> Rp {(selectedCustomerDetail.monthlySpending || 0).toLocaleString('id-ID')}</div>
+                  <div><strong>Spending Tahun:</strong> Rp {(selectedCustomerDetail.yearSpending || 0).toLocaleString('id-ID')}</div>
                 </div>
               </div>
 

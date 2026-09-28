@@ -43,6 +43,7 @@ const mapCustomerFromApi = (c, activeOutletName) => {
     membershipPackage: c.membership_package_name || null,
     totalSpending,
     monthlySpending: parseFloat(c.monthly_spending) || 0,
+    yearSpending: parseFloat(c.spending_value_year) || 0,
     trxCount,
     depositBalance: parseFloat(c.deposit_balance) || 0,
     registeredAt: formatDateId(c.created_at),
