@@ -201,14 +201,58 @@ export const getCustomers = async (req, res) => {
     }
 
     if (outlet_id) {
-      sql += ' AND (c.preferred_outlet_id = ? OR c.preferred_outlet_id IS NULL)';
+      sql += ' AND c.preferred_outlet_id = ?';
       params.push(outlet_id);
     }
 
-    sql += ' ORDER BY c.id DESC';
+    const pageNum = parseInt(req.query.page, 10);
+    const sortColumns = {
+      total_spent: 'c.total_spent',
+      total_orders: 'c.total_orders',
+      created_at: 'c.created_at',
+      last_transaction_at: 'c.last_transaction_at'
+    };
+    const sortExpr = sortColumns[req.query.sort] || 'c.id';
+    const sortDir = String(req.query.dir || '').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    const orderBy = `ORDER BY ${sortExpr} ${sortDir}, c.id DESC`;
+    if (!pageNum) {
+      const [rows] = await myWaschenPool.query(`${sql} ${orderBy}`, params);
+      return res.status(200).json({ success: true, data: rows });
+    }
 
-    const [rows] = await myWaschenPool.query(sql, params);
-    return res.status(200).json({ success: true, data: rows });
+    const pageSize = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const offset = (pageNum - 1) * pageSize;
+    const where = sql.slice(CUSTOMER_SELECT.length);
+    const [rows] = await myWaschenPool.query(
+      `${CUSTOMER_SELECT_LIGHT} ${where} ${orderBy} LIMIT ? OFFSET ?`,
+      [...params, pageSize, offset]
+    );
+    const [[stats]] = await myWaschenPool.query(
+      `SELECT COUNT(*) AS total,
+              SUM(st.code = 'VIP') AS vip,
+              SUM(st.code = 'GOLD') AS gold,
+              SUM(st.code = 'REGULER') AS reguler,
+              SUM(st.code = 'ONE_TIME') AS one_time
+       FROM mst_customer c
+       LEFT JOIN mst_customer_tier st ON c.spending_tier_id = st.id
+       ${where}`,
+      params
+    );
+    const total = Number(stats?.total) || 0;
+    return res.status(200).json({
+      success: true,
+      data: rows,
+      meta: {
+        total,
+        page: pageNum,
+        limit: pageSize,
+        pages: Math.max(1, Math.ceil(total / pageSize)),
+        vip: Number(stats?.vip) || 0,
+        gold: Number(stats?.gold) || 0,
+        reguler: Number(stats?.reguler) || 0,
+        oneTime: Number(stats?.one_time) || 0
+      }
+    });
   } catch (error) {
     console.error('Error fetching customers:', error);
     return res.status(500).json({

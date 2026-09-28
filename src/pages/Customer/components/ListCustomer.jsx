@@ -91,18 +91,38 @@ const openWhatsApp = (e, rawPhone) => {
   window.open(`https://wa.me/${digits}`, '_blank', 'noopener,noreferrer');
 };
 
+function SortTh({ col, label, sortBy, sortDir, onSort }) {
+  const active = sortBy === col;
+  return (
+    <th className="py-3.5 px-4">
+      <button type="button" onClick={() => onSort(col)} className={`inline-flex items-center gap-1 uppercase cursor-pointer ${active ? 'text-[#5f1340]' : 'hover:text-slate-600'}`}>
+        {label}
+        <span aria-hidden="true">{active ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}</span>
+      </button>
+    </th>
+  );
+}
+
 export default function ListCustomer({
-  customers,
   customerTiers = [],
   outlets = [],
   activeOutletName = '',
   activeOutletId = '',
+  refreshKey = 0,
   onEditCustomer
 }) {
+  const PAGE_SIZE = 50;
   const navigate = useNavigate();
+  const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTier, setSelectedTier] = useState('Semua');
   const [selectedBranch, setSelectedBranch] = useState(activeOutletId || 'Semua');
+  const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState('');
+  const [sortDir, setSortDir] = useState('desc');
+  const [rows, setRows] = useState([]);
+  const [meta, setMeta] = useState({ total: 0, pages: 1, vip: 0, gold: 0, reguler: 0, oneTime: 0 });
+  const [loading, setLoading] = useState(true);
   const [selectedCustomerDetail, setSelectedCustomerDetail] = useState(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isCombinedModalOpen, setIsCombinedModalOpen] = useState(false);
@@ -112,32 +132,73 @@ export default function ListCustomer({
     if (activeOutletId) setSelectedBranch(String(activeOutletId));
   }, [activeOutletId]);
 
-  const tierTabs = ['Semua', ...(customerTiers.length ? customerTiers.map((t) => t.name) : ['VIP', 'Gold', 'Reguler', 'One-Time'])];
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const next = searchInput.trim();
+      setSearchQuery((q) => {
+        if (q !== next) setPage(1);
+        return next;
+      });
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
-  const matchesBranch = (c) => {
-    if (!selectedBranch || selectedBranch === 'Semua') return true;
-    if (c.preferredOutletId != null && String(c.preferredOutletId) === String(selectedBranch)) return true;
-    const outlet = outlets.find((o) => String(o.id) === String(selectedBranch));
-    const outletName = outlet?.full_name || outlet?.name || activeOutletName;
-    if (!outletName) return false;
-    const branch = (c.homeBranch || '').toLowerCase();
-    return branch === outletName.toLowerCase() || branch.includes(outletName.toLowerCase());
+  useEffect(() => { setPage(1); }, [refreshKey]);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setLoading(true);
+    const params = { page, limit: PAGE_SIZE };
+    if (searchQuery) params.search = searchQuery;
+    if (selectedTier !== 'Semua') params.tier = selectedTier;
+    if (selectedBranch && selectedBranch !== 'Semua') params.outlet_id = selectedBranch;
+    if (sortBy) { params.sort = sortBy; params.dir = sortDir; }
+    axios.get('/api/customers', { params, signal: ctrl.signal })
+      .then((res) => {
+        if (!res.data?.success) return;
+        const formatDateId = (d) => (d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-');
+        setRows((res.data.data || []).map((c) => {
+          const trxCount = parseInt(c.trx_count_live ?? c.total_orders, 10) || 0;
+          const lastDate = c.last_order_date || null;
+          return {
+            id: c.customer_code || c.id,
+            dbId: c.id,
+            name: c.name,
+            phone: c.phone,
+            homeBranch: c.home_branch || activeOutletName,
+            tier: c.tier || 'One-Time',
+            membershipTier: c.membership_tier || null,
+            totalSpending: parseFloat(c.total_spent_live ?? c.total_spent) || 0,
+            trxCount,
+            registeredAt: formatDateId(c.created_at),
+            lastTrx: trxCount > 0 && lastDate ? formatDateId(lastDate) : '-',
+            source: c.source || c.source_name || '-'
+          };
+        }));
+        const m = res.data.meta || {};
+        setMeta({
+          total: Number(m.total) || 0,
+          pages: Number(m.pages) || 1,
+          vip: Number(m.vip) || 0,
+          gold: Number(m.gold) || 0,
+          reguler: Number(m.reguler) || 0,
+          oneTime: Number(m.oneTime) || 0
+        });
+      })
+      .catch((err) => {
+        if (err.code !== 'ERR_CANCELED') console.error('Gagal memuat data pelanggan:', err);
+      })
+      .finally(() => { if (!ctrl.signal.aborted) setLoading(false); });
+    return () => ctrl.abort();
+  }, [page, searchQuery, selectedTier, selectedBranch, sortBy, sortDir, refreshKey, activeOutletName]);
+
+  const toggleSort = (col) => {
+    setPage(1);
+    if (sortBy === col) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortBy(col); setSortDir('desc'); }
   };
 
-  const filteredCustomers = customers.filter((c) => {
-    const q = searchQuery.toLowerCase();
-    const matchesSearch = !q
-      || c.name.toLowerCase().includes(q)
-      || (c.phone || '').includes(searchQuery);
-    if (!matchesSearch || !matchesBranch(c)) return false;
-    if (selectedTier === 'Semua') return true;
-    return normalizeTier(c.tier) === normalizeTier(selectedTier);
-  });
-
-  const totalVipCount = filteredCustomers.filter((c) => normalizeTier(c.tier) === 'VIP').length;
-  const totalGoldCount = filteredCustomers.filter((c) => normalizeTier(c.tier) === 'Gold').length;
-  const totalRegulerCount = filteredCustomers.filter((c) => normalizeTier(c.tier) === 'Reguler').length;
-  const totalOneTimeCount = filteredCustomers.filter((c) => normalizeTier(c.tier) === 'One-Time').length;
+  const tierTabs = ['Semua', ...(customerTiers.length ? customerTiers.map((t) => t.name) : ['VIP', 'Gold', 'Reguler', 'One-Time'])];
 
   const openCustomerDetail = async (cust) => {
     setSelectedCustomerDetail(cust);
@@ -191,35 +252,35 @@ export default function ListCustomer({
             </div>
             <div className="min-w-0 flex-1">
               <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Total Pelanggan</span>
-              <span className="text-sm sm:text-lg font-black text-[#313030] block truncate">{filteredCustomers.length} Orang</span>
+              <span className="text-sm sm:text-lg font-black text-[#313030] block truncate">{meta.total} Orang</span>
             </div>
           </div>
           <div className="bg-white border border-[#e0e0e0] rounded-2xl p-3 sm:p-4 shadow-xs flex items-center gap-2.5 sm:gap-4 min-w-0">
             <div className="p-2.5 sm:p-3 bg-amber-50 text-amber-700 rounded-xl shrink-0"><Award className="h-5 w-5 sm:h-6 sm:w-6" /></div>
             <div className="min-w-0 flex-1">
               <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">VIP</span>
-              <span className="text-sm sm:text-lg font-black text-amber-800 block truncate">{totalVipCount} Pelanggan</span>
+              <span className="text-sm sm:text-lg font-black text-amber-800 block truncate">{meta.vip} Pelanggan</span>
             </div>
           </div>
           <div className="bg-white border border-[#e0e0e0] rounded-2xl p-3 sm:p-4 shadow-xs flex items-center gap-2.5 sm:gap-4 min-w-0">
             <div className="p-2.5 sm:p-3 bg-yellow-50 text-yellow-700 rounded-xl shrink-0"><TrendingUp className="h-5 w-5 sm:h-6 sm:w-6" /></div>
             <div className="min-w-0 flex-1">
               <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Gold</span>
-              <span className="text-sm sm:text-lg font-black text-yellow-800 block truncate">{totalGoldCount} Pelanggan</span>
+              <span className="text-sm sm:text-lg font-black text-yellow-800 block truncate">{meta.gold} Pelanggan</span>
             </div>
           </div>
           <div className="bg-white border border-[#e0e0e0] rounded-2xl p-3 sm:p-4 shadow-xs flex items-center gap-2.5 sm:gap-4 min-w-0">
             <div className="p-2.5 sm:p-3 bg-slate-100 text-slate-600 rounded-xl shrink-0"><UserRound className="h-5 w-5 sm:h-6 sm:w-6" /></div>
             <div className="min-w-0 flex-1">
               <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">Reguler</span>
-              <span className="text-sm sm:text-lg font-black text-slate-700 block truncate">{totalRegulerCount} Pelanggan</span>
+              <span className="text-sm sm:text-lg font-black text-slate-700 block truncate">{meta.reguler} Pelanggan</span>
             </div>
           </div>
           <div className="bg-white border border-[#e0e0e0] rounded-2xl p-3 sm:p-4 shadow-xs flex items-center gap-2.5 sm:gap-4 min-w-0 col-span-2 sm:col-span-1">
             <div className="p-2.5 sm:p-3 bg-sky-50 text-sky-700 rounded-xl shrink-0"><UserPlus className="h-5 w-5 sm:h-6 sm:w-6" /></div>
             <div className="min-w-0 flex-1">
               <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">One-Time</span>
-              <span className="text-sm sm:text-lg font-black text-sky-800 block truncate">{totalOneTimeCount} Pelanggan</span>
+              <span className="text-sm sm:text-lg font-black text-sky-800 block truncate">{meta.oneTime} Pelanggan</span>
             </div>
           </div>
         </div>
@@ -231,8 +292,8 @@ export default function ListCustomer({
               <input
                 type="text"
                 placeholder="Contoh : Budi / 087770597000"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340]"
               />
             </div>
@@ -240,7 +301,7 @@ export default function ListCustomer({
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto min-w-0">
               <select
                 value={selectedBranch}
-                onChange={(e) => setSelectedBranch(e.target.value)}
+                onChange={(e) => { setSelectedBranch(e.target.value); setPage(1); }}
                 className="w-full sm:w-auto px-3 py-2 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl text-xs font-bold text-[#313030] outline-none focus:border-[#5f1340] cursor-pointer min-w-0 sm:min-w-[180px]"
                 title="Filter cabang"
               >
@@ -257,7 +318,7 @@ export default function ListCustomer({
                   <button
                     key={tier}
                     type="button"
-                    onClick={() => setSelectedTier(tier)}
+                    onClick={() => { setSelectedTier(tier); setPage(1); }}
                     className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
                       selectedTier === tier
                         ? 'bg-[#5f1340] text-white shadow-xs'
@@ -281,25 +342,31 @@ export default function ListCustomer({
                   <th className="py-3.5 px-4">Cabang Terdaftar</th>
                   <th className="py-3.5 px-4 text-center">Tier</th>
                   <th className="py-3.5 px-4 text-center">Member</th>
-                  <th className="py-3.5 px-4">Total Spending</th>
-                  <th className="py-3.5 px-4">Total Transaksi</th>
-                  <th className="py-3.5 px-4">Terdaftar Pada</th>
-                  <th className="py-3.5 px-4">Terakhir Transaksi</th>
+                  <SortTh col="total_spent" label="Total Spending" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                  <SortTh col="total_orders" label="Total Transaksi" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                  <SortTh col="created_at" label="Terdaftar Pada" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                  <SortTh col="last_transaction_at" label="Terakhir Transaksi" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
                   <th className="py-3.5 px-4 text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e0e0e0]/70 font-semibold">
-                {filteredCustomers.length === 0 ? (
+                {loading ? (
+                  <tr>
+                    <td colSpan={11} className="py-10 text-center text-slate-400 font-bold">
+                      <Loader2 className="h-5 w-5 animate-spin inline-block mr-2" />Memuat...
+                    </td>
+                  </tr>
+                ) : rows.length === 0 ? (
                   <tr>
                     <td colSpan={11} className="py-10 text-center text-slate-400 font-bold">
                       Tidak ada pelanggan pada filter cabang / tier ini.
                     </td>
                   </tr>
                 ) : (
-                  filteredCustomers.map((cust, idx) => (
+                  rows.map((cust, idx) => (
                     <tr key={cust.dbId || cust.id} className="hover:bg-[#f8f8f8] transition-colors">
                       <td className="py-3.5 px-3 text-center font-black text-slate-500">
-                        {idx + 1}
+                        {(page - 1) * PAGE_SIZE + idx + 1}
                       </td>
                       <td className="py-3.5 px-4">
                         <span className="font-extrabold text-[#313030] block text-xs">{formatName(cust.name)}</span>
@@ -366,6 +433,17 @@ export default function ListCustomer({
               </tbody>
             </table>
           </div>
+          {meta.pages > 1 && (
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <p className="text-[11px] font-bold text-slate-400">
+                Hal {page}/{meta.pages} ({meta.total} pelanggan)
+              </p>
+              <div className="flex items-center gap-1.5">
+                <button type="button" disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)} className="px-3 py-1.5 rounded-xl border border-[#e0e0e0] text-xs font-black text-slate-600 disabled:opacity-40 cursor-pointer">Sebelumnya</button>
+                <button type="button" disabled={page >= meta.pages || loading} onClick={() => setPage((p) => p + 1)} className="px-3 py-1.5 rounded-xl border border-[#e0e0e0] text-xs font-black text-slate-600 disabled:opacity-40 cursor-pointer">Berikutnya</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

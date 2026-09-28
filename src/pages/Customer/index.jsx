@@ -69,6 +69,7 @@ export default function Customer() {
   const [customerTiers, setCustomerTiers] = useState([]);
   const [activeTab, setActiveTab] = useState('catalog');
   const [editingCustomer, setEditingCustomer] = useState(null);
+  const [listRefresh, setListRefresh] = useState(0);
   const [customers, setCustomers] = useState([]);
 
   useEffect(() => {
@@ -104,9 +105,11 @@ export default function Customer() {
         if (res.data?.success) setCustomerTiers(res.data.data || []);
       })
       .catch(err => console.error('Gagal mengambil tier pelanggan:', err));
-
-    fetchCustomers();
   }, [navigate]);
+
+  useEffect(() => {
+    if (activeTab === 'churn') fetchCustomers();
+  }, [activeTab, listRefresh]);
 
   const fetchCustomers = async () => {
     try {
@@ -125,10 +128,11 @@ export default function Customer() {
     if (document.body) document.body.scrollTop = 0;
   };
 
-  const handleCustomerCreated = (newCustomer) => {
+  const handleCustomerCreated = () => {
     scrollToTop();
-    setCustomers(prev => [newCustomer, ...prev]);
     setEditingCustomer(null);
+    setListRefresh((n) => n + 1);
+    setActiveTab('catalog');
   };
 
   const handleEditCustomer = async (cust) => {
@@ -146,7 +150,7 @@ export default function Customer() {
   const handleCustomerUpdated = () => {
     scrollToTop();
     setEditingCustomer(null);
-    fetchCustomers();
+    setListRefresh((n) => n + 1);
     setActiveTab('catalog');
   };
 
@@ -220,11 +224,11 @@ export default function Customer() {
 
         {activeTab === 'catalog' && (
           <ListCustomer
-            customers={customers}
             customerTiers={customerTiers}
             outlets={outlets}
             activeOutletName={activeOutletName}
             activeOutletId={activeOutletId}
+            refreshKey={listRefresh}
             onEditCustomer={handleEditCustomer}
           />
         )}
