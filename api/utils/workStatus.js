@@ -51,7 +51,7 @@ export function computeAccumulatedWorkStatus(itemStatuses, fallback = 10) {
 
 export async function refreshHeaderWorkPercentage(db, transactionId) {
   const [items] = await db.query(
-    'SELECT item_work_status FROM tr_transaction_detail WHERE transaction_id = ?',
+    'SELECT item_work_status FROM tr_transaction_detail WHERE transaction_id = ? AND is_production = 1',
     [transactionId]
   );
   const percentage = computeAccumulatedWorkPercentage(

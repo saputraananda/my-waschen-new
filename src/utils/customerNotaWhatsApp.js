@@ -10,7 +10,7 @@ export function toWhatsAppDigits(phone) {
   const local = normalizePhone(phone);
   if (!local) return '';
   if (local.startsWith('0')) return `62${local.slice(1)}`;
-  return local;
+  return local.replace('+', '');
 }
 
 function cleanPhone(phone) {

@@ -19,6 +19,7 @@ export default function SelectServices({
   itemSpecs,
   setItemSpecs,
   handleAddToCart,
+  serviceCategories = [],
   serviceCategoryFilter,
   setServiceCategoryFilter,
   serviceSearch,
@@ -71,7 +72,7 @@ export default function SelectServices({
 
                   <div>
                     <span className="text-[9px] font-black uppercase text-[#5f1340] bg-[#5f1340]/10 px-1.5 py-0.5 rounded inline-block mb-1">
-                      {rec.category}
+                      {rec.categoryName}
                     </span>
                     <h4 className="font-extrabold text-xs text-[#313030] group-hover:text-[#5f1340] line-clamp-1">
                       {rec.name}
@@ -107,14 +108,14 @@ export default function SelectServices({
           <div>
             <h2 className="text-sm font-black text-[#5f1340] uppercase tracking-wider flex items-center gap-2">
               <ShoppingBag className="h-4 w-4" />
-              <span>Langkah 2: Pilih Layanan Laundry (Kiloan, Satuan, Meteran, Sepatu)</span>
+              <span>Langkah 2: Pilih Layanan Laundry</span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">Kiloan minimal 4 Kg (Rp 36.000). Anda dapat memilih lebih dari satu layanan.</p>
           </div>
 
           {/* Category Filter Chips */}
           <div className="flex items-center gap-1 overflow-x-auto no-scrollbar w-full sm:w-auto">
-            {['Semua', 'Kiloan', 'Satuan', 'Meteran', 'Sepatu & Tas'].map(cat => (
+            {['Semua', ...serviceCategories].map(cat => (
               <button
                 key={cat}
                 type="button"
@@ -170,7 +171,7 @@ export default function SelectServices({
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] font-black uppercase tracking-wider text-[#5f1340] bg-[#5f1340]/10 px-2.5 py-0.5 rounded-full">
-                      {service.category}
+                      {service.categoryName}
                     </span>
                     <div className="flex items-center gap-2">
                       {service.isCleanox && <CleanoxBadge />}

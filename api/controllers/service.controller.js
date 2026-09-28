@@ -12,6 +12,7 @@ export const getServices = async (req, res) => {
       SELECT s.*, 
              c.name as category_name, 
              c.code as category_code,
+             COALESCE(c.is_production, 1) as category_is_production,
              COALESCE(s.unit, u.symbol, u.code, 'Kg') as unit,
              u.name as unit_name
       FROM mst_service s

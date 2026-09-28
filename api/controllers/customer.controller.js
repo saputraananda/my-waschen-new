@@ -19,9 +19,10 @@ const CUSTOMER_SELECT = `
          am.start_date AS membership_start_date,
          am.end_date AS membership_end_date,
          am.status AS membership_status,
-         COALESCE(trx.trx_count, 0) AS trx_count_live,
-         COALESCE(trx.total_spent_live, 0) AS total_spent_live,
-         trx.last_order_date
+         -- total_orders/total_spent/last_transaction_at = histori Smartlink + transaksi POS
+         GREATEST(COALESCE(trx.trx_count, 0), COALESCE(c.total_orders, 0)) AS trx_count_live,
+         GREATEST(COALESCE(trx.total_spent_live, 0), COALESCE(c.total_spent, 0)) AS total_spent_live,
+         COALESCE(GREATEST(trx.last_order_date, c.last_transaction_at), trx.last_order_date, c.last_transaction_at) AS last_order_date
   FROM mst_customer c
   LEFT JOIN mst_customer_tier st ON c.spending_tier_id = st.id
   LEFT JOIN mst_customer_source cs ON c.customer_source_id = cs.id
@@ -56,7 +57,7 @@ const CUSTOMER_SELECT_LIGHT = `
          am.status AS membership_status,
          COALESCE(c.total_orders, 0) AS trx_count_live,
          COALESCE(c.total_spent, 0) AS total_spent_live,
-         NULL AS last_order_date
+         c.last_transaction_at AS last_order_date
   FROM mst_customer c
   LEFT JOIN mst_customer_tier st ON c.spending_tier_id = st.id
   LEFT JOIN mst_customer_source cs ON c.customer_source_id = cs.id

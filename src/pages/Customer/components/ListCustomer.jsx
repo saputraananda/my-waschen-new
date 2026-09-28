@@ -87,7 +87,7 @@ const openWhatsApp = (e, rawPhone) => {
   if (!rawPhone) return;
   let digits = rawPhone.replace(/\D/g, '');
   if (digits.startsWith('0')) digits = `62${digits.slice(1)}`;
-  if (!digits.startsWith('62')) digits = `62${digits}`;
+  else if (digits.startsWith('8')) digits = `62${digits}`;
   window.open(`https://wa.me/${digits}`, '_blank', 'noopener,noreferrer');
 };
 

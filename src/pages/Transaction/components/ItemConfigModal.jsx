@@ -148,6 +148,7 @@ export default function ItemConfigModal({
 
   const isMeterService = configuringItem.unit_id === 4 || configuringItem.unit === 'm²' || configuringItem.unit === 'm2' || configuringItem.unit === 'Meter';
   const isKiloan = String(configuringItem.category || '').toLowerCase().includes('kiloan');
+  const isAddon = configuringItem.category === 'Biaya';
 
   // Merge backend materials list with MATERIAL_OPTIONS if provided
   const availableMaterials = Array.from(new Set([
@@ -168,7 +169,7 @@ export default function ItemConfigModal({
             <div>
               <div className="flex items-center gap-2 flex-wrap mb-0.5">
                 <span className="text-[9px] font-black uppercase tracking-wider text-[#5f1340] bg-[#5f1340]/10 px-2 py-0.5 rounded-full">
-                  {configuringItem.category}
+                  {configuringItem.categoryName || configuringItem.category}
                 </span>
                 <span className="text-xs text-slate-400 font-bold flex items-center gap-1">
                   <Clock className="h-3 w-3" /> {configuringItem.duration}
@@ -201,7 +202,23 @@ export default function ItemConfigModal({
 
             {/* Input Qty / Berat / Dimensi Meter */}
             <div className="p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl">
-              {configuringItem.category === 'Kiloan' ? (
+              {isAddon ? (
+                <div>
+                  <label className="text-[11px] font-black text-[#313030] uppercase tracking-wider block mb-2">
+                    Jumlah ({configuringItem.unit}) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    required
+                    value={itemSpecs.qty ?? ''}
+                    onChange={(e) => setItemSpecs((prev) => ({ ...prev, qty: e.target.value }))}
+                    className="w-full text-center py-2 bg-white border border-[#e0e0e0] rounded-xl text-base font-black text-[#313030] outline-none focus:border-[#5f1340]"
+                  />
+                  <p className="text-[10px] text-slate-500 font-bold mt-1.5">Biaya tambahan: tidak masuk QC & produksi.</p>
+                </div>
+              ) : configuringItem.category === 'Kiloan' ? (
                 <div>
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1 mb-2">
                     <label className="text-[11px] font-black text-[#313030] uppercase tracking-wider">
@@ -415,7 +432,7 @@ export default function ItemConfigModal({
             </div>
 
             {/* Rincian Spesifikasi + Cleanox/DC — hanya untuk non-Kiloan */}
-            {!isKiloan && (
+            {!isKiloan && !isAddon && (
               <>
                 <div>
                   <h4 className="text-[10.5px] font-black uppercase tracking-wider text-[#5f1340] mb-1.5 flex items-center gap-1">
@@ -560,14 +577,16 @@ export default function ItemConfigModal({
               <span className="text-[9.5px] font-bold text-slate-400 uppercase tracking-wider block">Subtotal Item:</span>
               <span className="text-base sm:text-lg font-black text-[#5f1340]">
                 Rp {(
-                  configuringItem.category === 'Kiloan'
+                  isAddon
+                    ? (parseFloat(itemSpecs.qty || 0) * configuringItem.price)
+                    : configuringItem.category === 'Kiloan'
                     ? (parseFloat(itemSpecs.weight || 0) < 4 ? 36000 : (parseFloat(itemSpecs.weight || 0)) * configuringItem.price)
                     : isMeterService
                       ? (((parseFloat(itemSpecs.length || 0)) * (parseFloat(itemSpecs.width || 0)) * (parseInt(itemSpecs.qty || 0, 10))) * configuringItem.price)
                       : ((parseInt(itemSpecs.qty || 0, 10)) * configuringItem.price)
                 ).toLocaleString('id-ID')}
               </span>
-              {!isKiloan && parseInt(itemSpecs.qty, 10) > 1 && (
+              {!isKiloan && !isAddon && parseInt(itemSpecs.qty, 10) > 1 && (
                 <span className="block text-[10px] font-bold text-slate-500">
                   Dipecah jadi {parseInt(itemSpecs.qty, 10)} item terpisah (QC per item)
                 </span>

@@ -2,6 +2,7 @@ export function normalizePhone(input) {
   if (input == null) return '';
   let digits = String(input).replace(/\D/g, '');
   if (!digits) return '';
+  if (String(input).trim().startsWith('+') && !digits.startsWith('62')) return `+${digits}`;
   if (digits.startsWith('62')) digits = `0${digits.slice(2)}`;
   if (digits.startsWith('8')) digits = `0${digits}`;
   if (!digits.startsWith('0') && digits.length >= 9) digits = `0${digits}`;

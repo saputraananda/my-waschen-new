@@ -274,7 +274,9 @@ export default function TransactionPage() {
             id: s.code || `s-${s.id}`,
             dbId: s.id,
             name: s.name,
-            category: s.category_code === 'KILOAN' || s.unit === 'Kg' ? 'Kiloan' : 'Satuan',
+            // category = jenis proses (Kiloan/Satuan/Biaya); categoryName = kategori master untuk tampilan & filter
+            category: Number(s.category_is_production) === 0 ? 'Biaya' : (s.category_code === 'KILOAN' || s.unit === 'Kg' ? 'Kiloan' : 'Satuan'),
+            categoryName: s.category_name || 'Lainnya',
             price: parseFloat(s.price) || 0,
             unit: s.unit || 'Kg',
             duration: s.regular_duration_days ? `${s.regular_duration_days} Hari` : '2 Hari (48 Jam)',
@@ -404,11 +406,12 @@ export default function TransactionPage() {
   const filteredServices = useMemo(() => {
     return servicesList.filter(s => {
       const matchesSearch = s.name.toLowerCase().includes(serviceSearch.toLowerCase()) ||
-        s.category.toLowerCase().includes(serviceSearch.toLowerCase());
-      const matchesCat = serviceCategoryFilter === 'Semua' || s.category === serviceCategoryFilter;
+        s.categoryName.toLowerCase().includes(serviceSearch.toLowerCase());
+      const matchesCat = serviceCategoryFilter === 'Semua' || s.categoryName === serviceCategoryFilter;
       return matchesSearch && matchesCat;
     });
   }, [servicesList, serviceSearch, serviceCategoryFilter]);
+  const serviceCategories = useMemo(() => [...new Set(servicesList.map((s) => s.categoryName))], [servicesList]);
 
   const totalServicePages = Math.ceil(filteredServices.length / serviceItemsPerPage) || 1;
   const paginatedServices = useMemo(() => {
@@ -461,6 +464,7 @@ export default function TransactionPage() {
       dbId: cartItem.serviceDbId,
       name: cartItem.name,
       category: cartItem.category,
+      categoryName: cartItem.categoryName,
       unit: cartItem.unit,
       price: cartItem.unitPrice,
       duration: cartItem.duration,
@@ -492,10 +496,15 @@ export default function TransactionPage() {
 
     const isMeter = configuringItem.unit_id === 4 || configuringItem.unit === 'm²' || configuringItem.unit === 'm2' || configuringItem.unit === 'Meter';
     const isKiloan = String(configuringItem.category || '').toLowerCase().includes('kiloan');
-    // Item satuan/meter qty > 1 dipecah jadi N baris qty 1 agar di-QC per potong.
-    const splitCount = isKiloan ? 1 : Math.max(1, parseInt(itemSpecs.qty, 10) || 1);
+    const isAddon = configuringItem.category === 'Biaya';
+    const addonQty = Math.max(0.1, parseFloat(itemSpecs.qty) || 1);
+    // Item satuan/meter qty > 1 dipecah jadi N baris qty 1 agar di-QC per potong. Biaya tambahan tidak di-QC → 1 baris.
+    const splitCount = isKiloan || isAddon ? 1 : Math.max(1, parseInt(itemSpecs.qty, 10) || 1);
 
-    if (isKiloan) {
+    if (isAddon) {
+      effectivePrice = addonQty * configuringItem.price;
+      qtyDisplay = `${addonQty} ${configuringItem.unit}`;
+    } else if (isKiloan) {
       const weight = Math.max(0.5, parseFloat(itemSpecs.weight) || 4);
       if (weight < 4) {
         effectivePrice = 36000;
@@ -515,7 +524,7 @@ export default function TransactionPage() {
     }
 
     const editingCartId = configuringItem.editingCartId;
-    const specsForCart = isKiloan
+    const specsForCart = isKiloan || isAddon
       ? {
           isCleanox: false,
           isDryClean: false,
@@ -539,7 +548,7 @@ export default function TransactionPage() {
 
     const lineFields = {
       ...specsForCart,
-      qty: isKiloan ? (parseFloat(itemSpecs.weight) || 4) : 1,
+      qty: isAddon ? addonQty : isKiloan ? (parseFloat(itemSpecs.weight) || 4) : 1,
       weight: parseFloat(itemSpecs.weight) || 4,
       qtyDisplay,
       effectiveSubtotal: effectivePrice,
@@ -566,6 +575,7 @@ export default function TransactionPage() {
       serviceIsCleanox: configuringItem.isCleanox === true,
       name: configuringItem.name,
       category: configuringItem.category,
+      categoryName: configuringItem.categoryName,
       unit: configuringItem.unit,
       unitPrice: configuringItem.price,
       duration: configuringItem.duration,
@@ -727,16 +737,21 @@ export default function TransactionPage() {
         ? (isMemberBalanceMethod ? calculations.grandTotal : paidAmountNum)
         : paidAmountNum;
 
-    const hasKiloan = cartItems.some(i => i.category === 'Kiloan' || i.unit === 'Kg');
-    const hasSatuan = cartItems.some(i => i.category === 'Satuan' || i.unit !== 'Kg');
+    if (!cartItems.some(i => i.category !== 'Biaya')) {
+      showAlert({ title: 'Layanan Belum Dipilih', message: 'Biaya tambahan harus disertai minimal 1 layanan cucian.', type: 'error' });
+      return;
+    }
+    // Biaya tambahan tidak dihitung ke kategori nota, berat, maupun jumlah pcs
+    const hasKiloan = cartItems.some(i => i.category === 'Kiloan');
+    const hasSatuan = cartItems.some(i => i.category === 'Satuan');
     const orderCategory = hasKiloan && hasSatuan ? 'Campuran' : (hasKiloan ? 'Kiloan' : 'Satuan');
 
     const totalWeightKg = cartItems
-      .filter(i => i.category === 'Kiloan' || i.unit === 'Kg')
+      .filter(i => i.category === 'Kiloan')
       .reduce((sum, i) => sum + (parseFloat(i.qty) || 0), 0);
 
     const totalPcs = cartItems
-      .filter(i => i.category !== 'Kiloan' && i.unit !== 'Kg')
+      .filter(i => i.category === 'Satuan')
       .reduce((sum, i) => sum + (parseInt(i.qty) || 1), 0);
 
     const resolvedPaymentMethod = resolvePaymentMethodString({
@@ -1074,6 +1089,7 @@ export default function TransactionPage() {
             itemSpecs={itemSpecs}
             setItemSpecs={setItemSpecs}
             handleAddToCart={handleAddToCart}
+            serviceCategories={serviceCategories}
             serviceCategoryFilter={serviceCategoryFilter}
             setServiceCategoryFilter={setServiceCategoryFilter}
             serviceSearch={serviceSearch}

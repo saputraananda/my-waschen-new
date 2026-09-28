@@ -1,11 +1,13 @@
 /**
  * Normalisasi nomor HP Indonesia ke format 08xxxxxxxxxx.
  * 6287770597000 / 87770597000 / 087770597000 -> 087770597000
+ * Nomor luar negeri ditulis dengan "+" (selain +62) dipertahankan: "+61 421-620-240" -> +61421620240
  */
 export function normalizePhone(input) {
   if (input == null) return '';
   let digits = String(input).replace(/\D/g, '');
   if (!digits) return '';
+  if (String(input).trim().startsWith('+') && !digits.startsWith('62')) return `+${digits}`;
   if (digits.startsWith('62')) digits = `0${digits.slice(2)}`;
   if (digits.startsWith('8')) digits = `0${digits}`;
   if (!digits.startsWith('0') && digits.length >= 9) digits = `0${digits}`;

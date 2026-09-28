@@ -8,6 +8,8 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // ponytail: main bundle ~2.2MB; split chunks if it grows past 3MB
+      workbox: { maximumFileSizeToCacheInBytes: 3 * 1024 * 1024 },
       includeAssets: [
         'waschen.webp',
         'apple-touch-icon.png',

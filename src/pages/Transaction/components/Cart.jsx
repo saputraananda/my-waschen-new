@@ -84,6 +84,7 @@ export default function Cart({
                     </div>
 
                     <div className="flex items-center gap-3 shrink-0">
+                      {item.category !== 'Biaya' && (<>
                       <label
                         className="flex items-center gap-1.5 cursor-pointer shrink-0"
                         title="Metode Dry Clean (DC) per item"
@@ -114,6 +115,7 @@ export default function Cart({
                           Cleanox
                         </span>
                       </label>
+                      </>)}
                       <span className="font-black text-sm text-[#5f1340]">
                         Rp {item.effectiveSubtotal.toLocaleString('id-ID')}
                       </span>

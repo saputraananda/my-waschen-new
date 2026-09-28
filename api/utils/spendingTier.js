@@ -80,6 +80,7 @@ export async function applyTransactionSpendingUpdate(connection, customerId, pai
          monthly_spending = ?,
          monthly_spending_period = ?,
          spending_tier_id = ?,
+         last_transaction_at = NOW(),
          updated_at = NOW()
      WHERE id = ?`,
     [newTotalOrders, newTotalSpent, newMonthlySpending, period, newTierId, customerId]

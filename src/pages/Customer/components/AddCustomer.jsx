@@ -336,7 +336,7 @@ export default function AddCustomer({
                 onBlur={handlePhoneBlur}
                 required
               />
-              <span className="text-[10px] text-slate-400">Otomatis diformat ke 08xx meski diisi +62 atau 62.</span>
+              <span className="text-[10px] text-slate-400">Otomatis diformat ke 08xx meski diisi +62 atau 62. Nomor luar negeri: awali dengan + (contoh +61421620240).</span>
             </div>
 
             <div className="pt-1 border-t border-[#f0f0f0]">

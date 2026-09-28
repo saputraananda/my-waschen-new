@@ -326,6 +326,22 @@ export const createTransaction = async (req, res) => {
     const transactionId = orderResult.insertId;
 
     // 2. Insert tr_transaction_detail + potong stok BOM layanan (jika ada)
+    // is_production dari master kategori (bukan dari client): 0 = biaya tambahan, langsung Selesai, tidak masuk QC/produksi
+    const serviceIds = [...new Set(items.map((it) => parseInt(it.serviceId || it.serviceDbId || it.id, 10)).filter(Boolean))];
+    const [prodRows] = serviceIds.length
+      ? await connection.query(
+        `SELECT s.id, COALESCE(c.is_production, 1) AS is_production
+         FROM mst_service s LEFT JOIN mst_service_category c ON c.id = s.category_id
+         WHERE s.id IN (?)`,
+        [serviceIds]
+      )
+      : [[]];
+    const productionOf = new Map(prodRows.map((r) => [r.id, Number(r.is_production)]));
+    if (!items.some((it) => productionOf.get(parseInt(it.serviceId || it.serviceDbId || it.id, 10)) !== 0)) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: 'Nota wajib berisi minimal 1 layanan cucian (bukan hanya biaya tambahan)' });
+    }
+
     const inventoryUsages = [];
     for (const item of items) {
       const isDryClean = (item.isDryClean || item.is_dry_clean || item.laundryMethodId === 2 || item.laundry_method_id === 2) ? true : false;
@@ -333,10 +349,12 @@ export const createTransaction = async (req, res) => {
       const serviceId = item.serviceId || item.serviceDbId || item.id || 1;
       const lineQty = parseFloat(item.qty) || 1;
       const fulfillmentType = isDelivery ? 'Delivery_Kurir' : 'Ambil_Di_Outlet';
+      const isProduction = productionOf.get(parseInt(serviceId, 10)) === 0 ? 0 : 1;
       const detailParams = [
         transactionId,
         serviceId,
         item.serviceName || item.name || 'Layanan Laundry',
+        isProduction,
         lineQty,
         item.unit || 'Kg',
         parseFloat(item.unitPrice || item.price) || 0,
@@ -348,26 +366,18 @@ export const createTransaction = async (req, res) => {
         item.material || null,
         item.size || null,
         item.conditionNotes || null,
-        'Antrean',
-        item.photoUrl || null
+        isProduction ? 'Antrean' : 'Selesai',
+        isProduction ? null : new Date(),
+        item.photoUrl || null,
+        fulfillmentType
       ];
 
-      try {
-        await connection.query(
-          `INSERT INTO tr_transaction_detail 
-           (transaction_id, service_id, service_name, qty, unit, unit_price, subtotal, is_cleanox, laundry_method_id, brand, color, material, size, condition_notes, item_work_status, photo_url, fulfillment_type)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [...detailParams, fulfillmentType]
-        );
-      } catch (colErr) {
-        if (!/Unknown column|fulfillment_type/i.test(colErr.message || '')) throw colErr;
-        await connection.query(
-          `INSERT INTO tr_transaction_detail 
-           (transaction_id, service_id, service_name, qty, unit, unit_price, subtotal, is_cleanox, laundry_method_id, brand, color, material, size, condition_notes, item_work_status, photo_url)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          detailParams
-        );
-      }
+      await connection.query(
+        `INSERT INTO tr_transaction_detail 
+         (transaction_id, service_id, service_name, is_production, qty, unit, unit_price, subtotal, is_cleanox, laundry_method_id, brand, color, material, size, condition_notes, item_work_status, item_completed_at, photo_url, fulfillment_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        detailParams
+      );
 
       try {
         const used = await consumeServiceBom(connection, {
@@ -991,7 +1001,7 @@ export const updateWorkStatus = async (req, res) => {
 
     if (syncItems !== false) {
       await myWaschenPool.query(
-        'UPDATE tr_transaction_detail SET item_work_status = ? WHERE transaction_id = ?',
+        'UPDATE tr_transaction_detail SET item_work_status = ? WHERE transaction_id = ? AND is_production = 1',
         [nextStatus, id]
       );
     }
@@ -1061,6 +1071,9 @@ export const updateItemWorkStatus = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Item cucian tidak ditemukan pada nota ini' });
     }
     const item = itemRows[0];
+    if (Number(item.is_production) === 0) {
+      return res.status(422).json({ success: false, message: 'Biaya tambahan tidak memiliki status pengerjaan' });
+    }
 
     await myWaschenPool.query(
       'UPDATE tr_transaction_detail SET item_work_status = ? WHERE id = ?',
@@ -1068,7 +1081,7 @@ export const updateItemWorkStatus = async (req, res) => {
     );
 
     const [allItems] = await myWaschenPool.query(
-      'SELECT id, item_work_status FROM tr_transaction_detail WHERE transaction_id = ?',
+      'SELECT id, item_work_status FROM tr_transaction_detail WHERE transaction_id = ? AND is_production = 1',
       [order.id]
     );
     const accumulated = computeAccumulatedWorkPercentage(
