@@ -13,7 +13,6 @@ import { formatEmployeeName } from '../../utils/FormatName.js';
 // Import local images from assets/images
 import img1 from '../../assets/images/1.webp';
 import img2 from '../../assets/images/2.webp';
-import img3 from '../../assets/images/3.webp';
 import img4 from '../../assets/images/4.webp';
 import img5 from '../../assets/images/5.webp';
 import img6 from '../../assets/images/6.webp';
@@ -38,12 +37,6 @@ const SLIDES = [
         title: 'Certified Hygiene Standards',
         caption: 'Using state-of-the-art equipment and environmentally friendly detergent formulas.',
         tag: 'Hygiene Operations'
-    },
-    {
-        img: img3,
-        title: 'Eco-friendly & Safe Solutions',
-        caption: 'Using environmentally friendly chemicals and processes to protect your health.',
-        tag: 'Eco-friendly & Safe Solutions'
     },
     {
         img: img4,
