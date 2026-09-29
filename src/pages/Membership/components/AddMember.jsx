@@ -15,13 +15,32 @@ import {
   Wallet,
   Sparkles,
   X,
-  Coins
+  Coins,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import WaschenMemberCard from '../../../components/WaschenMemberCard.jsx';
 import MemberExclusiveBenefits from '../../../components/MemberExclusiveBenefits.jsx';
 import { formatName } from '../../../utils/FormatName.js';
 import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
+
+const PAGE_SIZE = 6;
+
+function pageWindow(current, total, siblings = 1) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const set = new Set([1, total]);
+  for (let i = current - siblings; i <= current + siblings; i++) {
+    if (i >= 1 && i <= total) set.add(i);
+  }
+  const sorted = [...set].sort((a, b) => a - b);
+  const out = [];
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i] - sorted[i - 1] > 1) out.push('…');
+    out.push(sorted[i]);
+  }
+  return out;
+}
 
 export default function AddMember({
   outlets,
@@ -38,7 +57,7 @@ export default function AddMember({
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustId, setSelectedCustId] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [showAllCustomers, setShowAllCustomers] = useState(false);
+  const [custPage, setCustPage] = useState(1);
   const [selectedBranchFilter, setSelectedBranchFilter] = useState(
     activeOutletName || localStorage.getItem('activeOutletName') || 'Semua'
   );
@@ -93,7 +112,7 @@ export default function AddMember({
   }, [activeOutletName]);
 
   useEffect(() => {
-    setShowAllCustomers(false);
+    setCustPage(1);
   }, [customerSearch, selectedSpendingTier, selectedBranchFilter]);
 
   const selectedCustomer = useMemo(() => {
@@ -156,9 +175,12 @@ export default function AddMember({
     });
   }, [customersList, customerSearch, selectedSpendingTier, selectedBranchFilter]);
 
+  const totalCustPages = Math.max(1, Math.ceil(filteredCustomers.length / PAGE_SIZE));
+  const safeCustPage = Math.min(custPage, totalCustPages);
   const displayedCustomers = useMemo(() => {
-    return showAllCustomers ? filteredCustomers : filteredCustomers.slice(0, 4);
-  }, [filteredCustomers, showAllCustomers]);
+    const start = (safeCustPage - 1) * PAGE_SIZE;
+    return filteredCustomers.slice(start, start + PAGE_SIZE);
+  }, [filteredCustomers, safeCustPage]);
 
   const renderSpendingTierBadge = (spendingTier) => {
     const clean = String(spendingTier || 'One-Time').trim();
@@ -409,15 +431,56 @@ export default function AddMember({
                 )}
               </div>
 
-              {/* Show More / Hide Customers Button */}
-              {filteredCustomers.length > 4 && (
-                <button
-                  type="button"
-                  onClick={() => setShowAllCustomers(!showAllCustomers)}
-                  className="w-full py-2.5 bg-slate-50 hover:bg-slate-100 border border-[#e0e0e0] text-slate-700 text-xs font-black rounded-xl cursor-pointer transition-colors flex items-center justify-center gap-1.5 shadow-2xs mt-1"
-                >
-                  <span>{showAllCustomers ? 'Sembunyikan Pelanggan' : `Tampilkan ${filteredCustomers.length - 4} Pelanggan Lainnya`}</span>
-                </button>
+              {/* Customer Pagination */}
+              {filteredCustomers.length > PAGE_SIZE && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 text-xs">
+                  <span className="text-slate-400 font-medium">
+                    Menampilkan <span className="text-[#313030] font-bold">{displayedCustomers.length}</span> dari{' '}
+                    <span className="text-[#313030] font-bold">{filteredCustomers.length}</span>
+                    <span className="text-slate-300 mx-1.5">·</span>
+                    Hal. {safeCustPage}/{totalCustPages}
+                  </span>
+                  <div className="flex items-center gap-1 justify-end flex-wrap">
+                    <button
+                      type="button"
+                      disabled={safeCustPage === 1}
+                      onClick={() => setCustPage((p) => Math.max(1, p - 1))}
+                      className="p-1.5 rounded-xl border border-[#e0e0e0] bg-white disabled:opacity-40 hover:bg-slate-100 transition-colors cursor-pointer"
+                      aria-label="Halaman sebelumnya"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    {pageWindow(safeCustPage, totalCustPages).map((pageNum, idx) =>
+                      pageNum === '…' ? (
+                        <span key={`e${idx}`} className="w-7 h-7 flex items-center justify-center text-slate-400 font-bold select-none">
+                          …
+                        </span>
+                      ) : (
+                        <button
+                          key={pageNum}
+                          type="button"
+                          onClick={() => setCustPage(pageNum)}
+                          className={`min-w-7 h-7 px-1.5 rounded-xl font-bold text-[11px] transition-all cursor-pointer ${
+                            safeCustPage === pageNum
+                              ? 'bg-[#5f1340] text-white shadow-xs'
+                              : 'bg-white border border-[#e0e0e0] text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      )
+                    )}
+                    <button
+                      type="button"
+                      disabled={safeCustPage === totalCustPages}
+                      onClick={() => setCustPage((p) => Math.min(totalCustPages, p + 1))}
+                      className="p-1.5 rounded-xl border border-[#e0e0e0] bg-white disabled:opacity-40 hover:bg-slate-100 transition-colors cursor-pointer"
+                      aria-label="Halaman berikutnya"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           ) : (

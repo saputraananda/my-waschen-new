@@ -16,6 +16,22 @@ function customerPickLabel(c) {
   return parts.join(', ');
 }
 
+/** Visible page buttons with ellipsis — avoids rendering 200+ buttons. */
+function pageWindow(current, total, siblings = 1) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const set = new Set([1, total]);
+  for (let i = current - siblings; i <= current + siblings; i++) {
+    if (i >= 1 && i <= total) set.add(i);
+  }
+  const sorted = [...set].sort((a, b) => a - b);
+  const out = [];
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i] - sorted[i - 1] > 1) out.push('…');
+    out.push(sorted[i]);
+  }
+  return out;
+}
+
 export default function SelectCustomer({
   customerSearch,
   setCustomerSearch,
@@ -251,41 +267,52 @@ export default function SelectCustomer({
 
       {/* Customer Pagination Controls */}
       {totalCustPages > 1 && !customersLoading && (
-        <div className="bg-white border border-[#e0e0e0] rounded-2xl p-3 shadow-xs flex items-center justify-between text-xs">
-          <span className="text-slate-400 font-medium">
-            Menampilkan {paginatedCustomers.length} dari {filteredCustomers.length} pelanggan (Halaman {custCurrentPage} / {totalCustPages})
+        <div className="bg-white border border-[#e0e0e0] rounded-2xl px-4 py-3 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <span className="text-slate-400 font-medium shrink-0">
+            Menampilkan <span className="text-[#313030] font-bold">{paginatedCustomers.length}</span> dari{' '}
+            <span className="text-[#313030] font-bold">{filteredCustomers.length}</span> pelanggan
+            <span className="text-slate-300 mx-1.5">·</span>
+            Hal. {custCurrentPage}/{totalCustPages}
           </span>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1 justify-end flex-wrap">
             <button
               type="button"
               disabled={custCurrentPage === 1}
               onClick={() => setCustCurrentPage((prev) => Math.max(1, prev - 1))}
               className="p-2 rounded-xl border border-[#e0e0e0] disabled:opacity-40 hover:bg-slate-100 transition-colors cursor-pointer"
+              aria-label="Halaman sebelumnya"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
 
-            {Array.from({ length: totalCustPages }, (_, i) => i + 1).map((pageNum) => (
-              <button
-                key={pageNum}
-                type="button"
-                onClick={() => setCustCurrentPage(pageNum)}
-                className={`w-8 h-8 rounded-xl font-bold text-xs transition-all cursor-pointer ${
-                  custCurrentPage === pageNum
-                    ? 'bg-[#5f1340] text-white shadow-xs'
-                    : 'bg-[#f8f8f8] border border-[#e0e0e0] text-slate-700 hover:bg-slate-100'
-                }`}
-              >
-                {pageNum}
-              </button>
-            ))}
+            {pageWindow(custCurrentPage, totalCustPages).map((pageNum, idx) =>
+              pageNum === '…' ? (
+                <span key={`e${idx}`} className="w-8 h-8 flex items-center justify-center text-slate-400 font-bold select-none">
+                  …
+                </span>
+              ) : (
+                <button
+                  key={pageNum}
+                  type="button"
+                  onClick={() => setCustCurrentPage(pageNum)}
+                  className={`min-w-8 h-8 px-2 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+                    custCurrentPage === pageNum
+                      ? 'bg-[#5f1340] text-white shadow-xs'
+                      : 'bg-[#f8f8f8] border border-[#e0e0e0] text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              )
+            )}
 
             <button
               type="button"
               disabled={custCurrentPage === totalCustPages}
               onClick={() => setCustCurrentPage((prev) => Math.min(totalCustPages, prev + 1))}
               className="p-2 rounded-xl border border-[#e0e0e0] disabled:opacity-40 hover:bg-slate-100 transition-colors cursor-pointer"
+              aria-label="Halaman berikutnya"
             >
               <ChevronRight className="h-4 w-4" />
             </button>

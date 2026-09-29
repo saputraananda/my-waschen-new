@@ -20,9 +20,28 @@ import {
   Crown,
   CheckCircle2,
   AlertCircle,
-  Coins
+  Coins,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
+
+const PAGE_SIZE = 10;
+
+function pageWindow(current, total, siblings = 1) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const set = new Set([1, total]);
+  for (let i = current - siblings; i <= current + siblings; i++) {
+    if (i >= 1 && i <= total) set.add(i);
+  }
+  const sorted = [...set].sort((a, b) => a - b);
+  const out = [];
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i] - sorted[i - 1] > 1) out.push('…');
+    out.push(sorted[i]);
+  }
+  return out;
+}
 
 const renderMembershipBadge = (tier) => {
   if (!tier || tier === '-' || tier === 'Tidak' || tier === 'None') {
@@ -68,6 +87,7 @@ export default function ListMember({
   const [selectedBranchFilter, setSelectedBranchFilter] = useState(activeOutletName || 'Semua');
   const [membershipPackages, setMembershipPackages] = useState([]);
   const [paymentMethods, setPaymentMethods] = useState([]);
+  const [memberPage, setMemberPage] = useState(1);
 
   const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
   const [isMutationModalOpen, setIsMutationModalOpen] = useState(false);
@@ -218,6 +238,18 @@ export default function ListMember({
     return matchesSearch && matchesTier && matchesBranch;
   });
 
+  const totalMemberPages = Math.max(1, Math.ceil(filteredMembers.length / PAGE_SIZE));
+  const safeMemberPage = Math.min(memberPage, totalMemberPages);
+  const paginatedMembers = filteredMembers.slice(
+    (safeMemberPage - 1) * PAGE_SIZE,
+    safeMemberPage * PAGE_SIZE
+  );
+
+  // Reset page when filters change
+  useEffect(() => {
+    setMemberPage(1);
+  }, [searchQuery, selectedTierFilter, selectedBranchFilter]);
+
   const totalMemberCount = members.length;
   const totalBalanceFloating = members.reduce((sum, m) => sum + m.balance, 0);
   const diamondCount = members.filter(m => m.membershipTier === 'Diamond' || m.tier === 'Diamond').length;
@@ -327,8 +359,8 @@ export default function ListMember({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#e0e0e0]/70 font-semibold">
-              {filteredMembers.length > 0 ? (
-                filteredMembers.map(m => (
+              {paginatedMembers.length > 0 ? (
+                paginatedMembers.map(m => (
                   <tr key={m.id} className="hover:bg-[#f8f8f8]/60 transition-colors">
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-3">
@@ -403,6 +435,57 @@ export default function ListMember({
             </tbody>
           </table>
         </div>
+
+        {totalMemberPages > 1 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-[#e0e0e0] text-xs">
+            <span className="text-slate-400 font-medium">
+              Menampilkan <span className="text-[#313030] font-bold">{paginatedMembers.length}</span> dari{' '}
+              <span className="text-[#313030] font-bold">{filteredMembers.length}</span> member
+              <span className="text-slate-300 mx-1.5">·</span>
+              Hal. {safeMemberPage}/{totalMemberPages}
+            </span>
+            <div className="flex items-center gap-1 justify-end flex-wrap">
+              <button
+                type="button"
+                disabled={safeMemberPage === 1}
+                onClick={() => setMemberPage((p) => Math.max(1, p - 1))}
+                className="p-2 rounded-xl border border-[#e0e0e0] disabled:opacity-40 hover:bg-slate-100 transition-colors cursor-pointer"
+                aria-label="Halaman sebelumnya"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              {pageWindow(safeMemberPage, totalMemberPages).map((pageNum, idx) =>
+                pageNum === '…' ? (
+                  <span key={`e${idx}`} className="w-8 h-8 flex items-center justify-center text-slate-400 font-bold select-none">
+                    …
+                  </span>
+                ) : (
+                  <button
+                    key={pageNum}
+                    type="button"
+                    onClick={() => setMemberPage(pageNum)}
+                    className={`min-w-8 h-8 px-2 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+                      safeMemberPage === pageNum
+                        ? 'bg-[#5f1340] text-white shadow-xs'
+                        : 'bg-[#f8f8f8] border border-[#e0e0e0] text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                )
+              )}
+              <button
+                type="button"
+                disabled={safeMemberPage === totalMemberPages}
+                onClick={() => setMemberPage((p) => Math.min(totalMemberPages, p + 1))}
+                className="p-2 rounded-xl border border-[#e0e0e0] disabled:opacity-40 hover:bg-slate-100 transition-colors cursor-pointer"
+                aria-label="Halaman berikutnya"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* MODAL: TOP-UP SALDO KARTU MEMBER */}

@@ -512,7 +512,37 @@ export const saveStockOpname = async (req, res) => {
       [oid, iid, sid, usageDate, newQty, empId, mergedNotes, newQty, mergedNotes]
     );
 
+    // Snapshot sisa sebelum recalc → tulis tr_inventory_log (opname sebelumnya tidak masuk log)
+    const [[stockSnap]] = await connection.query(
+      `SELECT qty_current FROM tr_inventory_stock WHERE id = ? LIMIT 1`,
+      [sid]
+    );
+    const qtyBefore = parseFloat(stockSnap?.qty_current) || 0;
+
     const recalc = await recalcStockSisa(connection, sid, usageDate);
+    const qtyAfter = recalc?.qtySisa ?? qtyBefore;
+
+    const movementType = isReset ? 'Adjust' : direction === 'subtract' ? 'In' : 'Usage';
+    const logQty = isReset ? Math.abs(newQty - currentQty) : deltaRaw;
+    if (logQty > 0 || isReset) {
+      await connection.query(
+        `INSERT INTO tr_inventory_log
+         (outlet_id, item_id, stock_id, movement_type, qty, qty_before, qty_after, employee_id, reference_type, reference_id, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'opname', ?, ?)`,
+        [
+          oid,
+          iid,
+          sid,
+          movementType,
+          logQty,
+          qtyBefore,
+          qtyAfter,
+          empId,
+          existing?.id || null,
+          logLine
+        ]
+      );
+    }
 
     await connection.commit();
 

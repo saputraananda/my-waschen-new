@@ -57,13 +57,14 @@ export default function InventoryPage() {
       .catch(() => {});
   }, [navigate]);
 
-  const fetchStock = useCallback(async (outletId = activeOutletId, dateYmd = usageDate) => {
+  const fetchStock = useCallback(async (outletId = activeOutletId, dateYmd = usageDate, opts = {}) => {
     if (!outletId || outletId === 'Semua') {
       setStockRows([]);
       setStockMeta({ total: 0, lowStockCount: 0 });
       return;
     }
-    setLoading(true);
+    const silent = opts?.silent === true;
+    if (!silent) setLoading(true);
     try {
       await axios.post('/api/inventory/stock/ensure', { outletId: Number(outletId) }).catch(() => {});
       const res = await axios.get('/api/inventory/stock', {
@@ -75,13 +76,15 @@ export default function InventoryPage() {
       }
     } catch (err) {
       console.error(err);
-      await showAlert({
-        title: 'Gagal Muat Stok',
-        message: err?.response?.data?.message || err.message,
-        type: 'error'
-      });
+      if (!silent) {
+        await showAlert({
+          title: 'Gagal Muat Stok',
+          message: err?.response?.data?.message || err.message,
+          type: 'error'
+        });
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [activeOutletId, usageDate, showAlert]);
 
@@ -98,6 +101,15 @@ export default function InventoryPage() {
       console.error(err);
     }
   }, [activeOutletId]);
+
+  const refreshStockQuiet = useCallback(async () => {
+    const y = window.scrollY;
+    await Promise.all([
+      fetchStock(activeOutletId, usageDate, { silent: true }),
+      fetchLogs(activeOutletId)
+    ]);
+    requestAnimationFrame(() => window.scrollTo(0, y));
+  }, [fetchStock, fetchLogs, activeOutletId, usageDate]);
 
   const fetchItems = useCallback(async () => {
     try {
@@ -180,10 +192,7 @@ export default function InventoryPage() {
             usageDate={usageDate}
             onUsageDateChange={setUsageDate}
             isAdmin={isAdmin}
-            onRefresh={() => {
-              fetchStock(activeOutletId, usageDate);
-              fetchLogs(activeOutletId);
-            }}
+            onRefresh={refreshStockQuiet}
           />
         )}
 

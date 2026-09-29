@@ -104,23 +104,25 @@ export default function SelectServices({
 
       {/* Full Master Service Catalog with Search, Category Filter & Pagination */}
       <div className="bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-xs flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-[#e0e0e0]">
+        <div className="flex flex-col gap-3 pb-3 border-b border-[#e0e0e0]">
           <div>
             <h2 className="text-sm font-black text-[#5f1340] uppercase tracking-wider flex items-center gap-2">
-              <ShoppingBag className="h-4 w-4" />
+              <ShoppingBag className="h-4 w-4 shrink-0" />
               <span>Langkah 2: Pilih Layanan Laundry</span>
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">Kiloan minimal 4 Kg (Rp 36.000). Anda dapat memilih lebih dari satu layanan.</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Kiloan minimal 4 Kg (Rp 36.000). Anda dapat memilih lebih dari satu layanan.
+            </p>
           </div>
 
-          {/* Category Filter Chips */}
-          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar w-full sm:w-auto">
-            {['Semua', ...serviceCategories].map(cat => (
+          {/* Category Filter Chips — baris sendiri, wrap rapi */}
+          <div className="flex flex-wrap gap-1.5">
+            {['Semua', ...serviceCategories].map((cat) => (
               <button
                 key={cat}
                 type="button"
                 onClick={() => setServiceCategoryFilter(cat)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer ${
                   serviceCategoryFilter === cat
                     ? 'bg-[#5f1340] text-white shadow-xs'
                     : 'bg-[#f8f8f8] text-slate-600 border border-[#e0e0e0] hover:bg-slate-100'

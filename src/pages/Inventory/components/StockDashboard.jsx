@@ -364,7 +364,7 @@ export default function StockDashboard({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#e0e0e0]/70 font-semibold">
-              {loading ? (
+              {loading && filtered.length === 0 ? (
                 <tr><td colSpan={9} className="py-10 text-center text-slate-400">Memuat stok…</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={9} className="py-10 text-center text-slate-400">Tidak ada item</td></tr>

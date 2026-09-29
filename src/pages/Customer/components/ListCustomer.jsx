@@ -342,7 +342,6 @@ export default function ListCustomer({
                   <th className="py-3.5 px-4">Cabang Terdaftar</th>
                   <th className="py-3.5 px-4 text-center">Tier</th>
                   <th className="py-3.5 px-4 text-center">Member</th>
-                  <SortTh col="total_spent" label="Total Spending" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
                   <SortTh col="total_orders" label="Total Transaksi" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
                   <SortTh col="created_at" label="Terdaftar Pada" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
                   <SortTh col="last_transaction_at" label="Terakhir Transaksi" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
@@ -352,13 +351,13 @@ export default function ListCustomer({
               <tbody className="divide-y divide-[#e0e0e0]/70 font-semibold">
                 {loading ? (
                   <tr>
-                    <td colSpan={11} className="py-10 text-center text-slate-400 font-bold">
+                    <td colSpan={10} className="py-10 text-center text-slate-400 font-bold">
                       <Loader2 className="h-5 w-5 animate-spin inline-block mr-2" />Memuat...
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="py-10 text-center text-slate-400 font-bold">
+                    <td colSpan={10} className="py-10 text-center text-slate-400 font-bold">
                       Tidak ada pelanggan pada filter cabang / tier ini.
                     </td>
                   </tr>
@@ -394,9 +393,6 @@ export default function ListCustomer({
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         {renderMembershipBadge(cust.membershipTier)}
-                      </td>
-                      <td className="py-3.5 px-4 font-black text-[#5f1340]">
-                        Rp {(cust.totalSpending || 0).toLocaleString('id-ID')}
                       </td>
                       <td className="py-3.5 px-4 font-extrabold text-slate-700">
                         {cust.trxCount || 0}X

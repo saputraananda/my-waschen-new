@@ -63,7 +63,8 @@ export const loginUser = async (req, res) => {
         userId: user.user_id, 
         username: user.username, 
         email: user.user_email, 
-        role: user.user_role 
+        role: user.user_role,
+        employeeId: user.employee_id || null
       },
       process.env.SESSION_SECRET || 'waschensecret',
       { expiresIn: '24h' }

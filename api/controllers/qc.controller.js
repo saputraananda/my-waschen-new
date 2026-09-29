@@ -44,36 +44,69 @@ function mobileSecret() {
 
 /**
  * Identitas QC diambil dari sesi login POS (JWT), bukan PIN dari body.
- * Token -> users.id -> mst_employee.employee_id -> mst_role (outlet + role).
+ * Token -> users.id / email / employeeId -> mst_employee -> mst_role (outlet + role).
  */
 async function resolveActor(req) {
   const raw = String(req.headers.authorization || '');
-  const token = raw.startsWith('Bearer ') ? raw.slice(7) : null;
+  const token = raw.startsWith('Bearer ') ? raw.slice(7).trim() : null;
   if (!token) return null;
+
   let claims;
   try {
     claims = jwt.verify(token, process.env.SESSION_SECRET || 'waschensecret');
   } catch {
     return null;
   }
-  const [userRows] = await mainPool.query(
-    `SELECT e.employee_id
-     FROM users u
-     JOIN mst_employee e ON e.email = u.email
-     WHERE u.id = ? LIMIT 1`,
-    [claims.userId]
-  );
-  const employeeId = Number(userRows[0]?.employee_id) || null;
+
+  let employeeId = Number(claims.employeeId) || null;
+  let fullName = '';
+
+  if (!employeeId && claims.userId) {
+    const [userRows] = await mainPool.query(
+      `SELECT e.employee_id, e.full_name
+       FROM users u
+       JOIN mst_employee e ON LOWER(TRIM(e.email)) = LOWER(TRIM(u.email))
+       WHERE u.id = ?
+       LIMIT 1`,
+      [claims.userId]
+    );
+    employeeId = Number(userRows[0]?.employee_id) || null;
+    fullName = String(userRows[0]?.full_name || '').trim();
+  }
+
+  if (!employeeId && claims.email) {
+    const [empRows] = await mainPool.query(
+      `SELECT employee_id, full_name
+       FROM mst_employee
+       WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))
+       LIMIT 1`,
+      [claims.email]
+    );
+    employeeId = Number(empRows[0]?.employee_id) || null;
+    fullName = String(empRows[0]?.full_name || '').trim();
+  }
+
   if (!employeeId) return null;
+
   const [roleRows] = await myWaschenPool.query(
     'SELECT employee_name, role, outlet_id FROM mst_role WHERE employee_id = ? LIMIT 1',
     [employeeId]
   );
-  const outletId = Number(roleRows[0]?.outlet_id) || null;
+
+  let outletId = Number(roleRows[0]?.outlet_id) || null;
+  // Fallback: outlet aktif di POS (kalau mst_role.outlet_id belum diisi)
+  if (!outletId) {
+    outletId =
+      Number(req.query?.outlet_id) ||
+      Number(req.body?.outlet_id) ||
+      Number(req.body?.outletId) ||
+      null;
+  }
   if (!outletId) return null;
+
   return {
     employeeId,
-    fullName: String(roleRows[0]?.employee_name || '').trim(),
+    fullName: String(roleRows[0]?.employee_name || fullName || '').trim(),
     role: roleRows[0]?.role || null,
     outletId
   };
@@ -82,35 +115,44 @@ async function resolveActor(req) {
 /** Management (company_id=1) tidak punya mst_role. Mereka hanya boleh melihat QC outlet yang dipilih. */
 async function resolveListActor(req) {
   const actor = await resolveActor(req);
-  if (actor) return actor;
+  if (actor) {
+    // Staff terikat outlet role; kalau UI kirim outlet lain, tetap pakai outlet role
+    return actor;
+  }
 
   const raw = String(req.headers.authorization || '');
-  const token = raw.startsWith('Bearer ') ? raw.slice(7) : null;
+  const token = raw.startsWith('Bearer ') ? raw.slice(7).trim() : null;
   if (!token) return null;
+
   let claims;
   try {
     claims = jwt.verify(token, process.env.SESSION_SECRET || 'waschensecret');
   } catch {
     return null;
   }
+
   const [userRows] = await mainPool.query(
     `SELECT e.employee_id, e.company_id, e.full_name
      FROM users u
-     JOIN mst_employee e ON e.email = u.email
-     WHERE u.id = ? LIMIT 1`,
+     LEFT JOIN mst_employee e ON LOWER(TRIM(e.email)) = LOWER(TRIM(u.email))
+     WHERE u.id = ?
+     LIMIT 1`,
     [claims.userId]
   );
   const row = userRows[0];
   if (Number(row?.company_id) !== 1) return null;
+
   const outletId = Number(req.query.outlet_id);
   if (!outletId) return null;
+
   const [outlets] = await myWaschenPool.query(
     'SELECT id FROM mst_outlet WHERE id = ? LIMIT 1',
     [outletId]
   );
   if (!outlets.length) return null;
+
   return {
-    employeeId: Number(row.employee_id) || null,
+    employeeId: Number(row.employee_id) || Number(claims.employeeId) || null,
     fullName: String(row.full_name || '').trim(),
     role: 'Management',
     outletId
@@ -146,7 +188,11 @@ export const getQcList = async (req, res) => {
   try {
     const actor = await resolveListActor(req);
     if (!actor) {
-      return res.status(401).json({ success: false, message: 'Sesi tidak valid atau outlet belum ditetapkan' });
+      return res.status(401).json({
+        success: false,
+        message:
+          'Sesi tidak valid atau outlet belum ditetapkan. Silakan logout lalu login ulang. Pastikan akun punya role & outlet di mst_role.'
+      });
     }
     const { outletId, role } = actor;
     const tab = req.query.tab === 'delivery' ? 'delivery' : 'frontliner';
