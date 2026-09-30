@@ -19,6 +19,7 @@ import DailyReport from './pages/DailyReport/index.jsx';
 import PrinterSettings from './pages/Settings/PrinterSettings.jsx';
 import InventoryPage from './pages/Inventory/index.jsx';
 import QCFrontDeliv from './pages/Dashboard/components/QCFrontDeliv.jsx';
+import ComplaintRequest from './pages/Complaint/index.jsx';
 
 function App() {
   // Global Modal Backdrop Freeze: Prevents background scrolling across all pages whenever any modal is active
@@ -101,6 +102,7 @@ function App() {
                 <Route path="/settings/printer" element={<PrinterSettings />} />
                 <Route path="/inventory" element={<InventoryPage />} />
                 <Route path="/qc" element={<QCFrontDeliv />} />
+                <Route path="/complaint" element={<ComplaintRequest />} />
                 <Route path="/login" element={<LoginPage />} />
               </Routes>
             </ShiftProvider>

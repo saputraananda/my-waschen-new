@@ -7,7 +7,8 @@ import {
   CreditCard,
   Wallet,
   Package,
-  ClipboardCheck
+  ClipboardCheck,
+  MessageSquareWarning
 } from 'lucide-react';
 import { useShiftOptional } from '../../../context/ShiftContext.jsx';
 
@@ -84,6 +85,15 @@ const MENU_ITEMS = [
     icon: ClipboardCheck,
     iconWrap: 'bg-fuchsia-50 text-[#5f1340] group-hover:bg-[#5f1340]/10',
     labelHover: 'group-hover:text-[#5f1340]'
+  },
+  {
+    key: 'complaint',
+    path: '/complaint',
+    label: 'Komplain',
+    hint: 'Pengajuan Request',
+    icon: MessageSquareWarning,
+    iconWrap: 'bg-orange-50 text-orange-700 group-hover:bg-orange-100/70',
+    labelHover: 'group-hover:text-orange-700'
   }
 ];
 
@@ -119,7 +129,7 @@ export default function Menu({ navigate, onOrderClick }) {
           </span>
         )}
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-3.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-9 gap-3.5">
         {MENU_ITEMS.map((item) => {
           const Icon = item.icon;
           const locked = showShiftLock;

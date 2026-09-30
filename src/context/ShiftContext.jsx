@@ -267,7 +267,11 @@ export function ShiftProvider({ children }) {
       setPendingNavigatePath(typeof options.thenNavigate === 'string' ? options.thenNavigate : '/transaction');
     }
     const blocked = await checkPendingDeposit('open');
-    if (blocked) return;
+    if (blocked) {
+      // Jangan tampilkan Open Shift di belakang modal setoran
+      setIsOpenShiftModalOpen(false);
+      return;
+    }
     setIsOpenShiftModalOpen(true);
   }, [checkPendingDeposit]);
 
@@ -293,6 +297,7 @@ export function ShiftProvider({ children }) {
   /**
    * Guard navigasi menu: company_id=5 wajib shift terbuka.
    * company_id=1 (HQ) dan selain 5 bebas.
+   * Belum open shift → cek setoran dulu (Upload Setoran Tunai), baru Open Shift.
    */
   const ensureShiftThenNavigate = useCallback((path = '/transaction') => {
     if (!mustGateShift) {
@@ -302,8 +307,7 @@ export function ShiftProvider({ children }) {
     if (!shiftChecked) return false;
 
     if (!activeShift) {
-      setPendingNavigatePath(path);
-      setIsOpenShiftModalOpen(true);
+      void requestOpenShift({ thenNavigate: path });
       return false;
     }
 
@@ -315,7 +319,7 @@ export function ShiftProvider({ children }) {
 
     navigate(path);
     return true;
-  }, [activeShift, mustGateShift, navigate, shiftChecked]);
+  }, [activeShift, mustGateShift, navigate, requestOpenShift, shiftChecked]);
 
   /** Dipanggil dari tombol Order Baru / Click To Order */
   const startOrderFlow = useCallback(() => {
@@ -328,8 +332,7 @@ export function ShiftProvider({ children }) {
     if (!shiftChecked) return false;
 
     if (!activeShift) {
-      setPendingNavigatePath(null);
-      setIsOpenShiftModalOpen(true);
+      void requestOpenShift();
       return false;
     }
 
@@ -340,7 +343,7 @@ export function ShiftProvider({ children }) {
     }
 
     return true;
-  }, [activeShift, mustGateShift, shiftChecked]);
+  }, [activeShift, mustGateShift, requestOpenShift, shiftChecked]);
 
   const cancelShiftGate = useCallback(() => {
     setIsOpenShiftModalOpen(false);
@@ -368,8 +371,7 @@ export function ShiftProvider({ children }) {
     if (isShiftFreePath(location.pathname)) return;
 
     if (!activeShift) {
-      setPendingNavigatePath(location.pathname);
-      setIsOpenShiftModalOpen(true);
+      void requestOpenShift({ thenNavigate: location.pathname });
       navigate('/dashboard', { replace: true });
       return;
     }
@@ -386,6 +388,7 @@ export function ShiftProvider({ children }) {
     location.pathname,
     mustGateShift,
     navigate,
+    requestOpenShift,
     shiftChecked
   ]);
 
