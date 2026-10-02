@@ -235,6 +235,7 @@ export const listOutletStock = async (req, res) => {
         i.code AS item_code,
         i.name AS item_name,
         i.description AS item_description,
+        i.owner_role,
         i.is_active AS item_active,
         u.id AS unit_id,
         u.symbol AS unit_symbol,
@@ -539,7 +540,7 @@ export const saveStockOpname = async (req, res) => {
           qtyAfter,
           empId,
           existing?.id || null,
-          logLine
+          'SO My Waschen POS'
         ]
       );
     }

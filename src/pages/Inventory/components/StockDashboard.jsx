@@ -3,6 +3,19 @@ import axios from 'axios';
 import { Search, AlertTriangle, RefreshCcw, CalendarDays, SlidersHorizontal } from 'lucide-react';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 
+const ROLE_LABEL = {
+  Frontliner: 'Frontliner',
+  'Washing Staff': 'Tim Cuci',
+  'Ironing Staff': 'Tim Setrika',
+  'Packing Staff': 'Tim Packing',
+  'Delivery Staff': 'Tim Delivery'
+};
+
+function ownerLabel(value) {
+  if (!value) return '';
+  return String(value).split(',').map((part) => ROLE_LABEL[part.trim()] || part.trim()).join(', ');
+}
+
 function fmtQty(n) {
   const v = parseFloat(n);
   if (Number.isNaN(v)) return '0';
@@ -255,6 +268,7 @@ export default function StockDashboard({
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterLow, setFilterLow] = useState(false);
+  const [roleFilter, setRoleFilter] = useState('');
   const [thRow, setThRow] = useState(null);
   const [aktualRow, setAktualRow] = useState(null);
 
@@ -265,9 +279,10 @@ export default function StockDashboard({
         || String(r.item_name || '').toLowerCase().includes(q)
         || String(r.item_code || '').toLowerCase().includes(q);
       const matchLow = !filterLow || Number(r.is_low_stock) === 1;
-      return matchQ && matchLow;
+      const matchRole = !roleFilter || String(r.owner_role || '').split(',').map((s) => s.trim()).includes(roleFilter);
+      return matchQ && matchLow && matchRole;
     });
-  }, [stockRows, searchQuery, filterLow]);
+  }, [stockRows, searchQuery, filterLow, roleFilter]);
 
   if (!activeOutletId || activeOutletId === 'Semua') {
     return (
@@ -318,6 +333,18 @@ export default function StockDashboard({
                 className="w-full pl-10 pr-4 py-2 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340]"
               />
             </div>
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              className="px-3 py-2 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340] bg-white"
+            >
+              <option value="">Semua tim</option>
+              <option value="Frontliner">Frontliner</option>
+              <option value="Washing Staff">Tim Cuci</option>
+              <option value="Ironing Staff">Tim Setrika</option>
+              <option value="Packing Staff">Tim Packing</option>
+              <option value="Delivery Staff">Tim Delivery</option>
+            </select>
             <div className="relative">
               <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
               <input
@@ -383,6 +410,9 @@ export default function StockDashboard({
                       <td className="py-3 px-3">
                         <span className="font-black text-[#313030] block">{r.item_name}</span>
                         <span className="text-[10px] text-slate-400 font-bold">{r.item_code}</span>
+                        {r.owner_role ? (
+                          <span className="text-[10px] text-slate-400 font-semibold block">{ownerLabel(r.owner_role)}</span>
+                        ) : null}
                         {low && (
                           <span className="inline-flex items-center gap-1 mt-1 text-[9px] font-black text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-md">
                             <AlertTriangle className="h-3 w-3" /> Di bawah min
