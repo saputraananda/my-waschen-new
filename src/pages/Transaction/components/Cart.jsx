@@ -93,11 +93,12 @@ export default function Cart({
                         <input
                           type="checkbox"
                           checked={item.isDryClean === true}
+                          disabled={item.isDcRequired === true}
                           onChange={() => handleToggleItemDryClean && handleToggleItemDryClean(item.cartId)}
-                          className="rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                          className="rounded border-amber-300 text-amber-600 focus:ring-amber-500 disabled:opacity-70"
                         />
                         <span className={`text-[10px] font-black whitespace-nowrap ${item.isDryClean ? 'text-amber-800' : 'text-slate-400'}`}>
-                          Dry Clean (DC)
+                          {item.isDcRequired === true ? 'Wajib DC' : 'Dry Clean (DC)'}
                         </span>
                       </label>
                       <label

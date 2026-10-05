@@ -146,6 +146,7 @@ export default function ItemConfigModal({
 }) {
   if (!configuringItem) return null;
 
+  const dcLocked = configuringItem.isDcRequired === true;
   const isMeterService = configuringItem.unit_id === 4 || configuringItem.unit === 'm²' || configuringItem.unit === 'm2' || configuringItem.unit === 'Meter';
   const isKiloan = String(configuringItem.category || '').toLowerCase().includes('kiloan');
   const isAddon = configuringItem.category === 'Biaya';
@@ -182,8 +183,18 @@ export default function ItemConfigModal({
               </div>
               <h3 className="text-base font-black text-[#313030] leading-snug">{configuringItem.name}</h3>
               <span className="text-xs font-extrabold text-[#5f1340] block">
-                Rp {configuringItem.price.toLocaleString('id-ID')} / {configuringItem.unit}
+                Rp {(
+                  (Number(configuringItem.price) || 0) +
+                  (!dcLocked && itemSpecs.isDryClean && Number(configuringItem.dcPriceAdd) > 0 ? Number(configuringItem.dcPriceAdd) : 0)
+                ).toLocaleString('id-ID')} / {configuringItem.unit}
               </span>
+              {!dcLocked && Number(configuringItem.dcPriceAdd) > 0 && (
+                <span className="text-[10px] font-bold text-amber-800 block">
+                  {itemSpecs.isDryClean
+                    ? `Termasuk tambahan DC Rp ${Number(configuringItem.dcPriceAdd).toLocaleString('id-ID')}`
+                    : `+ Rp ${Number(configuringItem.dcPriceAdd).toLocaleString('id-ID')} jika DC`}
+                </span>
+              )}
             </div>
           </div>
 
@@ -520,8 +531,14 @@ export default function ItemConfigModal({
 
                   <button
                     type="button"
-                    onClick={() => setItemSpecs((prev) => ({ ...prev, isDryClean: !prev.isDryClean }))}
-                    className={`p-3 rounded-2xl border transition-all text-left flex items-center justify-between gap-3 cursor-pointer select-none active:scale-[0.99] ${
+                    disabled={dcLocked}
+                    onClick={() => {
+                      if (dcLocked) return;
+                      setItemSpecs((prev) => ({ ...prev, isDryClean: !prev.isDryClean }));
+                    }}
+                    className={`p-3 rounded-2xl border transition-all text-left flex items-center justify-between gap-3 select-none ${
+                      dcLocked ? 'cursor-default' : 'cursor-pointer active:scale-[0.99]'
+                    } ${
                       itemSpecs.isDryClean
                         ? 'bg-amber-600 border-amber-600 text-white shadow-md ring-2 ring-amber-300/50'
                         : 'bg-white border-[#e0e0e0] text-slate-700 hover:border-amber-300 hover:bg-amber-50/40'
@@ -535,11 +552,11 @@ export default function ItemConfigModal({
                             ? 'bg-white text-amber-800'
                             : 'bg-slate-100 text-slate-400 border border-slate-200'
                         }`}>
-                          {itemSpecs.isDryClean ? 'DC ON ✓' : 'OFF'}
+                          {dcLocked ? 'WAJIB' : itemSpecs.isDryClean ? 'DC ON ✓' : 'OFF'}
                         </span>
                       </div>
                       <span className={`text-[10px] block truncate ${itemSpecs.isDryClean ? 'text-amber-100' : 'text-slate-400'}`}>
-                        Pencucian khusus metode Dry Clean
+                        {dcLocked ? 'Layanan ini wajib Dry Clean' : 'Pencucian khusus metode Dry Clean'}
                       </span>
                     </div>
                     <div className={`w-11 h-6 rounded-full relative p-0.5 transition-colors shrink-0 ${

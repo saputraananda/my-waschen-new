@@ -280,6 +280,8 @@ export default function TransactionPage() {
             category: Number(s.category_is_production) === 0 ? 'Biaya' : (s.category_code === 'KILOAN' || s.unit === 'Kg' ? 'Kiloan' : 'Satuan'),
             categoryName: s.category_name || 'Lainnya',
             price: parseFloat(s.price) || 0,
+            isDcRequired: Number(s.is_dc_required) === 1,
+            dcPriceAdd: parseFloat(s.dc_price_add) > 0 ? parseFloat(s.dc_price_add) : 0,
             unit: s.unit || 'Kg',
             duration: s.regular_duration_days ? `${s.regular_duration_days} Hari` : '2 Hari (48 Jam)',
             description: s.description || 'Layanan laundry higienis Waschen',
@@ -438,7 +440,7 @@ export default function TransactionPage() {
         size: '',
         note: '',
         isCleanox: service.isCleanox === true,
-        isDryClean: false,
+        isDryClean: service.isDcRequired === true,
         length: 1,
         width: 1
       });
@@ -452,7 +454,7 @@ export default function TransactionPage() {
         size: '',
         note: '',
         isCleanox: service.isCleanox === true,
-        isDryClean: false,
+        isDryClean: service.isDcRequired === true,
         length: 1,
         width: 1
       });
@@ -468,9 +470,11 @@ export default function TransactionPage() {
       category: cartItem.category,
       categoryName: cartItem.categoryName,
       unit: cartItem.unit,
-      price: cartItem.unitPrice,
+      price: cartItem.basePrice ?? cartItem.unitPrice,
       duration: cartItem.duration,
       isCleanox: cartItem.serviceIsCleanox === true,
+      isDcRequired: cartItem.isDcRequired === true,
+      dcPriceAdd: cartItem.dcPriceAdd || 0,
       editingCartId: cartItem.cartId
     });
     setItemSpecs({
@@ -482,7 +486,7 @@ export default function TransactionPage() {
       size: cartItem.size === '-' ? '' : (cartItem.size || ''),
       note: cartItem.note === '-' ? '' : (cartItem.note || ''),
       isCleanox: cartItem.isCleanox === true,
-      isDryClean: cartItem.isDryClean === true,
+      isDryClean: cartItem.isDcRequired === true || cartItem.isDryClean === true,
       length: cartItem.length || 1,
       width: cartItem.width || 1
     });
@@ -503,25 +507,31 @@ export default function TransactionPage() {
     // Item satuan/meter qty > 1 dipecah jadi N baris qty 1 agar di-QC per potong. Biaya tambahan tidak di-QC → 1 baris.
     const splitCount = isKiloan || isAddon ? 1 : Math.max(1, parseInt(itemSpecs.qty, 10) || 1);
 
+    const dcChosen = configuringItem.isDcRequired === true || itemSpecs.isDryClean === true;
+    const dcAdd = !configuringItem.isDcRequired && dcChosen && Number(configuringItem.dcPriceAdd) > 0
+      ? Number(configuringItem.dcPriceAdd)
+      : 0;
+    const unitRate = (Number(configuringItem.price) || 0) + dcAdd;
+
     if (isAddon) {
-      effectivePrice = addonQty * configuringItem.price;
+      effectivePrice = addonQty * unitRate;
       qtyDisplay = `${addonQty} ${configuringItem.unit}`;
     } else if (isKiloan) {
       const weight = Math.max(0.5, parseFloat(itemSpecs.weight) || 4);
       if (weight < 4) {
         effectivePrice = 36000;
       } else {
-        effectivePrice = weight * configuringItem.price;
+        effectivePrice = weight * unitRate;
       }
       qtyDisplay = `${weight.toFixed(1)} Kg`;
     } else if (isMeter) {
       const len = parseFloat(itemSpecs.length) || 1;
       const wid = parseFloat(itemSpecs.width) || 1;
       const areaPerPcs = len * wid;
-      effectivePrice = areaPerPcs * configuringItem.price;
+      effectivePrice = areaPerPcs * unitRate;
       qtyDisplay = `1 Pcs (${areaPerPcs.toFixed(2)} m²)`;
     } else {
-      effectivePrice = configuringItem.price;
+      effectivePrice = unitRate;
       qtyDisplay = `1 ${configuringItem.unit}`;
     }
 
@@ -529,7 +539,7 @@ export default function TransactionPage() {
     const specsForCart = isKiloan || isAddon
       ? {
           isCleanox: false,
-          isDryClean: false,
+          isDryClean: configuringItem.isDcRequired === true,
           brand: '-',
           color: '-',
           material: '-',
@@ -538,7 +548,7 @@ export default function TransactionPage() {
         }
       : {
           isCleanox: itemSpecs.isCleanox === true,
-          isDryClean: itemSpecs.isDryClean === true,
+          isDryClean: configuringItem.isDcRequired === true || itemSpecs.isDryClean === true,
           brand: itemSpecs.brand || '-',
           color: itemSpecs.color || '-',
           material: itemSpecs.material || '-',
@@ -554,6 +564,8 @@ export default function TransactionPage() {
       weight: parseFloat(itemSpecs.weight) || 4,
       qtyDisplay,
       effectiveSubtotal: effectivePrice,
+      basePrice: Number(configuringItem.price) || 0,
+      unitPrice: unitRate,
       length: parseFloat(itemSpecs.length) || 1,
       width: parseFloat(itemSpecs.width) || 1,
       isExpanded: false
@@ -575,11 +587,12 @@ export default function TransactionPage() {
       serviceId: configuringItem.id,
       serviceDbId: configuringItem.dbId,
       serviceIsCleanox: configuringItem.isCleanox === true,
+      isDcRequired: configuringItem.isDcRequired === true,
+      dcPriceAdd: configuringItem.dcPriceAdd || 0,
       name: configuringItem.name,
       category: configuringItem.category,
       categoryName: configuringItem.categoryName,
       unit: configuringItem.unit,
-      unitPrice: configuringItem.price,
       duration: configuringItem.duration,
       ...lineFields
     };
@@ -610,9 +623,21 @@ export default function TransactionPage() {
   };
 
   const handleToggleItemDryClean = (cartId) => {
-    setCartItems(cartItems.map(item => (
-      item.cartId === cartId ? { ...item, isDryClean: !item.isDryClean } : item
-    )));
+    setCartItems(cartItems.map((item) => {
+      if (item.cartId !== cartId || item.isDcRequired === true) return item;
+      const isDryClean = item.isDryClean !== true;
+      const base = Number(item.basePrice ?? item.unitPrice) || 0;
+      const add = isDryClean && Number(item.dcPriceAdd) > 0 ? Number(item.dcPriceAdd) : 0;
+      const unitPrice = base + add;
+      const oldUnit = Number(item.unitPrice) || base;
+      const isKiloan = String(item.category || "").toLowerCase().includes("kiloan");
+      const weight = parseFloat(item.weight) || 0;
+      const keepFlat = isKiloan && weight > 0 && weight < 4;
+      const effectiveSubtotal = !keepFlat && oldUnit > 0
+        ? (Number(item.effectiveSubtotal) || 0) / oldUnit * unitPrice
+        : item.effectiveSubtotal;
+      return { ...item, isDryClean, basePrice: base, unitPrice, effectiveSubtotal };
+    }));
   };
 
   // Selected promo details

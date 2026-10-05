@@ -330,13 +330,14 @@ export const createTransaction = async (req, res) => {
     const serviceIds = [...new Set(items.map((it) => parseInt(it.serviceId || it.serviceDbId || it.id, 10)).filter(Boolean))];
     const [prodRows] = serviceIds.length
       ? await connection.query(
-        `SELECT s.id, COALESCE(c.is_production, 1) AS is_production
+        `SELECT s.id, COALESCE(c.is_production, 1) AS is_production, COALESCE(s.is_dc_required, 0) AS is_dc_required
          FROM mst_service s LEFT JOIN mst_service_category c ON c.id = s.category_id
          WHERE s.id IN (?)`,
         [serviceIds]
       )
       : [[]];
     const productionOf = new Map(prodRows.map((r) => [r.id, Number(r.is_production)]));
+    const dcRequiredOf = new Map(prodRows.map((r) => [r.id, Number(r.is_dc_required) === 1]));
     if (!items.some((it) => productionOf.get(parseInt(it.serviceId || it.serviceDbId || it.id, 10)) !== 0)) {
       await connection.rollback();
       return res.status(400).json({ success: false, message: 'Nota wajib berisi minimal 1 layanan cucian (bukan hanya biaya tambahan)' });
@@ -344,9 +345,10 @@ export const createTransaction = async (req, res) => {
 
     const inventoryUsages = [];
     for (const item of items) {
-      const isDryClean = (item.isDryClean || item.is_dry_clean || item.laundryMethodId === 2 || item.laundry_method_id === 2) ? true : false;
-      const laundryMethodId = isDryClean ? 2 : (parseInt(item.laundryMethodId || item.laundry_method_id, 10) || 1);
       const serviceId = item.serviceId || item.serviceDbId || item.id || 1;
+      const mustDc = dcRequiredOf.get(parseInt(serviceId, 10)) === true;
+      const isDryClean = mustDc || (item.isDryClean || item.is_dry_clean || item.laundryMethodId === 2 || item.laundry_method_id === 2) ? true : false;
+      const laundryMethodId = isDryClean ? 2 : (parseInt(item.laundryMethodId || item.laundry_method_id, 10) || 1);
       const lineQty = parseFloat(item.qty) || 1;
       const fulfillmentType = isDelivery ? 'Delivery_Kurir' : 'Ambil_Di_Outlet';
       const isProduction = productionOf.get(parseInt(serviceId, 10)) === 0 ? 0 : 1;

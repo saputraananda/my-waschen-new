@@ -195,7 +195,10 @@ export default function SelectServices({
                     <span className="text-sm font-black text-[#5f1340] block">
                       Rp {service.price.toLocaleString('id-ID')}
                     </span>
-                    <span className="text-[10px] text-slate-400">per {service.unit}</span>
+                    <span className="text-[10px] text-slate-400">
+                      per {service.unit}
+                      {service.isDcRequired ? ' · Wajib DC' : service.dcPriceAdd > 0 ? ` · +Rp ${Number(service.dcPriceAdd).toLocaleString('id-ID')} jika DC` : ''}
+                    </span>
                   </div>
                   <button
                     type="button"
