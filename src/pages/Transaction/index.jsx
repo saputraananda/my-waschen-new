@@ -1058,7 +1058,9 @@ export default function TransactionPage() {
                 <div className="min-w-0">
                   <span className="font-extrabold text-xs text-[#313030] block truncate">{formatName(selectedCustomer.name)}</span>
                   <span className="text-[10px] text-emerald-700 font-bold block">Saldo: Rp {(selectedCustomer.memberBalance || 0).toLocaleString('id-ID')}</span>
-                  <span className="text-[10px] text-slate-500 font-bold block truncate">Periode Rp {(selectedCustomer.periodSpending || 0).toLocaleString('id-ID')} · Tahun Rp {(selectedCustomer.yearSpending || 0).toLocaleString('id-ID')}</span>
+                  {selectedCustomer.fullAddress ? (
+                    <span className="text-[10px] text-slate-500 font-bold block truncate">{selectedCustomer.fullAddress}</span>
+                  ) : null}
                 </div>
               </div>
               <button
