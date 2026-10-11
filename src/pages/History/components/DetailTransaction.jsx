@@ -10,6 +10,7 @@ import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
 import { formatDateId } from '../../../utils/FilterDate.js';
 import { STATUS_STEPS, DEFAULT_WORK_STATUSES, getWorkPercentage, percentageTone, formatWorkPercentage } from '../../../utils/workStatusMeta.js';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
+import { useShiftOptional } from '../../../context/ShiftContext.jsx';
 import { getBankAccountForOutlet, getAllBankAccounts, OUTLET_BANK_ACCOUNTS } from '../../../utils/bankAccounts.js';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import PaymentProofFields from '../../../components/PaymentProofFields.jsx';

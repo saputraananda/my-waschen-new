@@ -11,54 +11,6 @@ import {
   TrendingDown
 } from 'lucide-react';
 
-const mapCustomerFromApi = (c, activeOutletName) => {
-  const trxCount = parseInt(c.trx_count_live ?? c.total_orders, 10) || 0;
-  const totalSpending = parseFloat(c.total_spent_live ?? c.total_spent) || 0;
-  const formatDateId = (d) =>
-    d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
-  const lastDate = c.last_order_date || null;
-  return {
-    id: c.customer_code || `CUST-${String(c.id).padStart(3, '0')}`,
-    dbId: c.id,
-    name: c.name,
-    phone: c.phone,
-    gender: c.gender || '',
-    greeting: c.greeting || '',
-    email: c.email || '-',
-    birthDate: c.birth_date || '',
-    occupation: c.occupation || '',
-    address: c.address || '-',
-    block: c.block || '',
-    houseNumber: c.house_number || '',
-    fullAddress: c.full_address || c.address || '-',
-    district: c.district || '',
-    subDistrict: c.sub_district || '',
-    city: c.city || '',
-    landmark: c.landmark || '-',
-    homeBranch: c.home_branch || activeOutletName,
-    preferredOutletId: c.preferred_outlet_id || null,
-    tier: c.tier || 'One-Time',
-    tierId: c.spending_tier_id,
-    membershipTier: c.membership_tier || null,
-    membershipPackage: c.membership_package_name || null,
-    totalSpending,
-    monthlySpending: parseFloat(c.monthly_spending) || 0,
-    yearSpending: parseFloat(c.spending_value_year) || 0,
-    trxCount,
-    depositBalance: parseFloat(c.deposit_balance) || 0,
-    registeredAt: formatDateId(c.created_at),
-    lastTrx: trxCount > 0 && lastDate ? formatDateId(lastDate) : '-',
-    // Tanggal mentah dipakai analisis churn untuk menghitung selisih hari.
-    lastOrderDate: trxCount > 0 ? lastDate : null,
-    source: c.source || c.source_name || '-',
-    sourceId: c.customer_source_id,
-    notes: c.notes || 'Pelanggan terdaftar Waschen.',
-    generalNotes: c.general_notes || '',
-    complaints: [],
-    history: Array.isArray(c.history) ? c.history : []
-  };
-};
-
 export default function Customer() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -70,7 +22,6 @@ export default function Customer() {
   const [activeTab, setActiveTab] = useState('catalog');
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [listRefresh, setListRefresh] = useState(0);
-  const [customers, setCustomers] = useState([]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -106,21 +57,6 @@ export default function Customer() {
       })
       .catch(err => console.error('Gagal mengambil tier pelanggan:', err));
   }, [navigate]);
-
-  useEffect(() => {
-    if (activeTab === 'churn') fetchCustomers();
-  }, [activeTab, listRefresh]);
-
-  const fetchCustomers = async () => {
-    try {
-      const res = await axios.get('/api/customers');
-      if (res.data && res.data.success && res.data.data.length > 0) {
-        setCustomers(res.data.data.map(c => mapCustomerFromApi(c, activeOutletName)));
-      }
-    } catch (err) {
-      console.error('Gagal memuat data pelanggan:', err);
-    }
-  };
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
@@ -247,8 +183,9 @@ export default function Customer() {
 
         {activeTab === 'churn' && (
           <CustomerChurn
-            customers={customers}
+            outlets={outlets}
             activeOutletName={activeOutletName}
+            activeOutletId={activeOutletId}
             onEditCustomer={handleEditCustomer}
           />
         )}

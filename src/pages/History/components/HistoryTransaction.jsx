@@ -4,6 +4,7 @@ import axios from 'axios';
 import { formatName, formatEmployeeName } from '../../../utils/FormatName';
 import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
+import { useShiftOptional } from '../../../context/ShiftContext.jsx';
 import { getWorkPercentage, percentageTone, formatWorkPercentage } from '../../../utils/workStatusMeta.js';
 import { NOTA_QUEUE_TABS, matchesNotaQueueTab } from '../../../utils/notaQueueMeta.js';
 import {
@@ -119,18 +120,6 @@ export default function HistoryTransaction({
     if (paymentFilter === 'Outstanding') return ps === 'Outstanding';
     if (paymentFilter === 'Sisa Tagihan') return ps !== 'Lunas';
     return true;
-  };
-
-  // WhatsApp Helper (update status singkat — beda dari kirim nota digital)
-  const handleOpenWA = (e, order) => {
-    if (e) e.stopPropagation();
-    let rawPhone = (order.customerPhone || '').replace(/[^0-9]/g, '');
-    if (rawPhone.startsWith('0')) {
-      rawPhone = '62' + rawPhone.slice(1);
-    }
-    if (!rawPhone) rawPhone = '628123456789';
-    const message = encodeURIComponent(`Halo Kak ${order.customerName || 'Pelanggan'}, update status pengerjaan nota ${order.id} Anda saat ini: ${formatWorkPercentage(order.progressStatus ?? order.workStatus)}. Terima kasih telah mempercayakan Waschen Laundry! 😊`);
-    window.open(`https://api.whatsapp.com/send?phone=${rawPhone}&text=${message}`, '_blank');
   };
 
   const handleKirimNotaDigital = async (e, order) => {
@@ -671,14 +660,7 @@ export default function HistoryTransaction({
                     {/* No. WhatsApp (Clickable — buka chat WA langsung) */}
                     <td className="py-3.5 px-6 text-center whitespace-nowrap">
                       {order.customerPhone && order.customerPhone !== '-' ? (
-                        <button
-                          type="button"
-                          onClick={(e) => handleOpenWA(e, order)}
-                          className="text-xs text-emerald-600 hover:text-emerald-700 font-mono font-bold hover:underline cursor-pointer inline-flex items-center gap-0.5"
-                          title={`Klik untuk kirim pesan WhatsApp ke ${order.customerName}`}
-                        >
-                          <span>{order.customerPhone}</span>
-                        </button>
+                        <span className="text-xs text-slate-600 font-mono font-bold">{order.customerPhone}</span>
                       ) : (
                         <span className="text-slate-300 font-bold">—</span>
                       )}

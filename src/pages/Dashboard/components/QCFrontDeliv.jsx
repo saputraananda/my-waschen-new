@@ -9,6 +9,36 @@ import { extractOrderNo } from '../../../utils/extractOrderNo.js';
 import { burnQcPhoto, buildQcPhotoLines } from '../../../utils/qcPhotoStamp.js';
 
 const MAX_PHOTOS = 5;
+const QC_PHOTO = { maxEdge: 2560, quality: 0.95 };
+
+const TEMUAN_NOTE = {
+  frontliner: {
+    kiloan: 'Contoh : Ada 1 pcs baju kaos yang robek dibagian ketiak',
+    satuan: 'Contoh : Ada noda tinta di bagian lengan'
+  },
+  washing: {
+    kiloan: 'Contoh : Ada 1 pcs baju kaos yang robek dibagian ketiak',
+    satuan: 'Contoh : Ada noda tinta di bagian lengan'
+  },
+  ironing: {
+    kiloan: 'Contoh : Ada 1 pcs baju kaos yang robek dibagian ketiak',
+    satuan: 'Contoh : Ada noda membandel dibagian dada'
+  },
+  packing: {
+    kiloan: 'Contoh : Ada beberapa baju yang lecak, baju biru, dst.',
+    satuan: 'Contoh : Masih ada noda di kerah kemeja'
+  },
+  delivery: {
+    kiloan: 'Contoh : Packing tidak berurutan dan tidak presisi',
+    satuan: 'Contoh : Packing tidak sempurna, plastik robek sedikit'
+  }
+};
+
+function qcNotePlaceholder(stage, kiloan, status) {
+  if (status !== 'temuan') return 'Boleh Kosong Jika Aman';
+  const row = TEMUAN_NOTE[stage === 'handover' ? 'delivery' : stage] || TEMUAN_NOTE.frontliner;
+  return kiloan ? row.kiloan : row.satuan;
+}
 const QC_SCANNER_ID = 'qc-nota-scanner';
 
 /** Identitas QC dibaca server dari token login, bukan PIN. */
@@ -33,17 +63,39 @@ const formatDateTime = (v) => {
   });
 };
 
-const holdWaLink = (phone, { customerName, orderNo, reportedStage, reportNotes, kiloan }) => {
-  const normalized = String(phone || '').replace(/[^0-9]/g, '').replace(/^0/, '62');
-  const team = STAGE_LABEL[reportedStage] || reportedStage || 'Produksi';
-  let msg = `Selamat, Kak ${customerName || ''}. Kami dari Waschen ingin menginformasikan terkait nota ${orderNo || '-'}.`;
-  msg += `\n\nTim ${team} kami menemukan kondisi pada cucian ${kiloan ? 'kiloan ' : ''}Kakak:`;
-  msg += `\n"${reportNotes || 'Temuan pada proses pengerjaan — mohon konfirmasi.'}"`;
-  msg += kiloan
-    ? '\n\nUntuk hasil terbaik, kami sarankan cucian ini diproses sebagai layanan satuan. Apakah Kakak berkenan? Mohon konfirmasinya, Kak.'
-    : '\n\nMohon konfirmasinya agar kami dapat melanjutkan proses, Kak. Terima kasih.';
-  return `https://wa.me/${normalized}?text=${encodeURIComponent(msg)}`;
-};
+function holdWaText(finding, itemLabel) {
+  return [
+    'Halo Bapak/Ibu. Kami dari Waschen Laundry ingin menginformasikan terkait item.',
+    '',
+    `*${itemLabel}*`,
+    '',
+    `Tim kami menemukan kondisi pada cucian kiloan Bapak/Ibu berupa ${String(finding || '').trim()}`,
+    '',
+    'Mohon konfirmasinya, terima kasih 🙏'
+  ].join('\n');
+}
+
+async function downloadPhotoUrls(urls) {
+  const list = (urls || []).filter(Boolean);
+  await Promise.all(list.map(async (url, i) => {
+    const name = list.length > 1 ? `temuan-${i + 1}.jpg` : 'temuan-qc.jpg';
+    let href = url;
+    let revoke = false;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('foto');
+      href = URL.createObjectURL(await res.blob());
+      revoke = true;
+    } catch { /* URL asli jika fetch tertahan */ }
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    if (revoke) setTimeout(() => URL.revokeObjectURL(href), 5000);
+  }));
+}
 
 const isKiloan = (item) =>
   item?.category_code === 'KILOAN' || String(item?.unit || '').toLowerCase() === 'kg';
@@ -55,11 +107,47 @@ const stageFor = (tab, item) => {
   return 'frontliner';
 };
 
-const waLink = (phone, kiloan) => {
-  const normalized = String(phone || '').replace(/[^0-9]/g, '').replace(/^0/, '62');
-  const msg = `Selamat, Kak. Saat proses sortir sebelum pencucian, kami menemukan noda/kerusakan pada salah satu cucian ${kiloan ? 'kiloan ' : ''}Kakak. Berikut foto kondisinya sebagai referensi.`;
-  return `https://wa.me/${normalized}?text=${encodeURIComponent(msg)}`;
-};
+function qcItemLabel(item) {
+  const name = String(item?.service_name || 'Item').trim();
+  const qtyNum = Number(item?.qty);
+  const unit = String(item?.unit || '').trim();
+  const qty = Number.isFinite(qtyNum) && qtyNum > 0
+    ? (Number.isInteger(qtyNum) ? String(qtyNum) : String(qtyNum).replace('.', ','))
+    : '';
+  const prefix = qty && unit ? `${qty} ${unit}` : '';
+  if (!prefix || name.toLowerCase().startsWith(prefix.toLowerCase())) return name;
+  return `${prefix} ${name}`;
+}
+
+function sortirWaText(notes, itemLabel) {
+  return [
+    'Halo Bapak/Ibu 🙏',
+    '',
+    `Saat proses sortir sebelum pencucian, kami menemukan ${String(notes || '').trim()} pada item`,
+    '',
+    `*${itemLabel}* (foto terlampir).`,
+    '',
+    'Mohon konfirmasinya apakah kami boleh melanjutkan ke proses pencucian dengan kondisi tersebut.',
+    'Jika tidak ada konfirmasi, akan kami lanjutkan ke proses pencucian.',
+    '',
+    'Terima kasih 🙏',
+    '*Total Care For Happy Life*'
+  ].join('\n');
+}
+
+function downloadQcPhotos(photos) {
+  photos.forEach((p, i) => {
+    if (!p?.file) return;
+    const url = URL.createObjectURL(p.file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = photos.length > 1 ? `temuan-${i + 1}.jpg` : 'temuan-qc.jpg';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  });
+}
 
 function QcSheet({ target, onClose, onSaved }) {
   const { txn, item, stage } = target;
@@ -91,7 +179,7 @@ function QcSheet({ target, onClose, onSaved }) {
     setBusy(true);
     setError('');
     try {
-      const stamped = alreadyStamped ? file : await burnQcPhoto(file, { orderNo: txn.order_no, stage });
+      const stamped = alreadyStamped ? file : await burnQcPhoto(file, { orderNo: txn.order_no, stage, ...QC_PHOTO });
       setPhotos((prev) => [...prev, { file: stamped, preview: URL.createObjectURL(stamped) }]);
     } catch {
       setError('Gagal memproses foto.');
@@ -102,6 +190,10 @@ function QcSheet({ target, onClose, onSaved }) {
 
   const submit = async () => {
     setError('');
+    if (qcStatus === 'temuan' && !notes.trim()) {
+      setError('Catatan temuan wajib diisi.');
+      return;
+    }
     if (photos.length === 0) {
       setError(handover ? 'Serah terima wajib minimal 1 foto.' : 'QC wajib minimal 1 foto.');
       return;
@@ -134,8 +226,8 @@ function QcSheet({ target, onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[120] bg-[#313030]/60 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-[#e0e0e0] shadow-2xl pb-[env(safe-area-inset-bottom)]">
+    <div className="fixed inset-0 z-[120] bg-[#313030]/60 flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-lg max-h-[min(92dvh,760px)] overflow-y-auto rounded-3xl border border-[#e0e0e0] shadow-2xl">
         <div className="sticky top-0 bg-white border-b border-[#e0e0e0] px-4 sm:px-5 py-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-sm font-black text-[#313030] break-words">{handover ? 'Serah Terima' : 'QC'} — {item.service_name}</h2>
@@ -199,7 +291,18 @@ function QcSheet({ target, onClose, onSaved }) {
             </div>
           </div>
 
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Catatan" className="w-full rounded-xl border border-[#e0e0e0] px-3 py-2 text-sm" />
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+              Catatan{qcStatus === 'temuan' ? ' (Wajib)' : ''}
+            </p>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              placeholder={qcNotePlaceholder(stage, kiloan, qcStatus)}
+              className="w-full rounded-xl border border-[#e0e0e0] px-3 py-2 text-sm"
+            />
+          </div>
 
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
@@ -227,7 +330,27 @@ function QcSheet({ target, onClose, onSaved }) {
           </div>
 
           {qcStatus === 'temuan' && !handover && stage === 'frontliner' && txn.customer_phone && (
-            <a href={waLink(txn.customer_phone, kiloan)} target="_blank" rel="noreferrer" onClick={() => setWaContacted(true)} className="block text-center py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-black">Hubungi customer via WA</a>
+            <button
+              type="button"
+              onClick={() => {
+                if (!notes.trim()) {
+                  setError('Isi catatan temuan dulu.');
+                  return;
+                }
+                if (!photos.length) {
+                  setError('Ambil foto temuan dulu. Foto terunduh ke galeri saat WhatsApp dibuka.');
+                  return;
+                }
+                downloadQcPhotos(photos);
+                setWaContacted(true);
+                const digits = String(txn.customer_phone).replace(/\D/g, '').replace(/^0/, '62');
+                const url = `https://api.whatsapp.com/send?phone=${digits}&text=${encodeURIComponent(sortirWaText(notes, qcItemLabel(item)))}`;
+                window.open(url, '_blank', 'noopener,noreferrer');
+              }}
+              className="block w-full text-center py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-black"
+            >
+              Hubungi customer via WA
+            </button>
           )}
 
           {qcStatus === 'temuan' && !handover && (
@@ -261,6 +384,8 @@ function QcSheet({ target, onClose, onSaved }) {
         open={cameraOpen}
         title={handover ? 'Ambil Foto Serah Terima' : 'Ambil Foto QC'}
         buildOverlayLines={(date) => buildQcPhotoLines({ orderNo: txn.order_no, stage, date })}
+        jpegQuality={QC_PHOTO.quality}
+        maxEdge={QC_PHOTO.maxEdge}
         onCapture={(file) => { setCameraOpen(false); addPhoto(file, { alreadyStamped: true }); }}
         onClose={() => setCameraOpen(false)}
       />
@@ -281,6 +406,7 @@ export default function QCFrontDeliv() {
   const [notice, setNotice] = useState('');
   const [target, setTarget] = useState(null);
   const [holdNotes, setHoldNotes] = useState({});
+  const [waFindings, setWaFindings] = useState({});
   const [holdBusyId, setHoldBusyId] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
@@ -621,20 +747,35 @@ export default function QCFrontDeliv() {
                     )}
 
                     {fromOtherStage && h.customer_phone && (
-                      <a
-                        href={holdWaLink(h.customer_phone, {
-                          customerName: h.customer_name,
-                          orderNo: h.order_no,
-                          reportedStage: h.reported_stage,
-                          reportNotes: h.report_notes,
-                          kiloan: isKiloan(h)
-                        })}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-3 w-full py-3 rounded-2xl bg-emerald-500 text-white text-xs font-black flex items-center justify-center gap-2"
-                      >
-                        <MessageCircle className="h-4 w-4" /> Hubungi Customer via WA
-                      </a>
+                      <>
+                        <textarea
+                          rows={2}
+                          value={waFindings[h.detail_id] !== undefined ? waFindings[h.detail_id] : (h.report_notes || '')}
+                          onChange={(e) => setWaFindings((prev) => ({ ...prev, [h.detail_id]: e.target.value }))}
+                          placeholder="Tulis temuan untuk customer, sesuai catatan tim"
+                          className="mt-3 w-full text-xs font-medium text-slate-700 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl px-3 py-2.5 outline-none resize-none focus:border-[#5f1340]"
+                        />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const finding = (waFindings[h.detail_id] !== undefined ? waFindings[h.detail_id] : (h.report_notes || '')).trim();
+                            if (!finding) {
+                              setError('Isi temuan untuk customer dulu.');
+                              return;
+                            }
+                            const popup = window.open('about:blank', '_blank');
+                            const urls = (h.photos || []).map((p) => p.photo_url).filter(Boolean);
+                            if (urls.length) await downloadPhotoUrls(urls);
+                            const digits = String(h.customer_phone).replace(/\D/g, '').replace(/^0/, '62');
+                            const link = `https://api.whatsapp.com/send?phone=${digits}&text=${encodeURIComponent(holdWaText(finding, qcItemLabel(h)))}`;
+                            if (popup) popup.location.href = link;
+                            else window.open(link, '_blank', 'noopener,noreferrer');
+                          }}
+                          className="mt-3 w-full py-3 rounded-2xl bg-emerald-500 text-white text-xs font-black flex items-center justify-center gap-2"
+                        >
+                          <MessageCircle className="h-4 w-4" /> Hubungi Customer via WA
+                        </button>
+                      </>
                     )}
 
                     <input

@@ -160,7 +160,6 @@ export default function TransactionPage() {
   // Step 2: Layanan State (Pure live from database)
   const [servicesList, setServicesList] = useState([]);
   const [serviceSearch, setServiceSearch] = useState('');
-  const [serviceCategoryFilter, setServiceCategoryFilter] = useState('Semua');
   const [serviceCurrentPage, setServiceCurrentPage] = useState(1);
   const serviceItemsPerPage = 6;
 
@@ -284,7 +283,7 @@ export default function TransactionPage() {
             dcPriceAdd: parseFloat(s.dc_price_add) > 0 ? parseFloat(s.dc_price_add) : 0,
             unit: s.unit || 'Kg',
             duration: s.regular_duration_days ? `${s.regular_duration_days} Hari` : '2 Hari (48 Jam)',
-            description: s.description || 'Layanan laundry higienis Waschen',
+            description: String(s.description || '').trim(),
             minWeight: parseFloat(s.min_order_qty) || 4,
             minPrice: (parseFloat(s.min_order_qty) || 4) * (parseFloat(s.price) || 0),
             isCleanox: s.is_cleanox === 1 || s.is_cleanox === true
@@ -411,11 +410,9 @@ export default function TransactionPage() {
     return servicesList.filter(s => {
       const matchesSearch = s.name.toLowerCase().includes(serviceSearch.toLowerCase()) ||
         s.categoryName.toLowerCase().includes(serviceSearch.toLowerCase());
-      const matchesCat = serviceCategoryFilter === 'Semua' || s.categoryName === serviceCategoryFilter;
-      return matchesSearch && matchesCat;
+      return matchesSearch;
     });
-  }, [servicesList, serviceSearch, serviceCategoryFilter]);
-  const serviceCategories = useMemo(() => [...new Set(servicesList.map((s) => s.categoryName))], [servicesList]);
+  }, [servicesList, serviceSearch]);
 
   const totalServicePages = Math.ceil(filteredServices.length / serviceItemsPerPage) || 1;
   const paginatedServices = useMemo(() => {
@@ -425,7 +422,7 @@ export default function TransactionPage() {
 
   useEffect(() => {
     setServiceCurrentPage(1);
-  }, [serviceSearch, serviceCategoryFilter]);
+  }, [serviceSearch]);
 
   // Open item configuration modal before adding to cart
   const handleOpenItemConfig = (service) => {
@@ -1119,9 +1116,6 @@ export default function TransactionPage() {
             itemSpecs={itemSpecs}
             setItemSpecs={setItemSpecs}
             handleAddToCart={handleAddToCart}
-            serviceCategories={serviceCategories}
-            serviceCategoryFilter={serviceCategoryFilter}
-            setServiceCategoryFilter={setServiceCategoryFilter}
             serviceSearch={serviceSearch}
             setServiceSearch={setServiceSearch}
             paginatedServices={paginatedServices}

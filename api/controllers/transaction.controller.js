@@ -1169,6 +1169,17 @@ export const markTransactionAsPaid = async (req, res) => {
     }
 
     const order = orderRows[0];
+    const [openShiftRows] = await connection.query(
+      `SELECT id FROM tr_cashier_shift WHERE outlet_id = ? AND status = 'Open' ORDER BY id DESC LIMIT 1`,
+      [order.outlet_id]
+    );
+    if (!openShiftRows.length) {
+      await connection.rollback();
+      return res.status(409).json({
+        success: false,
+        message: 'Pelunasan hanya bisa saat shift outlet sedang terbuka'
+      });
+    }
     const method = paymentMethod || 'Tunai';
     const grandTotalNum = parseFloat(order.grand_total) || 0;
 

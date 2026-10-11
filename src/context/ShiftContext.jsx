@@ -22,7 +22,9 @@ const SHIFT_FREE_PATHS = ['/login', '/', '/dashboard', '/daily-report'];
 
 function isShiftFreePath(pathname) {
   if (!pathname) return false;
-  return SHIFT_FREE_PATHS.some((p) => pathname === p);
+  if (SHIFT_FREE_PATHS.some((p) => pathname === p)) return true;
+  // Riwayat boleh dibuka tanpa shift. Pelunasan dikunci di halaman itu.
+  return pathname === '/riwayat' || pathname.startsWith('/riwayat/') || pathname.startsWith('/history/');
 }
 
 /** Hydrate shift dari localStorage agar UI tidak flash "Belum Open" saat API masih loading. */

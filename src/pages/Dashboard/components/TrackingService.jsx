@@ -112,18 +112,6 @@ export default function TrackingService({
       .catch(() => setWorkStatusOptions(DEFAULT_WORK_STATUSES));
   }, []);
 
-  // WhatsApp Helper (update status singkat)
-  const handleOpenWA = (e, order) => {
-    if (e) e.stopPropagation();
-    let rawPhone = (order.customerPhone || '').replace(/[^0-9]/g, '');
-    if (rawPhone.startsWith('0')) {
-      rawPhone = '62' + rawPhone.slice(1);
-    }
-    if (!rawPhone) rawPhone = '628123456789';
-    const message = encodeURIComponent(`Halo Kak ${order.customerName || 'Pelanggan'}, update status pengerjaan nota ${order.id} Anda saat ini: ${formatWorkPercentage(order.workStatus)}. Terima kasih telah mempercayakan Waschen Laundry! 😊`);
-    window.open(`https://api.whatsapp.com/send?phone=${rawPhone}&text=${message}`, '_blank');
-  };
-
   const handleKirimNotaDigital = async (e, order) => {
     if (e) e.stopPropagation();
     const target = order || selectedOrderModal;
@@ -563,14 +551,7 @@ export default function TrackingService({
                     {/* Pelanggan */}
                     <td className="py-3.5 px-6 text-center">
                       <span className="font-extrabold text-[#313030] block leading-tight">{formatName(order.customerName)}</span>
-                      <button
-                        type="button"
-                        onClick={(e) => handleOpenWA(e, order)}
-                        className="text-[10px] text-emerald-600 hover:text-emerald-700 font-mono font-bold mt-0.5 hover:underline cursor-pointer inline-flex items-center gap-0.5"
-                        title={`Klik untuk kirim pesan WhatsApp ke ${order.customerName}`}
-                      >
-                        <span>{order.customerPhone}</span>
-                      </button>
+                      <span className="text-[10px] text-slate-500 font-mono font-bold mt-0.5 block">{order.customerPhone}</span>
                     </td>
 
                     {/* Status Pengerjaan */}
@@ -730,14 +711,7 @@ export default function TrackingService({
                 <div>
                   <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Pelanggan</span>
                   <span className="font-extrabold text-[#313030] text-sm mt-0.5 block">{selectedOrderModal.customerName}</span>
-                  <button
-                    type="button"
-                    onClick={(e) => handleOpenWA(e, selectedOrderModal)}
-                    className="text-[10px] text-emerald-600 hover:text-emerald-700 font-mono font-bold hover:underline cursor-pointer inline-flex items-center gap-0.5"
-                    title={`Kirim WA ke ${selectedOrderModal.customerName}`}
-                  >
-                    <span>{selectedOrderModal.customerPhone}</span>
-                  </button>
+                  <span className="text-[10px] text-slate-500 font-mono font-bold">{selectedOrderModal.customerPhone}</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Kategori & Parfum</span>

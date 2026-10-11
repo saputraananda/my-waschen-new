@@ -6,7 +6,7 @@ import { drawTextOverlay } from '../utils/qcPhotoStamp.js';
  * Kamera QC POS — struktur & watermark sama dengan CameraCaptureModal Waschen Mobile.
  * buildOverlayLines: (date: Date) => string[]
  */
-export default function QcCameraModal({ open, title = 'Ambil Foto QC', buildOverlayLines, onCapture, onClose }) {
+export default function QcCameraModal({ open, title = 'Ambil Foto QC', buildOverlayLines, onCapture, onClose, jpegQuality = 0.88, maxEdge = 0 }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const [facingMode, setFacingMode] = useState('environment');
@@ -66,8 +66,11 @@ export default function QcCameraModal({ open, title = 'Ambil Foto QC', buildOver
     if (!video?.videoWidth || capturing) return;
     setCapturing(true);
 
-    const w = video.videoWidth;
-    const h = video.videoHeight;
+    const srcW = video.videoWidth;
+    const srcH = video.videoHeight;
+    const scale = maxEdge > 0 && srcW > maxEdge ? maxEdge / srcW : 1;
+    const w = Math.round(srcW * scale);
+    const h = Math.round(srcH * scale);
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
@@ -83,7 +86,7 @@ export default function QcCameraModal({ open, title = 'Ambil Foto QC', buildOver
       setCapturing(false);
       if (!blob) return;
       onCapture(new File([blob], `qc_${Date.now()}.jpg`, { type: 'image/jpeg' }));
-    }, 'image/jpeg', 0.88);
+    }, 'image/jpeg', jpegQuality);
   };
 
   if (!open) return null;

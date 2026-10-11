@@ -250,14 +250,6 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '', a
     }
   }, [stopScanner, autoOpenScanner, trackedOrder, onClose]);
 
-  const handleOpenWA = (phone, name, orderNo, status) => {
-    let rawPhone = (phone || '').replace(/[^0-9]/g, '');
-    if (rawPhone.startsWith('0')) rawPhone = '62' + rawPhone.slice(1);
-    if (!rawPhone) rawPhone = '628123456789';
-    const message = encodeURIComponent(`Halo Kak ${name || 'Pelanggan'}, update status pengerjaan nota ${orderNo} Anda saat ini adalah: ${formatWorkPercentage(status)}. Terima kasih! 😊`);
-    window.open(`https://api.whatsapp.com/send?phone=${rawPhone}&text=${message}`, '_blank');
-  };
-
   if (!isOpen) return null;
 
   // Determine stage progress index
@@ -447,13 +439,9 @@ export default function ModalLacakNota({ isOpen, onClose, initialOrderNo = '', a
                   
                   <div className="flex items-center gap-3 mt-1 text-slate-500 font-medium text-xs">
                     <span>Pelanggan: <strong className="text-[#313030]">{formatName(trackedOrder.customer_name || trackedOrder.customerName)}</strong></span>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenWA(trackedOrder.customer_phone || trackedOrder.customerPhone, trackedOrder.customer_name || trackedOrder.customerName, trackedOrder.order_no || trackedOrder.id, trackedOrder.work_status || trackedOrder.workStatus)}
-                      className="text-emerald-600 hover:underline font-mono font-bold text-[11px]"
-                    >
+                    <span className="font-mono font-bold text-[11px] text-slate-600">
                       {trackedOrder.customer_phone || trackedOrder.customerPhone}
-                    </button>
+                    </span>
                   </div>
                 </div>
 

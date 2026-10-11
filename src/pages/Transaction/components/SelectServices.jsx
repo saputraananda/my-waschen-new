@@ -19,9 +19,6 @@ export default function SelectServices({
   itemSpecs,
   setItemSpecs,
   handleAddToCart,
-  serviceCategories = [],
-  serviceCategoryFilter,
-  setServiceCategoryFilter,
   serviceSearch,
   setServiceSearch,
   paginatedServices,
@@ -114,24 +111,6 @@ export default function SelectServices({
               Kiloan minimal 4 Kg (Rp 36.000). Anda dapat memilih lebih dari satu layanan.
             </p>
           </div>
-
-          {/* Category Filter Chips — baris sendiri, wrap rapi */}
-          <div className="flex flex-wrap gap-1.5">
-            {['Semua', ...serviceCategories].map((cat) => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setServiceCategoryFilter(cat)}
-                className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer ${
-                  serviceCategoryFilter === cat
-                    ? 'bg-[#5f1340] text-white shadow-xs'
-                    : 'bg-[#f8f8f8] text-slate-600 border border-[#e0e0e0] hover:bg-slate-100'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Service Search Bar */}
@@ -187,7 +166,9 @@ export default function SelectServices({
                   <h4 className="font-extrabold text-sm text-[#313030] group-hover:text-[#5f1340] transition-colors leading-snug">
                     {service.name}
                   </h4>
-                  <p className="text-xs text-slate-400 mt-1 line-clamp-2">{service.description}</p>
+                  {service.description ? (
+                    <p className="text-xs text-slate-400 mt-1 line-clamp-2">{service.description}</p>
+                  ) : null}
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-[#e0e0e0]/70 flex items-center justify-between">

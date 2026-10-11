@@ -1,39 +1,17 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
 import { Search, TrendingDown } from 'lucide-react';
 
 const CHURN_TABS = ['Semua', 'Active', 'Warning', 'Churn', 'Dormant', 'Lost'];
 
-const CHURN_THRESHOLDS = [
-  { max: 20, status: 'Active' },
-  { max: 45, status: 'Warning' },
-  { max: 60, status: 'Churn' },
-  { max: 90, status: 'Dormant' }
-];
+const EMPTY_COUNTS = { Semua: 0, Active: 0, Warning: 0, Churn: 0, Dormant: 0, Lost: 0 };
+const PAGE_SIZE = 24;
 
-function resolveChurnStatus(lastOrderDate) {
-  if (!lastOrderDate) return { lastOrderDate: null, daysSinceLast: null, churnStatus: 'Lost' };
-
-  const last = lastOrderDate instanceof Date ? lastOrderDate : new Date(lastOrderDate);
-  if (Number.isNaN(last.getTime())) {
-    return { lastOrderDate: null, daysSinceLast: null, churnStatus: 'Lost' };
-  }
-
-  const daysSinceLast = Math.max(0, Math.floor((Date.now() - last.getTime()) / 86400000));
-  const match = CHURN_THRESHOLDS.find((t) => daysSinceLast <= t.max);
-  return { lastOrderDate: last, daysSinceLast, churnStatus: match ? match.status : 'Lost' };
-}
-
-function withChurnStatus(customers) {
-  return (customers || []).map((c) => ({ ...c, ...resolveChurnStatus(c.lastOrderDate) }));
-}
-
-function computeChurnCounts(customersWithChurn) {
-  const counts = { Semua: customersWithChurn.length };
-  for (const tab of CHURN_TABS) {
-    if (tab === 'Semua') continue;
-    counts[tab] = customersWithChurn.filter((c) => c.churnStatus === tab).length;
-  }
-  return counts;
+function formatDateId(d) {
+  if (!d) return '-';
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 const BADGE_TONE = {
@@ -59,7 +37,7 @@ const waLink = (cust) => {
   if (rawPhone.startsWith('0')) rawPhone = '62' + rawPhone.slice(1);
   if (!rawPhone) return null;
   const message = encodeURIComponent(
-    `Halo Kak ${cust.name || 'Pelanggan'}, salam hangat dari Waschen Laundry! Ada promo & diskon khusus retensi Kakak hari ini. Hubungi kami untuk jadwal antar/jemput cucian ya 😊`
+    `Halo Bapak/Ibu, salam hangat dari Waschen Laundry! Ada promo & diskon khusus retensi Bapak/Ibu hari ini. Hubungi kami untuk jadwal antar/jemput cucian ya 😊`
   );
   return `https://api.whatsapp.com/send?phone=${rawPhone}&text=${message}`;
 };
@@ -70,21 +48,62 @@ const WhatsAppIcon = (props) => (
   </svg>
 );
 
-export default function CustomerChurn({ customers = [], activeOutletName, onEditCustomer }) {
+export default function CustomerChurn({ outlets = [], activeOutletName, activeOutletId = '', onEditCustomer }) {
+  const [selectedBranch, setSelectedBranch] = useState(activeOutletId ? String(activeOutletId) : 'Semua');
   const [churnFilter, setChurnFilter] = useState('Semua');
+  const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [rows, setRows] = useState([]);
+  const [counts, setCounts] = useState(EMPTY_COUNTS);
+  const [total, setTotal] = useState(0);
+  const [pages, setPages] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
-  const customersWithChurn = useMemo(() => withChurnStatus(customers), [customers]);
-  const churnCounts = useMemo(() => computeChurnCounts(customersWithChurn), [customersWithChurn]);
+  useEffect(() => {
+    if (!activeOutletId) return;
+    setSelectedBranch(String(activeOutletId));
+    setPage(1);
+  }, [activeOutletId]);
 
-  const visible = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return customersWithChurn
-      .filter((c) => churnFilter === 'Semua' || c.churnStatus === churnFilter)
-      .filter((c) => !q || (c.name || '').toLowerCase().includes(q) || (c.phone || '').includes(q))
-      // Paling lama tidak transaksi tampil dulu — itu yang paling perlu ditindak.
-      .sort((a, b) => (b.daysSinceLast ?? Infinity) - (a.daysSinceLast ?? Infinity));
-  }, [customersWithChurn, churnFilter, searchQuery]);
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchQuery(searchInput.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setLoading(true);
+    setLoadError('');
+    axios.get('/api/customers/churn', {
+      signal: ctrl.signal,
+      params: {
+        status: churnFilter === 'Semua' ? undefined : churnFilter,
+        q: searchQuery || undefined,
+        outlet_id: selectedBranch && selectedBranch !== 'Semua' ? selectedBranch : undefined,
+        page,
+        limit: PAGE_SIZE
+      }
+    }).then((res) => {
+      if (!res.data?.success) {
+        setLoadError('Gagal memuat analisis churn');
+        setRows([]);
+        return;
+      }
+      setRows(res.data.data || []);
+      setCounts(res.data.meta?.counts || EMPTY_COUNTS);
+      setTotal(Number(res.data.meta?.total) || 0);
+      setPages(Number(res.data.meta?.pages) || 1);
+    }).catch((err) => {
+      if (err?.code === 'ERR_CANCELED') return;
+      setLoadError('Gagal memuat analisis churn');
+      setRows([]);
+    }).finally(() => {
+      if (!ctrl.signal.aborted) setLoading(false);
+    });
+    return () => ctrl.abort();
+  }, [churnFilter, searchQuery, selectedBranch, page]);
 
   return (
     <div className="flex flex-col gap-4 sm:gap-6">
@@ -102,24 +121,39 @@ export default function CustomerChurn({ customers = [], activeOutletName, onEdit
             </div>
           </div>
 
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+          <select
+            value={selectedBranch}
+            onChange={(e) => { setSelectedBranch(e.target.value); setPage(1); }}
+            className="w-full sm:w-auto px-3 py-2.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl text-xs font-bold text-[#313030] outline-none focus:border-[#5f1340] cursor-pointer min-w-0 sm:min-w-[180px]"
+            title="Filter cabang"
+          >
+            <option value="Semua">Semua Cabang</option>
+            {outlets.map((o) => (
+              <option key={o.id} value={String(o.id)}>
+                {o.full_name || o.name}
+              </option>
+            ))}
+          </select>
           <div className="relative w-full sm:w-72">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
             <input
               type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={searchInput}
+              onChange={(e) => { setSearchInput(e.target.value); setPage(1); }}
               placeholder="Cari nama / nomor telepon"
               className="w-full pl-9 pr-8 py-2.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl text-xs font-bold text-[#313030] placeholder:text-slate-400 placeholder:font-normal focus:outline-none focus:border-[#5f1340]/40"
             />
-            {searchQuery && (
+            {searchInput && (
               <button
                 type="button"
-                onClick={() => setSearchQuery('')}
+                onClick={() => setSearchInput('')}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#313030] text-sm font-bold leading-none cursor-pointer"
               >
                 &times;
               </button>
             )}
+          </div>
           </div>
         </div>
 
@@ -130,7 +164,7 @@ export default function CustomerChurn({ customers = [], activeOutletName, onEdit
               <button
                 key={cat}
                 type="button"
-                onClick={() => setChurnFilter(cat)}
+                onClick={() => { setChurnFilter(cat); setPage(1); }}
                 className={`shrink-0 px-3 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
                   active
                     ? 'bg-[#5f1340] text-white shadow-xs'
@@ -139,7 +173,7 @@ export default function CustomerChurn({ customers = [], activeOutletName, onEdit
               >
                 <span>{cat}</span>
                 <span className={`px-1.5 rounded-full text-[10px] ${active ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
-                  {churnCounts[cat] ?? 0}
+                  {counts[cat] ?? 0}
                 </span>
               </button>
             );
@@ -147,13 +181,30 @@ export default function CustomerChurn({ customers = [], activeOutletName, onEdit
         </div>
       </div>
 
-      {visible.length > 0 ? (
+      {loadError && (
+        <p className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-2xl px-4 py-3">{loadError}</p>
+      )}
+
+      {loading ? (
+        <div className="bg-white border border-[#e0e0e0] rounded-2xl py-16 text-center text-sm font-black text-slate-400">Memuat…</div>
+      ) : rows.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-          {visible.map((cust) => {
+          {rows.map((row) => {
+            const cust = {
+              dbId: row.id,
+              id: row.customer_code || row.id,
+              name: row.name,
+              phone: row.phone,
+              tier: row.tier,
+              trxCount: Number(row.trx_count) || 0,
+              lastTrx: formatDateId(row.last_order_date),
+              churnStatus: row.churn_status,
+              daysSinceLast: row.days_since_last == null ? null : Number(row.days_since_last)
+            };
             const link = waLink(cust);
             return (
               <div
-                key={cust.id}
+                key={cust.dbId}
                 className="bg-white border border-[#e0e0e0] rounded-2xl p-4 shadow-xs flex flex-col gap-3 hover:border-[#5f1340]/30 transition-colors"
               >
                 <div className="flex items-start gap-3 min-w-0">
@@ -210,6 +261,33 @@ export default function CustomerChurn({ customers = [], activeOutletName, onEdit
           <p className="text-xs text-slate-400 mt-1">
             {searchQuery ? `Pencarian "${searchQuery}" tidak cocok` : `Kategori "${churnFilter}" masih kosong`}
           </p>
+        </div>
+      )}
+
+      {!loading && total > 0 && (
+        <div className="flex items-center justify-between gap-3 text-[11px] font-bold text-slate-500">
+          <span>
+            {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} dari {total.toLocaleString('id-ID')}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="px-3 py-1.5 rounded-xl border border-[#e0e0e0] bg-white disabled:opacity-40"
+            >
+              Sebelumnya
+            </button>
+            <span>{page}/{pages}</span>
+            <button
+              type="button"
+              disabled={page >= pages}
+              onClick={() => setPage((p) => p + 1)}
+              className="px-3 py-1.5 rounded-xl border border-[#e0e0e0] bg-white disabled:opacity-40"
+            >
+              Berikutnya
+            </button>
+          </div>
         </div>
       )}
     </div>

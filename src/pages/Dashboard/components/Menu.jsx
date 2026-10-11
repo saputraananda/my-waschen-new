@@ -28,6 +28,7 @@ const MENU_ITEMS = [
     path: '/riwayat',
     label: 'Riwayat',
     hint: 'Semua Transaksi',
+    shiftFree: true,
     icon: History,
     iconWrap: 'bg-rose-50 text-rose-700 group-hover:bg-rose-100/60',
     labelHover: 'group-hover:text-rose-700'

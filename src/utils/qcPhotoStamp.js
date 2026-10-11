@@ -74,7 +74,7 @@ export function drawTextOverlay(ctx, width, height, lines) {
 }
 
 /** Cap nota + tahap + nama, hasil JPEG. Sama pola dengan Waschen Mobile. */
-export async function burnQcPhoto(file, { orderNo, stage }) {
+export async function burnQcPhoto(file, { orderNo, stage, maxEdge = 1600, quality = 0.88 }) {
   const img = await new Promise((resolve, reject) => {
     const el = new Image();
     const url = URL.createObjectURL(file);
@@ -82,8 +82,7 @@ export async function burnQcPhoto(file, { orderNo, stage }) {
     el.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
     el.src = url;
   });
-  const maxW = 1600;
-  const scale = img.width > maxW ? maxW / img.width : 1;
+  const scale = img.width > maxEdge ? maxEdge / img.width : 1;
   const w = Math.round(img.width * scale);
   const h = Math.round(img.height * scale);
   const canvas = document.createElement('canvas');
@@ -92,7 +91,7 @@ export async function burnQcPhoto(file, { orderNo, stage }) {
   const ctx = canvas.getContext('2d');
   ctx.drawImage(img, 0, 0, w, h);
   drawTextOverlay(ctx, w, h, buildQcPhotoLines({ orderNo, stage }));
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.88));
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
   if (!blob) throw new Error('Gagal memproses foto');
   return new File([blob], `qc_${Date.now()}.jpg`, { type: 'image/jpeg' });
 }

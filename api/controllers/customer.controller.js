@@ -263,6 +263,122 @@ export const getCustomers = async (req, res) => {
   }
 };
 
+const CHURN_STATUSES = ['Active', 'Warning', 'Churn', 'Dormant', 'Lost'];
+
+/** Lost = belum pernah transaksi, atau transaksi terakhir lebih dari 90 hari. */
+const CHURN_STATUS_SQL = `
+  CASE
+    WHEN COALESCE(c.total_orders, 0) = 0 OR c.last_transaction_at IS NULL THEN 'Lost'
+    WHEN DATEDIFF(CURDATE(), DATE(c.last_transaction_at)) <= 20 THEN 'Active'
+    WHEN DATEDIFF(CURDATE(), DATE(c.last_transaction_at)) <= 45 THEN 'Warning'
+    WHEN DATEDIFF(CURDATE(), DATE(c.last_transaction_at)) <= 60 THEN 'Churn'
+    WHEN DATEDIFF(CURDATE(), DATE(c.last_transaction_at)) <= 90 THEN 'Dormant'
+    ELSE 'Lost'
+  END
+`;
+
+/**
+ * GET /api/customers/churn?status=&q=&page=&limit=
+ * Klasifikasi dari kolom mst_customer (last_transaction_at / total_orders), bukan scan tr_transaction.
+ */
+export const getCustomerChurn = async (req, res) => {
+  try {
+    const status = CHURN_STATUSES.includes(req.query.status) ? req.query.status : '';
+    const q = String(req.query.q || '').trim().slice(0, 80);
+    const outletId = parseInt(req.query.outlet_id, 10);
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(48, Math.max(1, parseInt(req.query.limit, 10) || 24));
+    const offset = (page - 1) * limit;
+
+    const where = ['c.is_active = 1'];
+    const params = [];
+    if (outletId > 0) {
+      where.push('c.preferred_outlet_id = ?');
+      params.push(outletId);
+    }
+    if (status) {
+      where.push(`${CHURN_STATUS_SQL} = ?`);
+      params.push(status);
+    }
+    if (q) {
+      where.push('(c.name LIKE ? OR c.phone LIKE ?)');
+      const like = `%${q}%`;
+      params.push(like, like);
+    }
+    const whereSql = where.join(' AND ');
+
+    const [rows] = await myWaschenPool.query(
+      `SELECT c.id, c.customer_code, c.name, c.phone, st.name AS tier,
+              COALESCE(c.total_orders, 0) AS trx_count,
+              CASE
+                WHEN COALESCE(c.total_orders, 0) = 0 THEN NULL
+                ELSE c.last_transaction_at
+              END AS last_order_date,
+              CASE
+                WHEN COALESCE(c.total_orders, 0) = 0 OR c.last_transaction_at IS NULL THEN NULL
+                ELSE DATEDIFF(CURDATE(), DATE(c.last_transaction_at))
+              END AS days_since_last,
+              ${CHURN_STATUS_SQL} AS churn_status
+       FROM mst_customer c
+       LEFT JOIN mst_customer_tier st ON st.id = c.spending_tier_id
+       WHERE ${whereSql}
+       ORDER BY (COALESCE(c.total_orders, 0) = 0 OR c.last_transaction_at IS NULL) DESC,
+                c.last_transaction_at ASC,
+                c.id DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    const [[pageStats]] = await myWaschenPool.query(
+      `SELECT COUNT(*) AS total FROM mst_customer c WHERE ${whereSql}`,
+      params
+    );
+    const countWhere = ['c.is_active = 1'];
+    const countParams = [];
+    if (outletId > 0) {
+      countWhere.push('c.preferred_outlet_id = ?');
+      countParams.push(outletId);
+    }
+    const [[counts]] = await myWaschenPool.query(
+      `SELECT COUNT(*) AS semua,
+              SUM(churn_status = 'Active') AS active,
+              SUM(churn_status = 'Warning') AS warning,
+              SUM(churn_status = 'Churn') AS churn,
+              SUM(churn_status = 'Dormant') AS dormant,
+              SUM(churn_status = 'Lost') AS lost
+       FROM (
+         SELECT ${CHURN_STATUS_SQL} AS churn_status
+         FROM mst_customer c
+         WHERE ${countWhere.join(' AND ')}
+       ) s`,
+      countParams
+    );
+
+    const total = Number(pageStats?.total) || 0;
+    return res.status(200).json({
+      success: true,
+      data: rows,
+      meta: {
+        total,
+        page,
+        limit,
+        pages: Math.max(1, Math.ceil(total / limit)),
+        counts: {
+          Semua: Number(counts?.semua) || 0,
+          Active: Number(counts?.active) || 0,
+          Warning: Number(counts?.warning) || 0,
+          Churn: Number(counts?.churn) || 0,
+          Dormant: Number(counts?.dormant) || 0,
+          Lost: Number(counts?.lost) || 0
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching customer churn:', error);
+    return res.status(500).json({ success: false, message: 'Gagal mengambil analisis churn' });
+  }
+};
+
 /**
  * GET /api/customers/:id
  */
