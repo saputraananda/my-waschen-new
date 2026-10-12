@@ -1,9 +1,17 @@
 /**
- * Koneksi thermal printer via Web Serial API (Chrome/Edge).
- * RPP02N / sejenis biasanya muncul sebagai port Serial setelah Bluetooth/USB pairing di Windows.
+ * Koneksi thermal printer.
+ *
+ * Dua mode (dipilih otomatis):
+ *  - 'serial' : Web Serial API (Chrome/Edge desktop). RPP02N / sejenis muncul sebagai
+ *               port COM setelah Bluetooth/USB pairing di Windows.
+ *  - 'rawbt'  : Android (tablet/HP). Web Serial di Android hanya mengenali USB-serial,
+ *               bukan Bluetooth Classic, jadi data ESC/POS dikirim lewat aplikasi RawBT
+ *               (ru.a402d.rawbtprinter) memakai Android intent.
  */
 
 const BAUD_CANDIDATES = [9600, 115200, 38400, 19200, 57600];
+const RAWBT_PACKAGE = 'ru.a402d.rawbtprinter';
+const RAWBT_FLAG_KEY = 'thermal_rawbt_ready';
 
 let port = null;
 let writer = null;
@@ -11,24 +19,97 @@ let reader = null;
 let keepReading = false;
 let disconnectHandler = null;
 
+// ---------------------------------------------------------------------------
+// Deteksi mode
+// ---------------------------------------------------------------------------
+
+export function isAndroidDevice() {
+  return typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent || '');
+}
+
+/** Android selalu pakai RawBT, karena Web Serial tidak bisa melihat printer Bluetooth. */
+export function isRawBtMode() {
+  return isAndroidDevice();
+}
+
+export function getPrinterMode() {
+  return isRawBtMode() ? 'rawbt' : 'serial';
+}
+
 export function isSerialSupported() {
   return typeof navigator !== 'undefined' && !!navigator.serial;
 }
 
+/** Ada cara untuk mencetak di perangkat ini (serial di desktop, RawBT di Android). */
+export function isPrintSupported() {
+  return isRawBtMode() || isSerialSupported();
+}
+
+// ---------------------------------------------------------------------------
+// RawBT (Android)
+// ---------------------------------------------------------------------------
+
+function readRawBtReady() {
+  try {
+    return localStorage.getItem(RAWBT_FLAG_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeRawBtReady(val) {
+  try {
+    if (val) localStorage.setItem(RAWBT_FLAG_KEY, '1');
+    else localStorage.removeItem(RAWBT_FLAG_KEY);
+  } catch { /* ignore */ }
+}
+
+function bytesToBase64(bytes) {
+  let bin = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+function sendToRawBt(bytes) {
+  const b64 = bytesToBase64(bytes);
+  const url =
+    `intent:base64,${b64}#Intent;scheme=rawbt;launchFlags=0x10000000;package=${RAWBT_PACKAGE};end;`;
+  // Batas panjang URL intent beberapa ratus KB; nota teks biasa jauh di bawahnya,
+  // tetapi logo/gambar raster yang besar bisa melewati batas ini.
+  if (url.length > 1_500_000) {
+    throw new Error(
+      'Data nota terlalu besar untuk dikirim ke RawBT. Kecilkan ukuran logo/gambar di nota.'
+    );
+  }
+  window.location.href = url;
+}
+
+// ---------------------------------------------------------------------------
+// Status & info
+// ---------------------------------------------------------------------------
+
 export function isPrinterConnected() {
+  if (isRawBtMode()) return readRawBtReady();
   return !!(port && writer);
 }
 
 export function getConnectedPortInfo() {
+  if (isRawBtMode()) {
+    return readRawBtReady() ? { mode: 'rawbt' } : null;
+  }
   if (!port) return null;
   try {
     const info = port.getInfo?.() || {};
     return {
+      mode: 'serial',
       usbVendorId: info.usbVendorId || null,
       usbProductId: info.usbProductId || null
     };
   } catch {
-    return {};
+    return { mode: 'serial' };
   }
 }
 
@@ -56,6 +137,10 @@ export function formatSerialConnectError(err) {
 
   return raw || 'Gagal menghubungkan printer';
 }
+
+// ---------------------------------------------------------------------------
+// Web Serial (desktop)
+// ---------------------------------------------------------------------------
 
 async function releaseLocks() {
   keepReading = false;
@@ -86,6 +171,10 @@ async function closePortQuiet(p) {
 }
 
 export async function disconnectThermalPrinter() {
+  if (isRawBtMode()) {
+    writeRawBtReady(false);
+    return;
+  }
   const current = port;
   port = null;
   await releaseLocks();
@@ -166,9 +255,16 @@ async function openPort(selectedPort) {
 }
 
 /**
- * Dialog pilih port Serial (butuh gesture user).
+ * Hubungkan printer.
+ *  - Android : tidak ada dialog; cukup menandai "siap" (RawBT yang mengurus Bluetooth).
+ *  - Desktop : dialog pilih port Serial (butuh gesture user).
  */
 export async function connectThermalPrinter() {
+  if (isRawBtMode()) {
+    writeRawBtReady(true);
+    return { mode: 'rawbt' };
+  }
+
   if (!isSerialSupported()) {
     throw new Error(
       'Browser tidak mendukung Web Serial. Pakai Google Chrome atau Microsoft Edge di desktop.'
@@ -191,6 +287,7 @@ export async function connectThermalPrinter() {
  * Tidak memaksa — gagal = diam, user hubungkan manual.
  */
 export async function tryReconnectThermalPrinter() {
+  if (isRawBtMode()) return readRawBtReady();
   if (!isSerialSupported()) return false;
   if (isPrinterConnected()) return true;
 
@@ -210,6 +307,7 @@ let writeInProgress = false;
 
 /**
  * Kirim ESC/POS utuh — jangan potong 512 byte (penyebab nota korup).
+ * Android: dikirim ke RawBT lewat intent. Desktop: ditulis ke port serial.
  */
 export async function writeToThermalPrinter(bytes) {
   if (!isPrinterConnected()) {
@@ -224,6 +322,12 @@ export async function writeToThermalPrinter(bytes) {
 
   writeInProgress = true;
   try {
+    if (isRawBtMode()) {
+      sendToRawBt(data);
+      // Beri waktu Android membuka RawBT sebelum cetak berikutnya
+      await new Promise((r) => setTimeout(r, 800));
+      return;
+    }
     await writer.ready;
     await writer.write(data);
     await writer.ready;

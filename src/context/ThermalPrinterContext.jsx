@@ -3,7 +3,8 @@ import {
   connectThermalPrinter,
   disconnectThermalPrinter,
   isPrinterConnected,
-  isSerialSupported,
+  isPrintSupported,
+  getPrinterMode,
   writeToThermalPrinter,
   getConnectedPortInfo,
   formatSerialConnectError
@@ -13,11 +14,13 @@ import { buildEscPosDualNota, buildEscPosNota, buildEscPosMergeNota } from '../u
 const ThermalPrinterContext = createContext(null);
 
 export function ThermalPrinterProvider({ children }) {
-  const [connected, setConnected] = useState(false);
+  const [connected, setConnected] = useState(() => isPrinterConnected());
   const [connecting, setConnecting] = useState(false);
-  const [portInfo, setPortInfo] = useState(null);
+  const [portInfo, setPortInfo] = useState(() => getConnectedPortInfo());
   const [lastError, setLastError] = useState(null);
-  const supported = isSerialSupported();
+  const supported = isPrintSupported();
+  // 'serial' (desktop, Web Serial) atau 'rawbt' (Android, lewat aplikasi RawBT)
+  const mode = getPrinterMode();
 
   const syncStatus = useCallback(() => {
     const ok = isPrinterConnected();
@@ -28,6 +31,7 @@ export function ThermalPrinterProvider({ children }) {
   // Jangan auto-open port saat load — sering bentrok dengan Bluetooth Windows
   // dan menyebabkan "Failed to open serial port" saat user Hubungkan manual.
   useEffect(() => {
+    if (mode !== 'serial') return undefined;
     const onDisconnect = () => {
       setConnected(false);
       setPortInfo(null);
@@ -36,7 +40,7 @@ export function ThermalPrinterProvider({ children }) {
     return () => {
       navigator.serial?.removeEventListener?.('disconnect', onDisconnect);
     };
-  }, []);
+  }, [mode]);
 
   const connect = useCallback(async () => {
     setConnecting(true);
@@ -101,6 +105,7 @@ export function ThermalPrinterProvider({ children }) {
 
   const value = {
     supported,
+    mode,
     connected,
     connecting,
     portInfo,

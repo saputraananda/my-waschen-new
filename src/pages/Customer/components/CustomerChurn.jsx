@@ -36,9 +36,13 @@ const waLink = (cust) => {
   let rawPhone = (cust.phone || '').replace(/[^0-9]/g, '');
   if (rawPhone.startsWith('0')) rawPhone = '62' + rawPhone.slice(1);
   if (!rawPhone) return null;
-  const message = encodeURIComponent(
-    `Halo Bapak/Ibu, salam hangat dari Waschen Laundry! Ada promo & diskon khusus retensi Bapak/Ibu hari ini. Hubungi kami untuk jadwal antar/jemput cucian ya 😊`
-  );
+  const message = encodeURIComponent([
+    'Halo Bapak/Ibu ! 😊',
+    '',
+    'Ada penawaran spesial untuk Bapak/Ibu dari Waschen Laundry🎁',
+    '',
+    'Saat ini apakah ada pakaian kotor yang bisa kami bantu pickup? 🚚💜'
+  ].join('\n'));
   return `https://api.whatsapp.com/send?phone=${rawPhone}&text=${message}`;
 };
 
