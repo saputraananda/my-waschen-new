@@ -321,9 +321,9 @@ export default function StockDashboard({
       </div>
 
       <div className="bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-xs flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row gap-3 justify-between">
-          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-            <div className="relative w-full sm:w-72">
+        <div className="flex flex-col xl:flex-row gap-3 justify-between min-w-0">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 w-full min-w-0">
+            <div className="relative w-full sm:flex-1 sm:min-w-[12rem] xl:max-w-xs">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <input
                 type="text"
@@ -336,7 +336,7 @@ export default function StockDashboard({
             <select
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
-              className="px-3 py-2 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340] bg-white"
+              className="w-full sm:w-auto min-w-0 px-3 py-2 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340] bg-white"
             >
               <option value="">Semua tim</option>
               <option value="Frontliner">Frontliner</option>
@@ -351,7 +351,7 @@ export default function StockDashboard({
                 type="date"
                 value={usageDate}
                 onChange={(e) => onUsageDateChange(e.target.value)}
-                className="pl-10 pr-3 py-2 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340]"
+                className="w-full sm:w-auto pl-10 pr-3 py-2 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340]"
               />
             </div>
           </div>

@@ -245,7 +245,7 @@ export default function ListCustomer({
   return (
     <>
       <div className="flex flex-col gap-6">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2.5 sm:gap-4">
           <div className="bg-white border border-[#e0e0e0] rounded-2xl p-3 sm:p-4 shadow-xs flex items-center gap-2.5 sm:gap-4 min-w-0">
             <div className="p-2.5 sm:p-3 bg-[#5f1340]/5 text-[#5f1340] rounded-xl shrink-0">
               <Users className="h-5 w-5 sm:h-6 sm:w-6" />
@@ -286,8 +286,8 @@ export default function ListCustomer({
         </div>
 
         <div className="bg-white border border-[#e0e0e0] rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xs flex flex-col gap-4">
-          <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3 border-b border-[#e0e0e0]/70 pb-4">
-            <div className="relative w-full lg:w-72">
+          <div className="flex flex-col xl:flex-row justify-between items-stretch xl:items-center gap-3 border-b border-[#e0e0e0]/70 pb-4 min-w-0">
+            <div className="relative w-full xl:w-72 min-w-0">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <input
                 type="text"
@@ -298,11 +298,11 @@ export default function ListCustomer({
               />
             </div>
 
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto min-w-0">
+            <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-2 w-full min-w-0">
               <select
                 value={selectedBranch}
                 onChange={(e) => { setSelectedBranch(e.target.value); setPage(1); }}
-                className="w-full sm:w-auto px-3 py-2 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl text-xs font-bold text-[#313030] outline-none focus:border-[#5f1340] cursor-pointer min-w-0 sm:min-w-[180px]"
+                className="w-full xl:w-auto px-3 py-2 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl text-xs font-bold text-[#313030] outline-none focus:border-[#5f1340] cursor-pointer min-w-0 xl:min-w-[180px]"
                 title="Filter cabang"
               >
                 <option value="Semua">Semua Cabang</option>

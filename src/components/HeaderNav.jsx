@@ -193,7 +193,7 @@ export default function HeaderNav({
               </div>
             </div>
           ) : (
-            <span className="text-xs md:text-sm font-extrabold text-[#313030] tracking-tight truncate block max-w-[130px] xs:max-w-[200px] sm:max-w-none min-w-0">
+            <span className="text-xs md:text-sm font-extrabold text-[#313030] tracking-tight truncate block max-w-[7.5rem] sm:max-w-[11rem] xl:max-w-none min-w-0">
               {(activeOutletName && activeOutletName !== 'Outlet Waschen')
                 ? activeOutletName
                 : (localStorage.getItem('activeOutletName') && localStorage.getItem('activeOutletName') !== 'Outlet Waschen')

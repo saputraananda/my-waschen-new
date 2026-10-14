@@ -252,7 +252,7 @@ export default function HistoryComplaint({ activeOutletId, activeOutletName, ref
         />
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
         <button
           type="button"
           onClick={() => setStatusFilter('')}

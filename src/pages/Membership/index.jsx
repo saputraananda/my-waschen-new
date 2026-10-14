@@ -121,31 +121,31 @@ export default function Membership() {
         userProfile={userProfile}
       />
 
-      <main className="max-w-[1500px] w-full mx-auto p-4 sm:p-6 flex-grow flex flex-col gap-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-xs">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-[#313030] tracking-tight flex items-center gap-2.5">
-              <CreditCard className="h-6 w-6 text-[#5f1340]" />
-              <span>Kelola Membership & Saldo Kartu</span>
+      <main className="max-w-[1500px] w-full min-w-0 mx-auto p-4 sm:p-6 flex-grow flex flex-col gap-6">
+        <div className="flex flex-col xl:flex-row xl:justify-between xl:items-center gap-4 bg-white border border-[#e0e0e0] rounded-3xl p-4 sm:p-5 shadow-xs min-w-0">
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-2xl font-black text-[#313030] tracking-tight flex items-center gap-2.5">
+              <CreditCard className="h-6 w-6 shrink-0 text-[#5f1340]" />
+              <span className="min-w-0">Kelola Membership & Saldo Kartu</span>
             </h1>
             <p className="text-xs text-slate-400 mt-0.5">Paket member Diamond/Gold terpisah dari tier spending organik pelanggan</p>
           </div>
 
-          <div className="flex items-center gap-2 bg-[#f8f8f8] border border-[#e0e0e0] p-1.5 rounded-2xl w-full sm:w-auto">
+          <div className="flex items-center gap-1.5 sm:gap-2 bg-[#f8f8f8] border border-[#e0e0e0] p-1.5 rounded-2xl w-full xl:w-auto min-w-0">
             <button
               type="button"
               onClick={() => {
                 scrollToTop();
                 setActiveTab('catalog');
               }}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              className={`flex-1 xl:flex-none min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
                 activeTab === 'catalog'
                   ? 'bg-[#5f1340] text-white shadow-xs'
                   : 'text-slate-500 hover:text-[#313030]'
               }`}
             >
-              <Users className="h-4 w-4" />
-              <span>Daftar Member</span>
+              <Users className="h-4 w-4 shrink-0" />
+              <span className="truncate">Daftar Member</span>
             </button>
             <button
               type="button"
@@ -153,14 +153,14 @@ export default function Membership() {
                 scrollToTop();
                 setActiveTab('add');
               }}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              className={`flex-1 xl:flex-none min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
                 activeTab === 'add'
                   ? 'bg-[#5f1340] text-white shadow-xs'
                   : 'text-slate-500 hover:text-[#313030]'
               }`}
             >
-              <Plus className="h-4 w-4" />
-              <span>Aktivasi Member Baru</span>
+              <Plus className="h-4 w-4 shrink-0" />
+              <span className="truncate">Aktivasi Member Baru</span>
             </button>
           </div>
         </div>

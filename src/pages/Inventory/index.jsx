@@ -148,11 +148,11 @@ export default function InventoryPage() {
         userProfile={userProfile}
       />
 
-      <main className="max-w-[1500px] w-full mx-auto p-4 sm:p-6 flex-grow flex flex-col gap-5">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-xs">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-[#313030] tracking-tight flex items-center gap-2.5">
-              <Package className="h-6 w-6 text-[#5f1340]" />
+      <main className="max-w-[1500px] w-full min-w-0 mx-auto p-4 sm:p-6 flex-grow flex flex-col gap-5">
+        <div className="flex flex-col xl:flex-row xl:justify-between xl:items-center gap-4 bg-white border border-[#e0e0e0] rounded-3xl p-4 sm:p-5 shadow-xs min-w-0">
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-2xl font-black text-[#313030] tracking-tight flex items-center gap-2.5">
+              <Package className="h-6 w-6 shrink-0 text-[#5f1340]" />
               <span>Manajemen Inventory</span>
             </h1>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -160,7 +160,7 @@ export default function InventoryPage() {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 bg-[#f8f8f8] border border-[#e0e0e0] p-1.5 rounded-2xl w-full lg:w-auto">
+          <div className="flex items-center gap-1.5 bg-[#f8f8f8] border border-[#e0e0e0] p-1.5 rounded-2xl w-full xl:w-auto min-w-0">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
@@ -168,14 +168,14 @@ export default function InventoryPage() {
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 lg:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-black transition-all cursor-pointer whitespace-nowrap ${
+                  className={`flex-1 xl:flex-none min-w-0 flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-2 rounded-xl text-[11px] font-black transition-all cursor-pointer ${
                     activeTab === tab.id
                       ? 'bg-[#5f1340] text-white shadow-xs'
                       : 'text-slate-500 hover:text-[#313030]'
                   }`}
                 >
-                  <Icon className="h-3.5 w-3.5" />
-                  {tab.label}
+                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{tab.label}</span>
                 </button>
               );
             })}

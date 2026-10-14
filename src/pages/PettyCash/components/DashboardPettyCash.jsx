@@ -75,8 +75,8 @@ export default function DashboardPettyCash({
 
   return (
     <>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
-        <div className="bg-gradient-to-tr from-[#420a2c] to-[#5f1340] text-white rounded-2xl p-5 shadow-md flex flex-col justify-between md:col-span-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+          <div className="bg-gradient-to-tr from-[#420a2c] to-[#5f1340] text-white rounded-2xl p-5 shadow-md flex flex-col justify-between">
           <span className="text-[10px] uppercase font-bold tracking-widest text-rose-200 block">Uang Tunai Di Laci</span>
           <span className="text-2xl font-black block mt-2 text-amber-300">Rp {netCashInDrawer.toLocaleString('id-ID')}</span>
           <span className="text-[10px] text-rose-100/80 block mt-2 font-medium">Laci Shift ({activeOutletName})</span>

@@ -259,7 +259,7 @@ export default function ListMember({
   return (
     <>
       {/* Metrics Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="bg-gradient-to-tr from-[#420a2c] to-[#5f1340] text-white rounded-2xl p-4 sm:p-5 shadow-md flex flex-col justify-between">
           <span className="text-[10px] uppercase font-bold tracking-widest text-rose-200 block">Total Saldo Member</span>
           <span className="text-xl sm:text-2xl font-black block mt-2 text-amber-300">Rp {totalBalanceFloating.toLocaleString('id-ID')}</span>
@@ -302,8 +302,8 @@ export default function ListMember({
 
       {/* Filter & Search + Table */}
       <div className="bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-xs flex flex-col gap-4">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-          <div className="relative md:col-span-5 flex items-center">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 items-center">
+          <div className="relative xl:col-span-5 flex items-center min-w-0">
             <Search className="absolute left-3.5 h-4 w-4 text-slate-400 pointer-events-none" />
             <input
               type="text"
@@ -314,7 +314,7 @@ export default function ListMember({
             />
           </div>
 
-          <div className="md:col-span-4">
+          <div className="xl:col-span-4 min-w-0">
             <select
               value={selectedBranchFilter}
               onChange={(e) => setSelectedBranchFilter(e.target.value)}
@@ -327,7 +327,7 @@ export default function ListMember({
             </select>
           </div>
 
-          <div className="md:col-span-3 flex items-center gap-1 overflow-x-auto no-scrollbar">
+          <div className="xl:col-span-3 flex items-center gap-1 overflow-x-auto no-scrollbar min-w-0">
             {['Semua', ...membershipPackages.map(p => p.tier)].filter((v, i, a) => a.indexOf(v) === i).map(t => (
               <button
                 key={t}

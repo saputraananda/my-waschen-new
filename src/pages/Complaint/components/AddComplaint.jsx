@@ -140,7 +140,7 @@ export default function AddComplaint({ meta, activeOutletId, activeOutletName, o
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="flex flex-col gap-5">
           <Section step="1" title="Klasifikasi Komplain">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
               <label className="flex flex-col gap-1.5">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Tipe</span>
                 <select className={field} value={form.type_id} onChange={set('type_id')} required>
