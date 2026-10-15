@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { mainPool, myWaschenPool } from '../../db/pool.js';
+import { listEventOutlets } from '../../utils/eventOutlet.js';
 
 export const loginUser = async (req, res) => {
   const { username, password } = req.body;
@@ -108,6 +109,10 @@ export const loginUser = async (req, res) => {
       outlets = outletRows;
     }
 
+    // Outlet virtual Event (bisa lebih dari satu). Staf outlet boleh memilih outlet sendiri
+    // atau salah satu event yang sedang berjalan (active); event selesai tetap dikirim untuk audit.
+    const eventOutlets = await listEventOutlets();
+
     // Return success response with user and employee info
     return res.status(200).json({
       success: true,
@@ -129,7 +134,8 @@ export const loginUser = async (req, res) => {
         assignedOutletId,
         assignedOutletName
       },
-      outlets
+      outlets,
+      eventOutlets
     });
 
   } catch (error) {

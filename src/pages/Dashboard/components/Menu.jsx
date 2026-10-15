@@ -8,9 +8,11 @@ import {
   Wallet,
   Package,
   ClipboardCheck,
-  MessageSquareWarning
+  MessageSquareWarning,
+  Share2
 } from 'lucide-react';
 import { useShiftOptional } from '../../../context/ShiftContext.jsx';
+import { canUseEventDistribution } from '../../../utils/authSession.js';
 
 const MENU_ITEMS = [
   {
@@ -95,6 +97,17 @@ const MENU_ITEMS = [
     icon: MessageSquareWarning,
     iconWrap: 'bg-orange-50 text-orange-700 group-hover:bg-orange-100/70',
     labelHover: 'group-hover:text-orange-700'
+  },
+  {
+    key: 'event-distribusi',
+    path: '/event-distribusi',
+    label: 'Distribusi Event',
+    hint: 'Bagi ke Cabang',
+    shiftFree: true,
+    eventOnly: true,
+    icon: Share2,
+    iconWrap: 'bg-violet-50 text-violet-700 group-hover:bg-violet-100/60',
+    labelHover: 'group-hover:text-violet-700'
   }
 ];
 
@@ -105,6 +118,12 @@ export default function Menu({ navigate, onOrderClick }) {
   const isShiftReady = shiftCtx?.isShiftReady;
   const shiftChecked = shiftCtx?.shiftChecked;
   const showShiftLock = Boolean(mustGateShift && shiftChecked && !isShiftReady);
+
+  const visibleItems = MENU_ITEMS.filter((item) => !item.eventOnly || canUseEventDistribution());
+  // 10 menu (dengan Distribusi Event): 5 atas + 5 bawah. 9 menu: satu baris di layar lebar.
+  const gridCols = visibleItems.length === 10
+    ? 'md:grid-cols-5'
+    : 'lg:grid-cols-4 xl:grid-cols-9';
 
   const handleMenuClick = (item) => {
     if (item.useOrderFlow && onOrderClick) {
@@ -130,8 +149,8 @@ export default function Menu({ navigate, onOrderClick }) {
           </span>
         )}
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-9 gap-3.5">
-        {MENU_ITEMS.map((item) => {
+      <div className={`grid grid-cols-2 sm:grid-cols-3 gap-3.5 ${gridCols}`}>
+        {visibleItems.map((item) => {
           const Icon = item.icon;
           const locked = showShiftLock;
           return (

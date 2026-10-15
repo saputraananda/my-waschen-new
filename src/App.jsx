@@ -19,6 +19,7 @@ import DailyReport from './pages/DailyReport/index.jsx';
 import PrinterSettings from './pages/Settings/PrinterSettings.jsx';
 import InventoryPage from './pages/Inventory/index.jsx';
 import QCFrontDeliv from './pages/Dashboard/components/QCFrontDeliv.jsx';
+import EventDistribution from './pages/EventDistribution/index.jsx';
 import ComplaintRequest from './pages/Complaint/index.jsx';
 
 function App() {
@@ -102,6 +103,7 @@ function App() {
                 <Route path="/settings/printer" element={<PrinterSettings />} />
                 <Route path="/inventory" element={<InventoryPage />} />
                 <Route path="/qc" element={<QCFrontDeliv />} />
+                <Route path="/event-distribusi" element={<EventDistribution />} />
                 <Route path="/complaint" element={<ComplaintRequest />} />
                 <Route path="/login" element={<LoginPage />} />
               </Routes>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { isEventOutletActive } from '../../utils/authSession.js';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav';
@@ -203,6 +204,47 @@ export default function TransactionPage() {
   const [pendingOrderPayload, setPendingOrderPayload] = useState(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
 
+  const loadServices = useCallback(() => {
+    // Katalog layanan mengikuti outlet aktif (outlet Event hanya layanan khusus event)
+    axios.get('/api/services', { params: { outlet_id: activeOutletId } })
+      .then(res => {
+        if (res.data && res.data.success && (res.data.data.length > 0 || isEventOutletActive())) {
+          const mapped = res.data.data.map(s => ({
+            id: s.code || `s-${s.id}`,
+            dbId: s.id,
+            name: s.name,
+            // category = jenis proses (Kiloan/Satuan/Biaya); categoryName = kategori master untuk tampilan & filter
+            category: Number(s.category_is_production) === 0 ? 'Biaya' : (s.category_code === 'KILOAN' || s.unit === 'Kg' ? 'Kiloan' : 'Satuan'),
+            categoryName: s.category_name || 'Lainnya',
+            price: parseFloat(s.price) || 0,
+            isDcRequired: Number(s.is_dc_required) === 1,
+            dcPriceAdd: parseFloat(s.dc_price_add) > 0 ? parseFloat(s.dc_price_add) : 0,
+            unit: s.unit || 'Kg',
+            duration: s.regular_duration_days ? `${s.regular_duration_days} Hari` : '2 Hari (48 Jam)',
+            description: String(s.description || '').trim(),
+            minWeight: parseFloat(s.min_order_qty) || 4,
+            minPrice: (parseFloat(s.min_order_qty) || 4) * (parseFloat(s.price) || 0),
+            isCleanox: s.is_cleanox === 1 || s.is_cleanox === true
+          }));
+          setServicesList(mapped);
+        }
+      })
+      .catch(err => console.error('Gagal mengambil layanan dari API:', err));
+  }, [activeOutletId]);
+
+  useEffect(() => {
+    loadServices();
+  }, [loadServices]);
+
+  // Ganti outlet (mis. ke Event): keranjang lama berisi layanan outlet sebelumnya, kosongkan
+  const prevOutletRef = useRef(activeOutletId);
+  useEffect(() => {
+    if (prevOutletRef.current !== activeOutletId) {
+      prevOutletRef.current = activeOutletId;
+      setCartItems([]);
+    }
+  }, [activeOutletId]);
+
   // Authenticate session & sync branch
   useEffect(() => {
     document.title = 'Order Transaksi POS | Waschen Laundry';
@@ -267,31 +309,6 @@ export default function TransactionPage() {
       })
       .catch(err => console.error('Gagal mengambil data master:', err));
 
-    // Fetch live catalog services from myWaschen
-    axios.get('/api/services')
-      .then(res => {
-        if (res.data && res.data.success && res.data.data.length > 0) {
-          const mapped = res.data.data.map(s => ({
-            id: s.code || `s-${s.id}`,
-            dbId: s.id,
-            name: s.name,
-            // category = jenis proses (Kiloan/Satuan/Biaya); categoryName = kategori master untuk tampilan & filter
-            category: Number(s.category_is_production) === 0 ? 'Biaya' : (s.category_code === 'KILOAN' || s.unit === 'Kg' ? 'Kiloan' : 'Satuan'),
-            categoryName: s.category_name || 'Lainnya',
-            price: parseFloat(s.price) || 0,
-            isDcRequired: Number(s.is_dc_required) === 1,
-            dcPriceAdd: parseFloat(s.dc_price_add) > 0 ? parseFloat(s.dc_price_add) : 0,
-            unit: s.unit || 'Kg',
-            duration: s.regular_duration_days ? `${s.regular_duration_days} Hari` : '2 Hari (48 Jam)',
-            description: String(s.description || '').trim(),
-            minWeight: parseFloat(s.min_order_qty) || 4,
-            minPrice: (parseFloat(s.min_order_qty) || 4) * (parseFloat(s.price) || 0),
-            isCleanox: s.is_cleanox === 1 || s.is_cleanox === true
-          }));
-          setServicesList(mapped);
-        }
-      })
-      .catch(err => console.error('Gagal mengambil layanan dari API:', err));
   }, [navigate]);
 
   // Guard: Order Baru wajib punya shift aktif di sesi ini
@@ -322,7 +339,8 @@ export default function TransactionPage() {
 
   // Filter cabang mengikuti outlet aktif saat kasir ganti outlet di header
   useEffect(() => {
-    if (activeOutletName) setSelectedBranchFilter(activeOutletName);
+    // Event menerima customer dari cabang mana pun, jadi jangan dibatasi per cabang
+    if (activeOutletName) setSelectedBranchFilter(isEventOutletActive() ? 'Semua' : activeOutletName);
   }, [activeOutletName]);
 
   // Filtered and Tier-Prioritized Customer List

@@ -6,6 +6,8 @@ import { insertPaymentLog, resolvePaymentStatus, buildPaymentProofUrl } from '..
 import { computeAccumulatedWorkPercentage, refreshHeaderWorkPercentage, nextLifecycleStatus, workStatusTabSql } from '../utils/workStatus.js';
 import { consumeServiceBom } from '../utils/inventoryStock.js';
 import { generateAccessCode } from '../utils/accessCode.js';
+import { isEventOutlet, isEventOutletOpen } from '../utils/eventOutlet.js';
+import { getEmployeeNames, fillFallbackNames } from '../utils/employeeName.js';
 import { buildCustomerTrackingUrl } from '../utils/customerTrackingUrl.js';
 import { replaceUploadUrl, safeUnlinkAbsPath } from '../middleware/upload.js';
 import { toWibYmdCompact, formatWibTime } from '../utils/wib.js';
@@ -22,7 +24,9 @@ const resolveCashierName = async (employeeId) => {
        LIMIT 1`,
       [id]
     );
-    return roleRows[0]?.employee_name || null;
+    if (roleRows[0]?.employee_name) return roleRows[0].employee_name;
+    // Manajemen tidak ada di mst_role: ambil dari mst_employee
+    return (await getEmployeeNames([id])).get(id) || null;
   } catch (err) {
     console.warn('resolveCashierName:', err.message);
     return null;
@@ -168,9 +172,18 @@ export const createTransaction = async (req, res) => {
       [resolvedCashierId]
     );
     const isDeliveryStaff = roleRows[0]?.role === 'Delivery Staff';
+    // Outlet event (Haji): tanpa shift, tanpa delivery, layanan khusus event.
+    const isEvent = await isEventOutlet(resolvedOutletId, connection);
+    if (isEvent && !(await isEventOutletOpen(resolvedOutletId, connection))) {
+      await connection.rollback();
+      return res.status(409).json({
+        success: false,
+        message: 'Event ini sudah ditutup. Nota baru tidak bisa dibuat di outlet event ini.'
+      });
+    }
 
     let resolvedShiftId = null;
-    if (!isDeliveryStaff) {
+    if (!isDeliveryStaff && !isEvent) {
       const [openShiftRows] = await connection.query(
         `SELECT id FROM tr_cashier_shift WHERE outlet_id = ? AND status = 'Open' ORDER BY id DESC LIMIT 1`,
         [resolvedOutletId]
@@ -278,7 +291,7 @@ export const createTransaction = async (req, res) => {
           resolvedChangeAmount,
           paymentProofUrl || null,
           isOutstanding ? null : new Date(),
-          isDelivery ? 1 : 0,
+          isDelivery && !isEvent ? 1 : 0,
           deliveryAddress || null,
           deliveryNotes || null,
           specialNotes || null,
@@ -315,7 +328,7 @@ export const createTransaction = async (req, res) => {
           resolvedChangeAmount,
           paymentProofUrl || null,
           isOutstanding ? null : new Date(),
-          isDelivery ? 1 : 0,
+          isDelivery && !isEvent ? 1 : 0,
           deliveryAddress || null,
           deliveryNotes || null,
           specialNotes || null
@@ -324,6 +337,9 @@ export const createTransaction = async (req, res) => {
     }
 
     const transactionId = orderResult.insertId;
+    if (isEvent) {
+      await connection.query('UPDATE tr_transaction SET is_event = 1 WHERE id = ?', [transactionId]);
+    }
 
     // 2. Insert tr_transaction_detail + potong stok BOM layanan (jika ada)
     // is_production dari master kategori (bukan dari client): 0 = biaya tambahan, langsung Selesai, tidak masuk QC/produksi
@@ -336,6 +352,40 @@ export const createTransaction = async (req, res) => {
         [serviceIds]
       )
       : [[]];
+    // Layanan khusus event (is_event_only) hanya boleh di outlet event pemiliknya (event_outlet_id,
+    // NULL = semua event); outlet event hanya boleh memproses layanan event (biaya tambahan
+    // non-produksi tetap boleh).
+    if (serviceIds.length) {
+      let evRows = [];
+      try {
+        [evRows] = await connection.query(
+          `SELECT s.id, COALESCE(c.is_event_only, 0) AS is_event_only, COALESCE(c.is_production, 1) AS is_production,
+                  c.event_outlet_id
+           FROM mst_service s LEFT JOIN mst_service_category c ON c.id = s.category_id
+           WHERE s.id IN (?)`,
+          [serviceIds]
+        );
+      } catch (evErr) {
+        if (!/Unknown column/i.test(evErr.message || '')) throw evErr;
+      }
+      const belongsToThisEvent = (r) =>
+        Number(r.is_event_only) === 1 &&
+        (r.event_outlet_id == null || Number(r.event_outlet_id) === resolvedOutletId);
+      const badService = evRows.find((r) =>
+        isEvent
+          ? Number(r.is_production) !== 0 && !belongsToThisEvent(r)
+          : Number(r.is_event_only) === 1
+      );
+      if (badService) {
+        await connection.rollback();
+        return res.status(400).json({
+          success: false,
+          message: isEvent
+            ? 'Outlet Event hanya boleh memakai layanan khusus event.'
+            : 'Layanan khusus event tidak bisa dipakai di outlet biasa.'
+        });
+      }
+    }
     const productionOf = new Map(prodRows.map((r) => [r.id, Number(r.is_production)]));
     const dcRequiredOf = new Map(prodRows.map((r) => [r.id, Number(r.is_dc_required) === 1]));
     if (!items.some((it) => productionOf.get(parseInt(it.serviceId || it.serviceDbId || it.id, 10)) !== 0)) {
@@ -374,12 +424,17 @@ export const createTransaction = async (req, res) => {
         fulfillmentType
       ];
 
-      await connection.query(
-        `INSERT INTO tr_transaction_detail 
+      const [detailResult] = await connection.query(
+        `INSERT INTO tr_transaction_detail
          (transaction_id, service_id, service_name, is_production, qty, unit, unit_price, subtotal, is_cleanox, laundry_method_id, brand, color, material, size, condition_notes, item_work_status, item_completed_at, photo_url, fulfillment_type)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         detailParams
       );
+      if (isEvent) {
+        await connection.query('UPDATE tr_transaction_detail SET is_event = 1 WHERE id = ?', [detailResult.insertId]);
+        // Stok (BOM) dipotong saat item dibagi ke cabang, memakai production_outlet_id.
+        continue;
+      }
 
       try {
         const used = await consumeServiceBom(connection, {
@@ -623,6 +678,7 @@ export const getTransactions = async (req, res) => {
     }
 
     const [rows] = await myWaschenPool.query(sql, params);
+    await fillFallbackNames(rows, 'cashier_employee_id', 'cashier_name');
 
     if (lite) {
       return res.status(200).json({
@@ -757,6 +813,8 @@ export const getTransactionDetail = async (req, res) => {
     }
 
     const order = orderRows[0];
+    await fillFallbackNames([order], 'cashier_employee_id', 'cashier_name');
+    await fillFallbackNames([order], 'settled_by_employee_id', 'settled_by_name');
 
     const [items] = await myWaschenPool.query(
       `SELECT td.*,
@@ -1173,7 +1231,7 @@ export const markTransactionAsPaid = async (req, res) => {
       `SELECT id FROM tr_cashier_shift WHERE outlet_id = ? AND status = 'Open' ORDER BY id DESC LIMIT 1`,
       [order.outlet_id]
     );
-    if (!openShiftRows.length) {
+    if (!openShiftRows.length && !Number(order.is_event)) {
       await connection.rollback();
       return res.status(409).json({
         success: false,
@@ -1673,6 +1731,7 @@ export const getPaymentBatchByNo = async (req, res) => {
     }
 
     const batch = batchRows[0];
+    await fillFallbackNames(batchRows, 'cashier_employee_id', 'cashier_name');
 
     const [items] = await myWaschenPool.query(
       `SELECT bi.*, t.order_no, t.order_category, t.grand_total, t.total_weight_kg, t.total_pcs

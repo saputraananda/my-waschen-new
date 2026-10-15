@@ -124,6 +124,9 @@ export default function LoginPage() {
 
                 const outlets = response.data.outlets || [];
                 localStorage.setItem('outlets', JSON.stringify(outlets));
+                const eventOutlets = Array.isArray(response.data.eventOutlets) ? response.data.eventOutlets : [];
+                localStorage.setItem('eventOutlets', JSON.stringify(eventOutlets));
+                localStorage.removeItem('eventOutlet');
 
                 if (isHq) {
                     if (outlets.length > 0) {
@@ -136,6 +139,9 @@ export default function LoginPage() {
                 } else {
                     localStorage.setItem('activeOutletId', user.assignedOutletId || '2');
                     localStorage.setItem('activeOutletName', user.assignedOutletName || 'Waschen Laundry Citra Gran');
+                    // Outlet asal staf, untuk kembali dari outlet Event
+                    localStorage.setItem('homeOutletId', user.assignedOutletId || '2');
+                    localStorage.setItem('homeOutletName', user.assignedOutletName || 'Waschen Laundry Citra Gran');
                 }
 
                 setWelcomeName(formatEmployeeName(user.fullName || user.username));

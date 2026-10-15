@@ -1,6 +1,7 @@
 import multer from 'multer';
 import jwt from 'jsonwebtoken';
 import { mainPool, myWaschenPool } from '../db/pool.js';
+import { isEventOutlet } from '../utils/eventOutlet.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -95,12 +96,17 @@ async function resolveActor(req) {
 
   let outletId = Number(roleRows[0]?.outlet_id) || null;
   // Fallback: outlet aktif di POS (kalau mst_role.outlet_id belum diisi)
+  const requestedOutletId =
+    Number(req.query?.outlet_id) ||
+    Number(req.body?.outlet_id) ||
+    Number(req.body?.outletId) ||
+    null;
   if (!outletId) {
-    outletId =
-      Number(req.query?.outlet_id) ||
-      Number(req.body?.outlet_id) ||
-      Number(req.body?.outletId) ||
-      null;
+    outletId = requestedOutletId;
+  }
+  // Staf boleh bekerja di outlet Event (pilihan outlet di POS); outlet lain tetap terkunci ke mst_role.
+  if (requestedOutletId && requestedOutletId !== outletId && (await isEventOutlet(requestedOutletId))) {
+    outletId = requestedOutletId;
   }
   if (!outletId) return null;
 

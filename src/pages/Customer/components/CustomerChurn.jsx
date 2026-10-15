@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Search, TrendingDown } from 'lucide-react';
+import { isEventOutletId } from '../../../utils/authSession.js';
 
 const CHURN_TABS = ['Semua', 'Active', 'Warning', 'Churn', 'Dormant', 'Lost'];
 
@@ -53,7 +54,7 @@ const WhatsAppIcon = (props) => (
 );
 
 export default function CustomerChurn({ outlets = [], activeOutletName, activeOutletId = '', onEditCustomer }) {
-  const [selectedBranch, setSelectedBranch] = useState(activeOutletId ? String(activeOutletId) : 'Semua');
+  const [selectedBranch, setSelectedBranch] = useState(activeOutletId && !isEventOutletId(activeOutletId) ? String(activeOutletId) : 'Semua');
   const [churnFilter, setChurnFilter] = useState('Semua');
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -67,7 +68,7 @@ export default function CustomerChurn({ outlets = [], activeOutletName, activeOu
 
   useEffect(() => {
     if (!activeOutletId) return;
-    setSelectedBranch(String(activeOutletId));
+    setSelectedBranch(isEventOutletId(activeOutletId) ? 'Semua' : String(activeOutletId));
     setPage(1);
   }, [activeOutletId]);
 

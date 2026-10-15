@@ -5,6 +5,7 @@ import { formatName } from '../../../utils/FormatName';
 import { formatWorkPercentage } from '../../../utils/workStatusMeta.js';
 import CombinedReceiptModal from '../../../components/CombinedReceiptModal.jsx';
 import ThermalNotaMerge from '../../../components/ThermalNotaMerge.jsx';
+import { isEventOutletId } from '../../../utils/authSession.js';
 import {
   Users,
   Search,
@@ -116,7 +117,7 @@ export default function ListCustomer({
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTier, setSelectedTier] = useState('Semua');
-  const [selectedBranch, setSelectedBranch] = useState(activeOutletId || 'Semua');
+  const [selectedBranch, setSelectedBranch] = useState(activeOutletId && !isEventOutletId(activeOutletId) ? activeOutletId : 'Semua');
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState('');
   const [sortDir, setSortDir] = useState('desc');
@@ -129,7 +130,7 @@ export default function ListCustomer({
   const [mergeReceipt, setMergeReceipt] = useState(null);
 
   useEffect(() => {
-    if (activeOutletId) setSelectedBranch(String(activeOutletId));
+    if (activeOutletId) setSelectedBranch(isEventOutletId(activeOutletId) ? 'Semua' : String(activeOutletId));
   }, [activeOutletId]);
 
   useEffect(() => {

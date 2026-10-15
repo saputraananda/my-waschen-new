@@ -1,4 +1,5 @@
 import path from 'path';
+import { getEmployeeNames, fillFallbackNames } from '../utils/employeeName.js';
 import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 import { applyDepositOnPayment } from '../utils/customerDeposit.js';
@@ -43,6 +44,8 @@ export const getPaymentLogs = async (req, res) => {
       [order.id]
     );
 
+    await fillFallbackNames(logs, 'cashier_employee_id', 'cashier_name');
+
     let settledByName = null;
     if (order.settled_by_employee_id) {
       const [settlerRows] = await myWaschenPool.query(
@@ -50,7 +53,7 @@ export const getPaymentLogs = async (req, res) => {
          FROM mst_role WHERE employee_id = ? LIMIT 1`,
         [order.settled_by_employee_id]
       );
-      settledByName = settlerRows[0]?.name || null;
+      settledByName = settlerRows[0]?.name || (await getEmployeeNames([order.settled_by_employee_id])).get(Number(order.settled_by_employee_id)) || null;
     }
 
     const remaining = Math.max(0, parseFloat(order.grand_total) - parseFloat(order.paid_amount || 0));
@@ -184,7 +187,7 @@ export const updateTransactionPayment = async (req, res) => {
       `SELECT id FROM tr_cashier_shift WHERE outlet_id = ? AND status = 'Open' ORDER BY id DESC LIMIT 1`,
       [order.outlet_id]
     );
-    if (!openShiftRows.length) {
+    if (!openShiftRows.length && !Number(order.is_event)) {
       await connection.rollback();
       return res.status(409).json({
         success: false,

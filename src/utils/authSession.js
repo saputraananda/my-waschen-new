@@ -8,7 +8,11 @@ const AUTH_KEYS = [
   'activeRole',
   'outlets',
   'activeOutletId',
-  'activeOutletName'
+  'activeOutletName',
+  'eventOutlet', // kunci lama (satu event), dibersihkan saat logout
+  'eventOutlets',
+  'homeOutletId',
+  'homeOutletName'
 ];
 
 const SHIFT_KEYS = [
@@ -95,7 +99,44 @@ export function isDeliveryStaff() {
  * Delivery dikecualikan — notanya diklaim frontliner saat open shift berikutnya.
  */
 export function requiresShiftGate() {
-  return localStorage.getItem('companyId') === '5' && !isDeliveryStaff();
+  return localStorage.getItem('companyId') === '5' && !isDeliveryStaff() && !isEventOutletActive();
+}
+
+/**
+ * Semua outlet virtual Event dari login (bisa lebih dari satu, mis. Haji & Umroh bersamaan).
+ * Tiap item: { id, name, full_name, active } — active = event sedang berjalan.
+ */
+export function getEventOutlets() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('eventOutlets') || 'null');
+    if (Array.isArray(raw)) return raw.filter((ev) => ev && ev.id);
+    // Sesi login lama (sebelum multi event) hanya menyimpan satu 'eventOutlet'
+    const legacy = JSON.parse(localStorage.getItem('eventOutlet') || 'null');
+    return legacy && legacy.id ? [{ ...legacy, active: true }] : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Event yang sedang berjalan — pilihan outlet kerja staf di header. */
+export function getActiveEventOutlets() {
+  return getEventOutlets().filter((ev) => ev.active !== false);
+}
+
+/** Menu Distribusi Event: Manajemen (jika ada event), atau staf yang sedang bertugas di outlet Event. */
+export function canUseEventDistribution() {
+  if (localStorage.getItem('companyId') === '1') return getEventOutlets().length > 0;
+  return isEventOutletActive();
+}
+
+/** True bila id outlet tertentu adalah outlet Event (aktif maupun sudah selesai). */
+export function isEventOutletId(outletId) {
+  return getEventOutlets().some((ev) => String(ev.id) === String(outletId));
+}
+
+/** True bila outlet yang sedang aktif adalah outlet Event (tanpa shift). */
+export function isEventOutletActive() {
+  return isEventOutletId(localStorage.getItem('activeOutletId'));
 }
 
 export function getCompanyId() {

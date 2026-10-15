@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import waschenLogo from '../assets/images/waschen.webp';
 import { formatEmployeeName } from '../utils/FormatName.js';
-import { logoutSession } from '../utils/authSession.js';
+import { logoutSession, getActiveEventOutlets } from '../utils/authSession.js';
 import { useShiftOptional } from '../context/ShiftContext.jsx';
 import { usePWA } from '../context/PWAContext.jsx';
 import {
@@ -115,6 +115,17 @@ export default function HeaderNav({
     }
   }
 
+  // Staf outlet (bukan Management) boleh berpindah antara outlet sendiri dan event yang sedang berjalan.
+  const activeEvents = getActiveEventOutlets();
+  const homeOutletId = localStorage.getItem('homeOutletId');
+  const isStaffSwitchable = !isManagement && activeEvents.length > 0 && Boolean(homeOutletId);
+  if (isStaffSwitchable) {
+    outletOptions = [
+      { id: homeOutletId, name: localStorage.getItem('homeOutletName') || 'Outlet Saya', full_name: localStorage.getItem('homeOutletName') || 'Outlet Saya' },
+      ...activeEvents
+    ];
+  }
+
   const shiftLabel = (() => {
     if (!activeShift) {
       if (shiftCtx?.mustGateShift && shiftCtx?.shiftChecked === false) {
@@ -162,11 +173,11 @@ export default function HeaderNav({
           <div className="h-4 sm:h-5 w-[1px] bg-[#e0e0e0] shrink-0 hidden xs:block" />
 
           {/* Management (company_id=1): pilih outlet yang diaudit. Staff tetap terkunci di outlet sendiri. */}
-          {isManagement && outletOptions.length > 0 ? (
+          {(isManagement || isStaffSwitchable) && outletOptions.length > 0 ? (
             <div className="relative min-w-0 flex-1 max-w-[220px] sm:max-w-[280px]">
               <select
-                aria-label="Pilih outlet untuk diaudit"
-                title="Pilih outlet untuk diaudit"
+                aria-label={isStaffSwitchable ? 'Pilih outlet kerja' : 'Pilih outlet untuk diaudit'}
+                title={isStaffSwitchable ? 'Pilih outlet kerja' : 'Pilih outlet untuk diaudit'}
                 value={String(activeOutletId || localStorage.getItem('activeOutletId') || '')}
                 onChange={(e) => {
                   const selectedId = e.target.value;
@@ -179,6 +190,8 @@ export default function HeaderNav({
                   if (shiftCtx?.setOutletId) shiftCtx.setOutletId(selectedId);
                   if (shiftCtx?.refreshShift) shiftCtx.refreshShift();
                   window.dispatchEvent(new Event('waschen:outlet-changed'));
+                  // Hitung ulang gate shift (outlet Event tanpa shift)
+                  window.dispatchEvent(new Event('waschen:auth-changed'));
                 }}
                 className="w-full bg-[#f8f8f8] hover:bg-white border border-[#e0e0e0] hover:border-[#5f1340]/40 rounded-xl pl-2.5 pr-7 py-1.5 text-xs md:text-sm font-extrabold text-[#313030] outline-none cursor-pointer appearance-none transition-colors truncate"
               >

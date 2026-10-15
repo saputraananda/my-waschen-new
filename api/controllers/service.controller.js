@@ -1,4 +1,5 @@
 import { myWaschenPool } from '../db/pool.js';
+import { isEventOutlet } from '../utils/eventOutlet.js';
 
 /**
  * GET /api/services
@@ -7,6 +8,10 @@ import { myWaschenPool } from '../db/pool.js';
 export const getServices = async (req, res) => {
   try {
     const { category, search } = req.query;
+    // Outlet event: hanya layanan khusus event ini / semua event (+ biaya tambahan non-produksi).
+    // Outlet lain: tanpa layanan event.
+    const eventMode = await isEventOutlet(req.query.outlet_id);
+    const eventOutletId = eventMode ? Number(req.query.outlet_id) : null;
 
     let sql = `
       SELECT s.*, 
@@ -22,6 +27,13 @@ export const getServices = async (req, res) => {
     `;
     const params = [];
 
+    const eventFilter = (alias) => eventMode
+      ? ` AND ((COALESCE(${alias}.is_event_only, 0) = 1
+              AND (${alias}.event_outlet_id IS NULL OR ${alias}.event_outlet_id = ${eventOutletId}))
+            OR COALESCE(${alias}.is_production, 1) = 0)`
+      : ` AND COALESCE(${alias}.is_event_only, 0) = 0`;
+    sql += eventFilter('c');
+
     if (category && category !== 'Semua') {
       sql += ' AND (c.code = ? OR c.name LIKE ?)';
       params.push(category, `%${category}%`);
@@ -35,7 +47,9 @@ export const getServices = async (req, res) => {
     sql += ' ORDER BY s.is_featured DESC, s.id ASC';
 
     const [rows] = await myWaschenPool.query(sql, params);
-    const [categories] = await myWaschenPool.query('SELECT * FROM mst_service_category WHERE is_active = 1 ORDER BY id ASC');
+    const [categories] = await myWaschenPool.query(
+      `SELECT * FROM mst_service_category c WHERE is_active = 1 ${eventFilter('c')} ORDER BY id ASC`
+    );
 
     return res.status(200).json({
       success: true,

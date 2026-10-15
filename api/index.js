@@ -17,6 +17,8 @@ import printerRoutes from './routes/printer.routes.js';
 import inventoryRoutes from './routes/inventory.routes.js';
 import qcRoutes from './routes/qc.routes.js';
 import complaintRoutes from './routes/complaint.routes.js';
+import complaintInternalRoutes from './routes/complaintInternal.routes.js';
+import eventRoutes from './routes/event.routes.js';
 import { getBaseUploadDir, getUploadUrlPrefix, uploadPaymentReceipt, verifyUploadContents, buildUploadPublicUrl, safeUnlinkUploadUrl } from './middleware/upload.js';
 import { requirePosAuth } from './middleware/requireAuth.js';
 
@@ -63,5 +65,7 @@ app.use('/api/printer-settings', printerRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/qc', qcRoutes);
 app.use('/api/complaints', complaintRoutes);
+app.use('/api/internal/complaint-docs', complaintInternalRoutes);
+app.use('/api/event', eventRoutes);
 
 export default app;
