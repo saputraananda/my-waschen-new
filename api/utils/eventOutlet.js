@@ -1,9 +1,7 @@
 import { myWaschenPool } from '../db/pool.js';
 
-/** Event dianggap berjalan: event_active = 1 dan hari ini di dalam rentang tanggal (jika diisi). */
-const EVENT_OPEN_SQL = `(COALESCE(event_active, 0) = 1
-  AND (event_start IS NULL OR event_start <= CURDATE())
-  AND (event_end IS NULL OR event_end >= CURDATE()))`;
+/** Event dianggap berjalan: event_active = 1 (dibuka/ditutup manual, event bisa berulang tiap tahun). */
+const EVENT_OPEN_SQL = '(COALESCE(event_active, 0) = 1)';
 
 const isMissingColumn = (err) => /Unknown column/i.test(err?.message || '');
 
@@ -47,7 +45,7 @@ export async function isEventOutletOpen(outletId, conn = myWaschenPool) {
 export async function listEventOutlets(conn = myWaschenPool) {
   try {
     const [rows] = await conn.query(
-      `SELECT id, name, full_name, event_start, event_end, ${EVENT_OPEN_SQL} AS active
+      `SELECT id, name, full_name, ${EVENT_OPEN_SQL} AS active
        FROM mst_outlet WHERE is_event = 1 ORDER BY active DESC, id DESC`
     );
     return rows.map((r) => ({ ...r, active: Number(r.active) === 1 }));
@@ -59,7 +57,7 @@ export async function listEventOutlets(conn = myWaschenPool) {
     const [rows] = await conn.query(
       'SELECT id, name, full_name FROM mst_outlet WHERE is_event = 1 ORDER BY id DESC'
     );
-    return rows.map((r) => ({ ...r, event_start: null, event_end: null, active: true }));
+    return rows.map((r) => ({ ...r, active: true }));
   } catch (err) {
     if (isMissingColumn(err)) return [];
     throw err;
