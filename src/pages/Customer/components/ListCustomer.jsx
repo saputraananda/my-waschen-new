@@ -117,7 +117,7 @@ export default function ListCustomer({
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTier, setSelectedTier] = useState('Semua');
-  const [selectedBranch, setSelectedBranch] = useState(activeOutletId && !isEventOutletId(activeOutletId) ? activeOutletId : 'Semua');
+  const [selectedBranch, setSelectedBranch] = useState(activeOutletId ? String(activeOutletId) : 'Semua');
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState('');
   const [sortDir, setSortDir] = useState('desc');
@@ -130,7 +130,7 @@ export default function ListCustomer({
   const [mergeReceipt, setMergeReceipt] = useState(null);
 
   useEffect(() => {
-    if (activeOutletId) setSelectedBranch(isEventOutletId(activeOutletId) ? 'Semua' : String(activeOutletId));
+    if (activeOutletId) setSelectedBranch(String(activeOutletId));
   }, [activeOutletId]);
 
   useEffect(() => {
@@ -307,6 +307,9 @@ export default function ListCustomer({
                 title="Filter cabang"
               >
                 <option value="Semua">Semua Cabang</option>
+                {isEventOutletId(activeOutletId) && !outlets.some((o) => String(o.id) === String(activeOutletId)) && (
+                  <option value={String(activeOutletId)}>{activeOutletName || 'Event'}</option>
+                )}
                 {outlets.map((o) => (
                   <option key={o.id} value={String(o.id)}>
                     {o.full_name || o.name}

@@ -321,9 +321,9 @@ export default function StockDashboard({
       </div>
 
       <div className="bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-xs flex flex-col gap-4">
-        <div className="flex flex-col xl:flex-row gap-3 justify-between min-w-0">
-          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 w-full min-w-0">
-            <div className="relative w-full sm:flex-1 sm:min-w-[12rem] xl:max-w-xs">
+        <div className="flex flex-col xl:flex-row xl:items-center gap-3 justify-between min-w-0">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 w-full min-w-0">
+            <div className="relative w-full sm:flex-1 sm:min-w-[14rem] xl:max-w-xs">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <input
                 type="text"
@@ -345,7 +345,7 @@ export default function StockDashboard({
               <option value="Packing Staff">Tim Packing</option>
               <option value="Delivery Staff">Tim Delivery</option>
             </select>
-            <div className="relative">
+            <div className="relative w-full sm:w-auto">
               <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
               <input
                 type="date"
@@ -355,11 +355,11 @@ export default function StockDashboard({
               />
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 shrink-0 w-full xl:w-auto">
             <button
               type="button"
               onClick={() => setFilterLow((v) => !v)}
-              className={`px-3 py-2 rounded-xl text-[11px] font-black cursor-pointer flex items-center gap-1.5 ${
+              className={`flex-1 xl:flex-none justify-center whitespace-nowrap px-3 py-2 rounded-xl text-[11px] font-black cursor-pointer flex items-center gap-1.5 ${
                 filterLow ? 'bg-amber-500 text-white' : 'bg-[#f8f8f8] text-slate-600'
               }`}
             >
@@ -368,7 +368,7 @@ export default function StockDashboard({
             <button
               type="button"
               onClick={onRefresh}
-              className="px-3 py-2 rounded-xl text-[11px] font-black bg-[#f8f8f8] text-slate-600 cursor-pointer flex items-center gap-1.5"
+              className="flex-1 xl:flex-none justify-center whitespace-nowrap px-3 py-2 rounded-xl text-[11px] font-black bg-[#f8f8f8] text-slate-600 cursor-pointer flex items-center gap-1.5"
             >
               <RefreshCcw className="h-3.5 w-3.5" /> Refresh
             </button>

@@ -54,7 +54,7 @@ const WhatsAppIcon = (props) => (
 );
 
 export default function CustomerChurn({ outlets = [], activeOutletName, activeOutletId = '', onEditCustomer }) {
-  const [selectedBranch, setSelectedBranch] = useState(activeOutletId && !isEventOutletId(activeOutletId) ? String(activeOutletId) : 'Semua');
+  const [selectedBranch, setSelectedBranch] = useState(activeOutletId ? String(activeOutletId) : 'Semua');
   const [churnFilter, setChurnFilter] = useState('Semua');
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -68,7 +68,7 @@ export default function CustomerChurn({ outlets = [], activeOutletName, activeOu
 
   useEffect(() => {
     if (!activeOutletId) return;
-    setSelectedBranch(isEventOutletId(activeOutletId) ? 'Semua' : String(activeOutletId));
+    setSelectedBranch(String(activeOutletId));
     setPage(1);
   }, [activeOutletId]);
 
@@ -134,6 +134,9 @@ export default function CustomerChurn({ outlets = [], activeOutletName, activeOu
             title="Filter cabang"
           >
             <option value="Semua">Semua Cabang</option>
+            {isEventOutletId(activeOutletId) && !outlets.some((o) => String(o.id) === String(activeOutletId)) && (
+              <option value={String(activeOutletId)}>{localStorage.getItem('activeOutletName') || 'Event'}</option>
+            )}
             {outlets.map((o) => (
               <option key={o.id} value={String(o.id)}>
                 {o.full_name || o.name}

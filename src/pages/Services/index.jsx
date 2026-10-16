@@ -48,13 +48,17 @@ export default function Services() {
         }
       })
       .catch(err => console.error('Gagal mengambil data outlet:', err));
-
-    fetchServices();
   }, [navigate]);
+
+  // Katalog mengikuti outlet aktif di header (outlet Event hanya layanan khusus event)
+  useEffect(() => {
+    fetchServices();
+  }, [activeOutletId]);
 
   const fetchServices = async () => {
     try {
-      const res = await axios.get('/api/services');
+      const params = activeOutletId ? { outlet_id: activeOutletId } : undefined;
+      const res = await axios.get('/api/services', { params });
       if (res.data && res.data.success) {
         const activeCategories = (res.data.categories || []).filter(
           c => c.is_active === 1 || c.is_active === true

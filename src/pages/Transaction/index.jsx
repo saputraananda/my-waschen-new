@@ -102,7 +102,9 @@ export default function TransactionPage() {
     setCustomersLoading(true);
     setCustomersError('');
     try {
-      const res = await axios.get('/api/customers');
+      // Outlet Event: hanya pelanggan event tersebut, bukan seluruh pelanggan cabang
+      const params = isEventOutletActive() ? { outlet_id: activeOutletId } : undefined;
+      const res = await axios.get('/api/customers', { params });
       // Abaikan response lama jika ada request lebih baru (hindari race double-fetch)
       if (reqId !== customersReqRef.current) return;
       if (res.data?.success && Array.isArray(res.data.data)) {
@@ -149,7 +151,7 @@ export default function TransactionPage() {
         setCustomersLoading(false);
       }
     }
-  }, []);
+  }, [activeOutletId]);
 
   // Fetch pelanggan hanya saat Step 1 (hindari double-call di mount + auth effect)
   useEffect(() => {
@@ -339,7 +341,7 @@ export default function TransactionPage() {
 
   // Filter cabang mengikuti outlet aktif saat kasir ganti outlet di header
   useEffect(() => {
-    // Event menerima customer dari cabang mana pun, jadi jangan dibatasi per cabang
+    // Event: daftar sudah difilter per event di server; pelanggannya bisa berasal dari cabang mana pun
     if (activeOutletName) setSelectedBranchFilter(isEventOutletActive() ? 'Semua' : activeOutletName);
   }, [activeOutletName]);
 
