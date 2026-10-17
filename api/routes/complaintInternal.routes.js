@@ -105,8 +105,16 @@ router.delete('/:filename', requireSyncToken, async (req, res) => {
   if (!isSafeComplaintDocName(filename)) {
     return res.status(400).json({ success: false, message: 'Nama file tidak valid' });
   }
-  const abs = path.join(ensureUploadFolder(DOC_DIR), filename);
-  await safeUnlinkAbsPath(abs);
+  try {
+    const abs = path.join(ensureUploadFolder(DOC_DIR), filename);
+    await fs.promises.unlink(abs);
+  } catch (err) {
+    // Sudah tidak ada = sudah terhapus
+    if (err?.code !== 'ENOENT') {
+      console.error('complaint-docs delete error:', filename, err);
+      return res.status(500).json({ success: false, message: `Gagal menghapus file: ${err.code || err.message}` });
+    }
+  }
   res.json({ success: true });
 });
 
