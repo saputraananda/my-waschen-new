@@ -71,7 +71,8 @@ const upload = multer({
 function takeUpload(req, res, next) {
   upload(req, res, (err) => {
     if (!err) return next();
-    const message = err.code === 'LIMIT_FILE_SIZE' ? 'File maksimal 5 MB' : 'File tidak valid';
+    if (err.code !== 'LIMIT_FILE_SIZE') console.error('complaint-docs upload error:', err);
+    const message = err.code === 'LIMIT_FILE_SIZE' ? 'File maksimal 5 MB' : `File tidak valid: ${err.message}`;
     return res.status(400).json({ success: false, message });
   });
 }
