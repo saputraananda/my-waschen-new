@@ -169,7 +169,8 @@ export function getCashierStamp(receipt) {
       return '';
     }
   })();
-  const name = formatEmployeeName(receipt?.cashierName || receipt?.cashierFullName || 'Kasir');
+  // Nota cukup nama depan pembuat nota (mis. "Annisa Puspa" -> "Annisa")
+  const name = formatEmployeeName(receipt?.cashierName || receipt?.cashierFullName || 'Kasir').split(/\s+/)[0];
   return `${when} ${name}`.trim();
 }
 

@@ -37,6 +37,10 @@ export default function EventDistribution() {
   // Event yang sedang didistribusikan (beberapa event bisa berjalan bersamaan)
   const [events, setEvents] = useState([]);
   const [eventId, setEventId] = useState(isEventOutletId(activeOutletId) ? String(activeOutletId) : '');
+  const [userProfile] = useState(() => ({
+    fullName: localStorage.getItem('fullName') || 'Kasir Waschen',
+    role: localStorage.getItem('companyId') === '1' ? 'Management Alora' : (localStorage.getItem('activeRole') || 'Staff Kasir')
+  }));
 
   useEffect(() => {
     document.title = 'Distribusi Event | Waschen Laundry';
@@ -131,6 +135,7 @@ export default function EventDistribution() {
         setActiveOutletName={setActiveOutletName}
         activeOutletId={activeOutletId}
         setActiveOutletId={setActiveOutletId}
+        userProfile={userProfile}
       />
       <main className="max-w-[1200px] w-full mx-auto p-3 sm:p-5 lg:p-6 flex flex-col gap-4">
         <div className="bg-white border border-[#e0e0e0] rounded-3xl p-4 sm:p-6">

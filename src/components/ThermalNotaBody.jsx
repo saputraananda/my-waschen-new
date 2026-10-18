@@ -41,20 +41,29 @@ export default function ThermalNotaBody({
               return (
                 <div key={idx} className="flex gap-1.5 items-start mb-1.5 min-w-0">
                   {row.qr && (
-                    <div className="shrink-0 bg-white leading-none">
+                    // Proporsi sama dengan cetakan (QR 200 dari 384 dots ~ 52%) agar kolom teks cukup lebar
+                    <div className="shrink-0 w-[52%] bg-white leading-none">
                       <QRCodeSVG
                         value={row.qr}
                         size={168}
                         level="M"
                         includeMargin={false}
+                        style={{ width: '100%', height: 'auto', display: 'block' }}
                       />
                     </div>
                   )}
                   <div className="min-w-0 flex-1 pt-0.5 space-y-0.5">
+                    {row.title && (
+                      <p className="break-words font-black text-[13px] sm:text-[15px] leading-tight">{row.title}</p>
+                    )}
                     {(row.lines || []).map((l, i) => (
                       <p
                         key={i}
-                        className={`break-words ${i === 0 ? 'font-bold text-[10px] sm:text-[11px]' : 'text-[8px] sm:text-[9px]'}`}
+                        className={`${row.size === 'large' && ((row.nowrap || []).includes(i) || !String(l).trim().includes(' ')) ? 'whitespace-nowrap' : 'break-words'} ${
+                          i === 0 && !row.title
+                            ? (row.size === 'large' ? 'font-bold text-[12px] sm:text-[13px] leading-tight' : 'font-bold text-[10px] sm:text-[11px]')
+                            : (row.size === 'large' ? 'text-[10px] sm:text-[11px] leading-snug' : 'text-[8px] sm:text-[9px]')
+                        }`}
                       >
                         {l}
                       </p>
@@ -82,7 +91,12 @@ export default function ThermalNotaBody({
                 key={idx}
                 className={`min-w-0 ${align} ${weight} ${size}`}
               >
-                {row.text || ' '}
+                {row.boldTail && String(row.text || '').endsWith(row.boldTail) ? (
+                  <>
+                    {row.text.slice(0, -row.boldTail.length)}
+                    <b className="font-black">{row.boldTail}</b>
+                  </>
+                ) : (row.text || ' ')}
               </p>
             );
           })}

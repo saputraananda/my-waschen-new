@@ -337,6 +337,15 @@ export default function Dashboard() {
     return matchesSearch && matchesNotaQueueTab(order, activeFilterTab);
   });
 
+  const pettyCashCard = (
+    <PettyCashCard
+      netCashInDrawer={netCashInDrawer}
+      initialPettyCashFloat={initialPettyCashFloat}
+      totalCashOut={totalCashOut}
+      navigate={navigate}
+    />
+  );
+
   return (
     <div className="relative min-h-screen bg-[#f8f8f8] text-[#313030] flex flex-col font-sans antialiased overflow-x-hidden overflow-y-auto">
 
@@ -380,18 +389,18 @@ export default function Dashboard() {
               />
             </div>
 
-            <div className="xl:col-span-1 h-full">
-              <PettyCashCard
-                netCashInDrawer={netCashInDrawer}
-                initialPettyCashFloat={initialPettyCashFloat}
-                totalCashOut={totalCashOut}
-                navigate={navigate}
-              />
+            <div className="hidden xl:block xl:col-span-1 h-full">
+              {pettyCashCard}
             </div>
           </div>
         </div>
 
         <Menu navigate={navigate} onOrderClick={startOrderFlow} />
+
+        {/* Layar kecil: Menu Cepat lebih dulu, Petty Cash di bawahnya */}
+        <div className="xl:hidden">
+          {pettyCashCard}
+        </div>
 
         <StatCard
           orders={outletOrders}

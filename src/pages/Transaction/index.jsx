@@ -342,8 +342,7 @@ export default function TransactionPage() {
 
   // Filter cabang mengikuti outlet aktif saat kasir ganti outlet di header
   useEffect(() => {
-    // Event: daftar sudah difilter per event di server; pelanggannya bisa berasal dari cabang mana pun
-    if (activeOutletName) setSelectedBranchFilter(isEventOutletActive() ? 'Semua' : activeOutletName);
+    if (activeOutletName) setSelectedBranchFilter(activeOutletName);
   }, [activeOutletName]);
 
   // Filtered and Tier-Prioritized Customer List
@@ -354,7 +353,10 @@ export default function TransactionPage() {
     const tierFilter = (selectedTierFilter || 'Semua').trim();
     const branchFilter = (selectedBranchFilter || 'Semua').trim();
     const isAllTier = !tierFilter || tierFilter.toLowerCase() === 'semua';
-    const isAllBranches = !branchFilter || branchFilter.toLowerCase() === 'semua';
+    // Event: daftar sudah difilter per event di server; pelanggannya bisa berasal dari cabang mana pun,
+    // jadi filter cabang = outlet event tidak menyaring berdasarkan cabang asal
+    const isEventBranch = isEventOutletActive() && branchFilter === activeOutletName;
+    const isAllBranches = !branchFilter || branchFilter.toLowerCase() === 'semua' || isEventBranch;
 
     return customers
       .filter((c) => {
@@ -394,7 +396,7 @@ export default function TransactionPage() {
         if (rankA !== rankB) return rankA - rankB;
         return (b.totalSpending || 0) - (a.totalSpending || 0);
       });
-  }, [customers, customerSearch, selectedTierFilter, selectedBranchFilter]);
+  }, [customers, customerSearch, selectedTierFilter, selectedBranchFilter, activeOutletName]);
 
   // Customer Pagination calculation & Auto Page Clamp
   const totalCustPages = Math.ceil(filteredCustomers.length / custItemsPerPage) || 1;

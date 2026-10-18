@@ -65,15 +65,48 @@ export function padNotaRow(left, right, width = NOTA_WIDTH) {
   return L + ' '.repeat(width - L.length - R.length) + R;
 }
 
+/** Satu baris seperti "Terima": buang koma setelah hari jika lewat lebar kertas */
+function estimasiLine(receipt) {
+  const text = `Estimasi : ${getEstimasiLabel(receipt)}`;
+  return text.length > NOTA_WIDTH ? text.replace(', ', ' ') : text;
+}
+
 function T(text, extra = {}) {
   return { type: 'text', text: String(text ?? ''), align: 'left', bold: false, size: 'normal', ...extra };
 }
 
-function header(qrValue, lines) {
+/** "Tipe : Express" / "Tipe : Reguler" (toggle Tipe Pengerjaan) */
+function pushTipe(rows, receipt, settings) {
+  if (on(settings, 'show_express')) rows.push(T(`Tipe : ${receipt.isExpress ? 'Express' : 'Reguler'}`));
+}
+
+const DC_TAG = '(DC)';
+
+/** Teks item dibungkus; jika item DC, akhiran "(DC)" saja yang dicetak bold */
+function pushItemText(rows, text, item) {
+  const lines = wrapNotaText(item?.isDryClean ? `${text} ${DC_TAG}` : text);
+  lines.forEach((l, i) => {
+    const isLast = i === lines.length - 1;
+    rows.push(T(l, isLast && item?.isDryClean ? { boldTail: DC_TAG } : {}));
+  });
+}
+
+/**
+ * title (opsional): judul besar yang boleh membungkus beberapa baris di samping QR
+ * size 'large': baris lebih besar & dibungkus per kata (nota internal)
+ */
+function header(qrValue, lines, title = null, size = 'normal') {
+  // Baris boleh string atau { text, nowrap: true } (mis. no. telp wajib satu baris)
+  const entries = (lines || [])
+    .map((l) => (l != null && typeof l === 'object' ? l : { text: l }))
+    .filter((l) => l.text != null && String(l.text).length);
   return {
     type: 'header',
     qr: qrValue || null,
-    lines: (lines || []).filter((l) => l != null && String(l).length)
+    title: title || null,
+    size,
+    lines: entries.map((l) => String(l.text)),
+    nowrap: entries.map((l, i) => (l.nowrap ? i : -1)).filter((i) => i >= 0)
   };
 }
 
@@ -85,29 +118,37 @@ export function buildInternalNotaModel(receipt, settings) {
   const rack = getRackOrMeta(receipt);
   const headLines = [];
 
+  const addr = receipt.customerAddress;
+  const hasAddr = addr && addr !== '-' && String(addr).trim() !== '';
+
   if (on(settings, 'show_customer_name')) headLines.push(receipt.customerName || '-');
-  if (on(settings, 'show_customer_phone')) headLines.push(receipt.customerPhone || '-');
+  if (on(settings, 'show_customer_address') && hasAddr) headLines.push(String(addr).trim());
+  if (on(settings, 'show_customer_phone')) headLines.push({ text: receipt.customerPhone || '-', nowrap: true });
   if (rack) headLines.push(String(rack));
 
   if (on(settings, 'show_qr') || headLines.length) {
     rows.push(header(
       on(settings, 'show_qr') ? getQrValue(receipt) : null,
-      headLines
+      headLines,
+      null,
+      'large'
     ));
   }
 
   rows.push(T(receipt.id || '', { bold: true, size: 'huge' }));
+  pushTipe(rows, receipt, settings);
 
   if (on(settings, 'show_outlet_name')) {
-    wrapNotaText(`Outlet : ${receipt.branch || '-'}`).forEach((l) => rows.push(T(l)));
+    // Usahakan satu baris: buang awalan "Waschen Laundry" jika nama outlet kepanjangan
+    let outletLine = `Outlet : ${receipt.branch || '-'}`;
+    if (outletLine.length > NOTA_WIDTH) outletLine = outletLine.replace(/Outlet : Waschen Laundry +/i, 'Outlet : ');
+    wrapNotaText(outletLine).forEach((l) => rows.push(T(l)));
   }
   if (on(settings, 'show_datetime')) {
     wrapNotaText(`Terima : ${getReceivedLabel(receipt)}`).forEach((l) => rows.push(T(l)));
   }
 
-  rows.push(T('Estimasi Selesai :'));
-  // nilai di baris berikut, indent seperti referensi
-  rows.push(T(`       ${getEstimasiLabel(receipt)}`));
+  rows.push(T(estimasiLine(receipt)));
 
   if (on(settings, 'show_perfume')) {
     rows.push(T(`Parfum : ${receipt.perfume && receipt.perfume !== '-' ? receipt.perfume : '-'}`));
@@ -119,7 +160,7 @@ export function buildInternalNotaModel(receipt, settings) {
   rows.push({ type: 'dash' });
   rows.push(T('Layanan :'));
   for (const item of receipt.items || []) {
-    wrapNotaText(`> ${formatItemTitle(item)}`).forEach((l) => rows.push(T(l)));
+    pushItemText(rows, `> ${formatItemTitle(item)}`, item);
   }
   rows.push({ type: 'dash' });
 
@@ -143,19 +184,21 @@ export function buildCustomerNotaModel(receipt, settings) {
   const outletAddr = getOutletAddress(receipt);
   const branch = receipt.branch || '-';
 
-  const headLines = ['Waschen Laundry'];
-  if (on(settings, 'show_outlet_name')) {
-    headLines.push(branch);
-    headLines.push(outletAddr || branch);
-  } else if (outletAddr) {
-    headLines.push(outletAddr);
-  }
+  // Judul = nama outlet lengkap (mis. "Waschen Laundry Citra Gran"), tanpa diulang di baris bawahnya
+  const title = on(settings, 'show_outlet_name') && branch !== '-'
+    ? (/^waschen/i.test(branch) ? branch : `Waschen Laundry ${branch}`)
+    : 'Waschen Laundry';
+  const headLines = [];
+  if (outletAddr && outletAddr !== branch) headLines.push(outletAddr);
   if (outletPhone) headLines.push(outletPhone);
 
   rows.push(header(
     on(settings, 'show_qr') ? getQrValue(receipt) : null,
-    headLines
+    headLines,
+    title
   ));
+
+  pushTipe(rows, receipt, settings);
 
   wrapNotaText(`Nota : ${receipt.id}`).forEach((l) => rows.push(T(l)));
   if (on(settings, 'show_customer_name')) {
@@ -167,7 +210,7 @@ export function buildCustomerNotaModel(receipt, settings) {
   if (on(settings, 'show_datetime')) {
     wrapNotaText(`Terima : ${getReceivedLabel(receipt)}`).forEach((l) => rows.push(T(l)));
   }
-  wrapNotaText(`Estimasi Selesai : ${getEstimasiLabel(receipt)}`).forEach((l) => rows.push(T(l)));
+  wrapNotaText(estimasiLine(receipt)).forEach((l) => rows.push(T(l)));
   if (on(settings, 'show_perfume')) {
     wrapNotaText(`Parfum : ${receipt.perfume || 'Tanpa parfum'}`).forEach((l) => rows.push(T(l)));
   }
@@ -187,11 +230,11 @@ export function buildCustomerNotaModel(receipt, settings) {
     } else {
       wrapNotaText(title).forEach((l) => rows.push(T(l)));
     }
-    rows.push(T(`- ${getItemQtyCount(item)} Barang`));
+    pushItemText(rows, `- ${getItemQtyCount(item)} Barang`, item);
   }
 
   rows.push({ type: 'dash' });
-  rows.push(T(`Total item: ${Math.round(countTotalBarang(items))} Item`));
+  rows.push(T(`Total Item : ${Math.round(countTotalBarang(items))} Item`));
   rows.push({ type: 'dash' });
 
   if (on(settings, 'show_total')) {

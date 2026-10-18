@@ -164,6 +164,28 @@ function canvasToRaster(canvas) {
 /**
  * Header mirip preview: QR kiri (utuh) + teks kanan.
  */
+/** Bungkus teks per kata agar muat maxW (kata kepanjangan dipotong). */
+function wrapCanvasText(ctx, text, maxW) {
+  const out = [];
+  let cur = '';
+  for (const word of String(text || '').split(/\s+/).filter(Boolean)) {
+    const next = cur ? `${cur} ${word}` : word;
+    if (ctx.measureText(next).width <= maxW) {
+      cur = next;
+      continue;
+    }
+    if (cur) out.push(cur);
+    let w = word;
+    while (ctx.measureText(w).width > maxW && w.length > 1) w = w.slice(0, -1);
+    cur = w;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+const HEADER_TITLE_FONT = 'bold 22px monospace';
+const HEADER_TITLE_LINE_H = 26;
+
 async function renderHeaderRaster(row) {
   const lines = (row.lines || []).map((l) => String(l || ''));
   const hasQr = !!row.qr;
@@ -172,35 +194,69 @@ async function renderHeaderRaster(row) {
   const gap = 8;
   const lineH = 22;
   const bottomPad = 8;
-  const textRows = Math.max(lines.length, 1);
-  const textBlockH = textRows * lineH + pad;
-  const height = Math.max(qrSize + pad + bottomPad, textBlockH + bottomPad);
   const width = PRINT_WIDTH;
+  const textX = hasQr ? pad + qrSize + gap : pad;
+  const maxTextW = Math.max(40, width - textX - pad);
 
   const canvas = document.createElement('canvas');
+  let ctx = canvas.getContext('2d');
+  ctx.font = HEADER_TITLE_FONT;
+  const titleLines = row.title ? wrapCanvasText(ctx, row.title, maxTextW) : [];
+  const titleH = titleLines.length * HEADER_TITLE_LINE_H;
+
+  // size 'large': semua baris lebih besar & dibungkus per kata (mis. alamat panjang di nota internal)
+  const large = row.size === 'large';
+  const laidOut = [];
+  lines.forEach((l, i) => {
+    const font = i === 0 && !titleLines.length
+      ? (large ? 'bold 21px monospace' : 'bold 18px monospace')
+      : (large ? '18px monospace' : '16px monospace');
+    const h = large ? (i === 0 ? 25 : 22) : lineH;
+    ctx.font = font;
+    if (large && ((row.nowrap || []).includes(i) || !l.trim().includes(' '))) {
+      // Wajib satu baris (mis. no. telp): jangan dipotong/dibungkus, kecilkan huruf sampai muat
+      let px = i === 0 && !titleLines.length ? 21 : 18;
+      const weight = font.startsWith('bold') ? 'bold ' : '';
+      while (px > 12 && ctx.measureText(l).width > maxTextW) {
+        px -= 1;
+        ctx.font = `${weight}${px}px monospace`;
+      }
+      laidOut.push({ text: l, font: ctx.font, h });
+    } else if (large) {
+      wrapCanvasText(ctx, l, maxTextW).forEach((t) => laidOut.push({ text: t, font, h }));
+    } else {
+      let remaining = l;
+      while (ctx.measureText(remaining).width > maxTextW && remaining.length > 1) {
+        remaining = remaining.slice(0, -1);
+      }
+      laidOut.push({ text: remaining, font, h });
+    }
+  });
+  const linesH = laidOut.reduce((sum, l) => sum + l.h, 0);
+  const textBlockH = titleH + (laidOut.length || titleLines.length ? linesH : lineH) + pad;
+  const height = Math.max(qrSize + pad + bottomPad, textBlockH + bottomPad);
+
   canvas.width = width;
   canvas.height = height;
-  const ctx = canvas.getContext('2d');
+  ctx = canvas.getContext('2d');
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = '#000000';
   ctx.textBaseline = 'top';
 
-  let textX = pad;
   if (hasQr) {
     const qr = await renderQrCanvas(row.qr, qrSize);
     ctx.drawImage(qr, pad, pad, qrSize, qrSize);
-    textX = pad + qrSize + gap;
   }
 
-  const maxTextW = Math.max(40, width - textX - pad);
-  lines.forEach((l, i) => {
-    ctx.font = i === 0 ? 'bold 18px monospace' : '16px monospace';
-    let remaining = l;
-    while (ctx.measureText(remaining).width > maxTextW && remaining.length > 1) {
-      remaining = remaining.slice(0, -1);
-    }
-    ctx.fillText(remaining, textX, pad + i * lineH);
+  ctx.font = HEADER_TITLE_FONT;
+  titleLines.forEach((l, i) => ctx.fillText(l, textX, pad + i * HEADER_TITLE_LINE_H));
+
+  let y = pad + titleH;
+  laidOut.forEach((l) => {
+    ctx.font = l.font;
+    ctx.fillText(l.text, textX, y);
+    y += l.h;
   });
 
   return canvasToRaster(canvas);
@@ -208,9 +264,13 @@ async function renderHeaderRaster(row) {
 
 function renderHeaderFallback(row) {
   const parts = [resetStyle()];
+  if (row.title) {
+    wrapNotaText(row.title).forEach((l) => parts.push(BOLD_ON, line(l), BOLD_OFF));
+  }
   (row.lines || []).forEach((l, i) => {
-    if (i === 0) parts.push(BOLD_ON, line(String(l).slice(0, NOTA_WIDTH)), BOLD_OFF);
-    else parts.push(line(String(l).slice(0, NOTA_WIDTH)));
+    const texts = row.size === 'large' ? wrapNotaText(l) : [String(l).slice(0, NOTA_WIDTH)];
+    if (i === 0 && !row.title) texts.forEach((t) => parts.push(BOLD_ON, line(t), BOLD_OFF));
+    else texts.forEach((t) => parts.push(line(t)));
   });
   return concat(...parts);
 }
@@ -240,7 +300,14 @@ function buildTextRowSegment(row) {
     }
   } else {
     for (const ln of wrapNotaText(raw, maxLen)) {
-      parts.push(line(String(ln).slice(0, maxLen)));
+      const s = String(ln).slice(0, maxLen);
+      const tail = row.boldTail;
+      if (tail && s.endsWith(tail)) {
+        // Hanya akhiran (mis. "(DC)") yang bold
+        parts.push(text(s.slice(0, -tail.length)), BOLD_ON, text(tail), row.bold ? BOLD_ON : BOLD_OFF, line(''));
+      } else {
+        parts.push(line(s));
+      }
     }
   }
 
