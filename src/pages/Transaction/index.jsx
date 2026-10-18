@@ -224,8 +224,9 @@ export default function TransactionPage() {
             unit: s.unit || 'Kg',
             duration: s.regular_duration_days ? `${s.regular_duration_days} Hari` : '2 Hari (48 Jam)',
             description: String(s.description || '').trim(),
-            minWeight: parseFloat(s.min_order_qty) || 4,
-            minPrice: (parseFloat(s.min_order_qty) || 4) * (parseFloat(s.price) || 0),
+            // Minimal order murni dari master layanan (min_order_qty); kosong/0 = tanpa minimal
+            minWeight: parseFloat(s.min_order_qty) > 0 ? parseFloat(s.min_order_qty) : 1,
+            minPrice: (parseFloat(s.min_order_qty) > 0 ? parseFloat(s.min_order_qty) : 1) * (parseFloat(s.price) || 0),
             isCleanox: s.is_cleanox === 1 || s.is_cleanox === true
           }));
           setServicesList(mapped);
@@ -450,7 +451,7 @@ export default function TransactionPage() {
     if (service.category === 'Kiloan') {
       setItemSpecs({
         qty: 1,
-        weight: 4, // Default bare minimum 4 Kg
+        weight: service.minWeight || 1, // Default = minimal order layanan
         brand: '',
         color: '',
         material: '',
@@ -492,11 +493,12 @@ export default function TransactionPage() {
       isCleanox: cartItem.serviceIsCleanox === true,
       isDcRequired: cartItem.isDcRequired === true,
       dcPriceAdd: cartItem.dcPriceAdd || 0,
+      minWeight: cartItem.minWeight || 1,
       editingCartId: cartItem.cartId
     });
     setItemSpecs({
       qty: cartItem.qty || 1,
-      weight: cartItem.weight || (cartItem.category === 'Kiloan' ? 4 : 1),
+      weight: cartItem.weight || (cartItem.category === 'Kiloan' ? (cartItem.minWeight || 1) : 1),
       brand: cartItem.brand === '-' ? '' : (cartItem.brand || ''),
       color: cartItem.color === '-' ? '' : (cartItem.color || ''),
       material: cartItem.material === '-' ? '' : (cartItem.material || ''),
@@ -529,17 +531,15 @@ export default function TransactionPage() {
       ? Number(configuringItem.dcPriceAdd)
       : 0;
     const unitRate = (Number(configuringItem.price) || 0) + dcAdd;
+    const minWeight = Number(configuringItem.minWeight) > 0 ? Number(configuringItem.minWeight) : 1;
 
     if (isAddon) {
       effectivePrice = addonQty * unitRate;
       qtyDisplay = `${addonQty} ${configuringItem.unit}`;
     } else if (isKiloan) {
-      const weight = Math.max(0.5, parseFloat(itemSpecs.weight) || 4);
-      if (weight < 4) {
-        effectivePrice = 36000;
-      } else {
-        effectivePrice = weight * unitRate;
-      }
+      const weight = Math.max(0.5, parseFloat(itemSpecs.weight) || minWeight);
+      // Di bawah minimal order layanan → ditagih sebesar minimal order
+      effectivePrice = Math.max(weight, minWeight) * unitRate;
       qtyDisplay = `${weight.toFixed(1)} Kg`;
     } else if (isMeter) {
       const len = parseFloat(itemSpecs.length) || 1;
@@ -577,8 +577,9 @@ export default function TransactionPage() {
 
     const lineFields = {
       ...specsForCart,
-      qty: isAddon ? addonQty : isKiloan ? (parseFloat(itemSpecs.weight) || 4) : 1,
-      weight: parseFloat(itemSpecs.weight) || 4,
+      qty: isAddon ? addonQty : isKiloan ? (parseFloat(itemSpecs.weight) || minWeight) : 1,
+      weight: parseFloat(itemSpecs.weight) || (isKiloan ? minWeight : 1),
+      minWeight,
       qtyDisplay,
       effectiveSubtotal: effectivePrice,
       basePrice: Number(configuringItem.price) || 0,
@@ -647,10 +648,8 @@ export default function TransactionPage() {
       const add = isDryClean && Number(item.dcPriceAdd) > 0 ? Number(item.dcPriceAdd) : 0;
       const unitPrice = base + add;
       const oldUnit = Number(item.unitPrice) || base;
-      const isKiloan = String(item.category || "").toLowerCase().includes("kiloan");
-      const weight = parseFloat(item.weight) || 0;
-      const keepFlat = isKiloan && weight > 0 && weight < 4;
-      const effectiveSubtotal = !keepFlat && oldUnit > 0
+      // Subtotal = qty tertagih × tarif (termasuk minimal order kiloan), jadi cukup diskalakan
+      const effectiveSubtotal = oldUnit > 0
         ? (Number(item.effectiveSubtotal) || 0) / oldUnit * unitPrice
         : item.effectiveSubtotal;
       return { ...item, isDryClean, basePrice: base, unitPrice, effectiveSubtotal };

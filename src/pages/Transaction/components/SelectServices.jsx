@@ -108,7 +108,7 @@ export default function SelectServices({
               <span>Langkah 2: Pilih Layanan Laundry</span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Kiloan minimal 4 Kg (Rp 36.000). Anda dapat memilih lebih dari satu layanan.
+              Kiloan mengikuti minimal order masing-masing layanan. Anda dapat memilih lebih dari satu layanan.
             </p>
           </div>
         </div>

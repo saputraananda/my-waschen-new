@@ -150,6 +150,9 @@ export default function ItemConfigModal({
   const isMeterService = configuringItem.unit_id === 4 || configuringItem.unit === 'm²' || configuringItem.unit === 'm2' || configuringItem.unit === 'Meter';
   const isKiloan = String(configuringItem.category || '').toLowerCase().includes('kiloan');
   const isAddon = configuringItem.category === 'Biaya';
+  // Minimal order kiloan dari master layanan (min_order_qty); 1 = tanpa minimal
+  const minWeight = Number(configuringItem.minWeight) > 0 ? Number(configuringItem.minWeight) : 1;
+  const minPriceLabel = (minWeight * (Number(configuringItem.price) || 0)).toLocaleString('id-ID');
 
   // Merge backend materials list with MATERIAL_OPTIONS if provided
   const availableMaterials = Array.from(new Set([
@@ -235,16 +238,18 @@ export default function ItemConfigModal({
                     <label className="text-[11px] font-black text-[#313030] uppercase tracking-wider">
                       Berat Timbangan Cucian (Kg) *
                     </label>
-                    <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-bold">
-                      Minimal 4 Kg = Rp 36.000 (Bare Minimum)
-                    </span>
+                    {minWeight > 1 && (
+                      <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-bold">
+                        Minimal {minWeight} Kg = Rp {minPriceLabel} (Bare Minimum)
+                      </span>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
                     <div className="sm:col-span-6 flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => setItemSpecs((prev) => ({ ...prev, weight: Math.max(0.5, (parseFloat(prev.weight) || 4) - 0.5) }))}
+                        onClick={() => setItemSpecs((prev) => ({ ...prev, weight: Math.max(0.5, (parseFloat(prev.weight) || minWeight) - 0.5) }))}
                         className="w-10 h-10 bg-white border border-[#e0e0e0] hover:border-[#5f1340] rounded-xl flex items-center justify-center font-black text-base text-[#5f1340] hover:bg-[#5f1340]/10 active:scale-95 transition-all cursor-pointer shadow-2xs"
                       >
                         -
@@ -267,7 +272,7 @@ export default function ItemConfigModal({
                       </div>
                       <button
                         type="button"
-                        onClick={() => setItemSpecs((prev) => ({ ...prev, weight: (parseFloat(prev.weight) || 4) + 0.5 }))}
+                        onClick={() => setItemSpecs((prev) => ({ ...prev, weight: (parseFloat(prev.weight) || minWeight) + 0.5 }))}
                         className="w-10 h-10 bg-white border border-[#e0e0e0] hover:border-[#5f1340] rounded-xl flex items-center justify-center font-black text-base text-[#5f1340] hover:bg-[#5f1340]/10 active:scale-95 transition-all cursor-pointer shadow-2xs"
                       >
                         +
@@ -292,9 +297,9 @@ export default function ItemConfigModal({
                     </div>
                   </div>
 
-                  {parseFloat(itemSpecs.weight) < 4 && (
+                  {minWeight > 1 && parseFloat(itemSpecs.weight) < minWeight && (
                     <p className="text-[10px] text-amber-700 font-bold mt-1.5 bg-amber-100/50 p-1.5 rounded-lg border border-amber-200">
-                      * Catatan: Timbangan di bawah 4 Kg tetap dikenakan tarif bare minimum Rp 36.000
+                      * Catatan: Timbangan di bawah {minWeight} Kg tetap dikenakan tarif bare minimum Rp {minPriceLabel}
                     </p>
                   )}
                 </div>
@@ -597,7 +602,7 @@ export default function ItemConfigModal({
                   isAddon
                     ? (parseFloat(itemSpecs.qty || 0) * configuringItem.price)
                     : configuringItem.category === 'Kiloan'
-                    ? (parseFloat(itemSpecs.weight || 0) < 4 ? 36000 : (parseFloat(itemSpecs.weight || 0)) * configuringItem.price)
+                    ? (Math.max(parseFloat(itemSpecs.weight || 0), minWeight) * configuringItem.price)
                     : isMeterService
                       ? (((parseFloat(itemSpecs.length || 0)) * (parseFloat(itemSpecs.width || 0)) * (parseInt(itemSpecs.qty || 0, 10))) * configuringItem.price)
                       : ((parseInt(itemSpecs.qty || 0, 10)) * configuringItem.price)
