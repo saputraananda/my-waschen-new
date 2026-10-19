@@ -22,6 +22,7 @@ export default function Customer() {
   const [activeTab, setActiveTab] = useState('catalog');
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [listRefresh, setListRefresh] = useState(0);
+  const [customerToOpen, setCustomerToOpen] = useState(null);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -81,6 +82,28 @@ export default function Customer() {
     }
     setActiveTab('add');
     scrollToTop();
+  };
+
+  // Dari modal nomor ganda: buka detail pelanggan yang sudah terdaftar
+  const handleOpenCustomer = (existing) => {
+    scrollToTop();
+    setEditingCustomer(null);
+    setCustomerToOpen(existing);
+    setActiveTab('catalog');
+  };
+
+  // Dari modal nomor ganda: edit pelanggan yang sudah terdaftar
+  const handleEditExisting = async (existing, { continueToTransaction = false } = {}) => {
+    scrollToTop();
+    let cust = { dbId: existing.id, id: existing.customer_code || existing.id, ...existing };
+    try {
+      const res = await axios.get(`/api/customers/${existing.id}`);
+      if (res.data?.success) cust = res.data.data;
+    } catch (err) {
+      console.error('Gagal memuat pelanggan:', err);
+    }
+    setEditingCustomer({ ...cust, _continueToTransaction: continueToTransaction });
+    setActiveTab('add');
   };
 
   const handleCustomerUpdated = () => {
@@ -166,6 +189,8 @@ export default function Customer() {
             activeOutletId={activeOutletId}
             refreshKey={listRefresh}
             onEditCustomer={handleEditCustomer}
+            customerToOpen={customerToOpen}
+            onCustomerOpened={() => setCustomerToOpen(null)}
           />
         )}
 
@@ -178,6 +203,8 @@ export default function Customer() {
             onSwitchToCatalog={() => { setEditingCustomer(null); setActiveTab('catalog'); }}
             customerToEdit={editingCustomer}
             onCustomerUpdated={handleCustomerUpdated}
+            onOpenCustomer={handleOpenCustomer}
+            onEditExisting={handleEditExisting}
           />
         )}
 

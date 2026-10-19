@@ -96,6 +96,8 @@ export default function TransactionPage() {
   const [custCurrentPage, setCustCurrentPage] = useState(1);
   const custItemsPerPage = 9;
   const customersReqRef = useRef(0);
+  // Outlet event: pelanggan cabang yang dipilih dari modal nomor ganda (belum punya nota di event)
+  const pinnedCustIdsRef = useRef(new Set());
 
   const loadCustomers = useCallback(async () => {
     const reqId = ++customersReqRef.current;
@@ -104,11 +106,24 @@ export default function TransactionPage() {
     try {
       // Outlet Event: hanya pelanggan event tersebut, bukan seluruh pelanggan cabang
       const params = isEventOutletActive() ? { outlet_id: activeOutletId } : undefined;
+      const pendingAutoId = localStorage.getItem('autoSelectCustId');
+      if (params && pendingAutoId) pinnedCustIdsRef.current.add(pendingAutoId);
       const res = await axios.get('/api/customers', { params });
       // Abaikan response lama jika ada request lebih baru (hindari race double-fetch)
       if (reqId !== customersReqRef.current) return;
       if (res.data?.success && Array.isArray(res.data.data)) {
-        const mapped = res.data.data.map((c) => ({
+        const rows = [...res.data.data];
+        if (params && pinnedCustIdsRef.current.size) {
+          const missing = [...pinnedCustIdsRef.current].filter(
+            (pid) => !rows.some((c) => c.customer_code === pid || String(c.id) === pid)
+          );
+          const extra = await Promise.all(missing.map((pid) => axios.get(`/api/customers/${encodeURIComponent(pid)}`)
+            .then((r) => (r.data?.success ? r.data.data : null))
+            .catch(() => null)));
+          if (reqId !== customersReqRef.current) return;
+          rows.unshift(...extra.filter(Boolean));
+        }
+        const mapped = rows.map((c) => ({
           id: c.customer_code || `CUST-${String(c.id).padStart(3, '0')}`,
           dbId: c.id,
           name: c.name || '',

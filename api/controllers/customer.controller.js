@@ -135,6 +135,39 @@ const resolveOutletIdForCustomer = async (preferredOutletId, homeBranch) => {
   return 2;
 };
 
+/**
+ * Cari pelanggan lain dengan nomor HP yang sama (satu nomor = satu pelanggan, termasuk di outlet event:
+ * pelanggan cabang yang ikut event memakai data yang sudah ada).
+ */
+const findPhoneConflict = async (cleanPhone, excludeId = null) => {
+  const params = [cleanPhone];
+  let sql = `SELECT c.id, c.customer_code, c.name, c.phone, c.full_address, c.address,
+                    COALESCE(o.full_name, o.name, c.home_branch) AS outlet_name
+             FROM mst_customer c
+             LEFT JOIN mst_outlet o ON o.id = c.preferred_outlet_id
+             WHERE c.phone = ?`;
+  if (excludeId) {
+    sql += ' AND c.id != ?';
+    params.push(excludeId);
+  }
+  const [rows] = await myWaschenPool.query(`${sql} ORDER BY c.is_active DESC, c.id ASC LIMIT 1`, params);
+  return rows[0] || null;
+};
+
+const phoneConflictResponse = (res, cleanPhone, existing) => res.status(409).json({
+  success: false,
+  code: 'PHONE_DUPLICATE',
+  message: `Nomor ${cleanPhone} sudah terdaftar atas nama ${existing.name}${existing.outlet_name ? ` (${existing.outlet_name})` : ''}`,
+  existing: {
+    id: existing.id,
+    customer_code: existing.customer_code,
+    name: existing.name,
+    phone: existing.phone,
+    full_address: existing.full_address || existing.address || null,
+    outlet_name: existing.outlet_name || null
+  }
+});
+
 const generateCustomerCode = async (outletId = 2) => {
   const { year, month } = getWibYearMonth();
   const yy = String(year).slice(-2);
@@ -520,16 +553,8 @@ export const createCustomer = async (req, res) => {
       });
     }
 
-    const [dup] = await myWaschenPool.query(
-      'SELECT id FROM mst_customer WHERE phone = ? LIMIT 1',
-      [cleanPhone]
-    );
-    if (dup.length) {
-      return res.status(409).json({
-        success: false,
-        message: `Nomor ${cleanPhone} sudah terdaftar`
-      });
-    }
+    const dup = await findPhoneConflict(cleanPhone);
+    if (dup) return phoneConflictResponse(res, cleanPhone, dup);
 
     const resolvedTierId = await resolveSpendingTierId(
       spendingTierId || customerTierId || tierId,
@@ -650,13 +675,8 @@ export const updateCustomer = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Nomor telepon tidak valid' });
     }
     if (cleanPhone) {
-      const [dup] = await myWaschenPool.query(
-        'SELECT id FROM mst_customer WHERE phone = ? AND id != ? LIMIT 1',
-        [cleanPhone, id]
-      );
-      if (dup.length) {
-        return res.status(409).json({ success: false, message: `Nomor ${cleanPhone} sudah terdaftar` });
-      }
+      const dup = await findPhoneConflict(cleanPhone, id);
+      if (dup) return phoneConflictResponse(res, cleanPhone, dup);
     }
 
     const resolvedTierId = (spendingTierId || customerTierId || tierId || tier)

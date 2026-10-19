@@ -110,7 +110,9 @@ export default function ListCustomer({
   activeOutletName = '',
   activeOutletId = '',
   refreshKey = 0,
-  onEditCustomer
+  onEditCustomer,
+  customerToOpen = null,
+  onCustomerOpened
 }) {
   const PAGE_SIZE = 50;
   const navigate = useNavigate();
@@ -242,6 +244,19 @@ export default function ListCustomer({
       setIsLoadingDetail(false);
     }
   };
+
+  useEffect(() => {
+    if (!customerToOpen) return;
+    openCustomerDetail({
+      id: customerToOpen.customer_code || customerToOpen.id,
+      dbId: customerToOpen.id,
+      name: customerToOpen.name,
+      phone: customerToOpen.phone,
+      homeBranch: customerToOpen.outlet_name || '-'
+    });
+    onCustomerOpened?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerToOpen]);
 
   return (
     <>

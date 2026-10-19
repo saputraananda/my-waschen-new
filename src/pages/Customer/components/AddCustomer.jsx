@@ -5,6 +5,8 @@ import { formatName } from '../../../utils/FormatName';
 import { normalizePhone, composeFullAddress } from '../../../utils/NormalizePhone.js';
 import { ArrowLeft, Save, RotateCcw } from 'lucide-react';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
+import { isEventOutletId } from '../../../utils/authSession.js';
+import PhoneDuplicateModal from './PhoneDuplicateModal.jsx';
 
 const GREETINGS = ['Tuan', 'Nyonya', 'Nona'];
 
@@ -61,7 +63,9 @@ export default function AddCustomer({
   onCustomerCreated,
   onSwitchToCatalog,
   customerToEdit = null,
-  onCustomerUpdated
+  onCustomerUpdated,
+  onOpenCustomer,
+  onEditExisting
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -73,6 +77,9 @@ export default function AddCustomer({
   const [showOptionalIdentity, setShowOptionalIdentity] = useState(false);
   const [fullAddressTouched, setFullAddressTouched] = useState(Boolean(customerToEdit?.full_address || customerToEdit?.fullAddress));
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [dupCustomer, setDupCustomer] = useState(null);
+  const [isUsingDup, setIsUsingDup] = useState(false);
+  const isEventOutlet = isEventOutletId(activeOutletId);
   const [form, setForm] = useState(() => (
     customerToEdit ? fromCustomer(customerToEdit, activeOutletName) : emptyForm(activeOutletName)
   ));
@@ -187,6 +194,11 @@ export default function AddCustomer({
         const res = await axios.put(`/api/customers/${id}`, payload, { timeout: 20000 });
         if (res.data?.success) {
           showAlert({ title: 'Data Diperbarui', message: `Data ${payload.name} berhasil disimpan.`, type: 'success' });
+          if (customerToEdit._continueToTransaction) {
+            // Diedit dari modal nomor ganda di outlet event: langsung lanjut transaksi dengan pelanggan ini
+            goToTransactionWith(res.data.data || customerToEdit);
+            return;
+          }
           onCustomerUpdated?.(res.data.data);
           onSwitchToCatalog?.();
         } else {
@@ -244,6 +256,11 @@ export default function AddCustomer({
         showAlert({ title: 'Gagal Simpan', message: res.data?.message || 'Respons server tidak valid', type: 'error' });
       }
     } catch (err) {
+      const existing = err.response?.status === 409 ? err.response.data?.existing : null;
+      if (existing) {
+        setDupCustomer(existing);
+        return;
+      }
       console.error('Gagal menyimpan pelanggan:', err);
       const timedOut = err.code === 'ECONNABORTED' || /timeout/i.test(err.message || '');
       showAlert({
@@ -261,7 +278,45 @@ export default function AddCustomer({
   const fieldCls = 'p-2.5 border border-[#e0e0e0] rounded-xl bg-white text-xs font-semibold text-slate-800 outline-none focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340]/20 transition-all';
   const labelCls = 'text-[11px] font-extrabold text-slate-700';
 
+  const goToTransactionWith = (cust) => {
+    localStorage.setItem('autoSelectCustId', cust.customer_code || `CUST-${String(cust.id).padStart(3, '0')}`);
+    navigate('/transaction', { replace: true });
+  };
+
+  // Outlet event: pakai pelanggan yang sudah terdaftar (alamat disesuaikan bila berubah) lalu lanjut transaksi
+  const handleUseExisting = async (existing, newAddress) => {
+    if (isUsingDup) return;
+    setIsUsingDup(true);
+    try {
+      if (newAddress) {
+        await axios.put(`/api/customers/${existing.id}`, { fullAddress: newAddress }, { timeout: 20000 });
+      }
+      setDupCustomer(null);
+      goToTransactionWith(existing);
+    } catch (err) {
+      console.error('Gagal memperbarui alamat pelanggan:', err);
+      showAlert({ title: 'Gagal Simpan Alamat', message: err.response?.data?.message || 'Terjadi kesalahan saat menyimpan alamat', type: 'error' });
+    } finally {
+      setIsUsingDup(false);
+    }
+  };
+
+  const duplicateModal = (
+    <PhoneDuplicateModal
+      existing={dupCustomer}
+      isEvent={isEventOutlet && !isEdit}
+      suggestedAddress={isEdit ? '' : (form.fullAddress || '').trim()}
+      saving={isUsingDup}
+      onClose={() => setDupCustomer(null)}
+      onView={(c) => { setDupCustomer(null); onOpenCustomer?.(c); }}
+      onEdit={(c) => { setDupCustomer(null); onEditExisting?.(c, { continueToTransaction: isEventOutlet && !isEdit }); }}
+      onUse={handleUseExisting}
+    />
+  );
+
   return (
+    <>
+    {duplicateModal}
     <form onSubmit={handleSubmit} className="flex flex-col gap-5 sm:gap-6 bg-white border border-[#e0e0e0] rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xs">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#e0e0e0] pb-4 gap-3">
@@ -584,6 +639,7 @@ export default function AddCustomer({
         </div>
       </div>
     </form>
+    </>
   );
 }
 
