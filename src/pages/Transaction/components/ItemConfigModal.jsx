@@ -152,7 +152,10 @@ export default function ItemConfigModal({
   const isAddon = configuringItem.category === 'Biaya';
   // Minimal order kiloan dari master layanan (min_order_qty); 1 = tanpa minimal
   const minWeight = Number(configuringItem.minWeight) > 0 ? Number(configuringItem.minWeight) : 1;
-  const minPriceLabel = (minWeight * (Number(configuringItem.price) || 0)).toLocaleString('id-ID');
+  // Tarif efektif = harga dasar + tambahan DC (jika DC opsional dinyalakan); sama dengan handleAddToCart
+  const unitRate = (Number(configuringItem.price) || 0)
+    + (!dcLocked && itemSpecs.isDryClean && Number(configuringItem.dcPriceAdd) > 0 ? Number(configuringItem.dcPriceAdd) : 0);
+  const minPriceLabel = (minWeight * unitRate).toLocaleString('id-ID');
 
   // Merge backend materials list with MATERIAL_OPTIONS if provided
   const availableMaterials = Array.from(new Set([
@@ -186,10 +189,7 @@ export default function ItemConfigModal({
               </div>
               <h3 className="text-base font-black text-[#313030] leading-snug">{configuringItem.name}</h3>
               <span className="text-xs font-extrabold text-[#5f1340] block">
-                Rp {(
-                  (Number(configuringItem.price) || 0) +
-                  (!dcLocked && itemSpecs.isDryClean && Number(configuringItem.dcPriceAdd) > 0 ? Number(configuringItem.dcPriceAdd) : 0)
-                ).toLocaleString('id-ID')} / {configuringItem.unit}
+                Rp {unitRate.toLocaleString('id-ID')} / {configuringItem.unit}
               </span>
               {!dcLocked && Number(configuringItem.dcPriceAdd) > 0 && (
                 <span className="text-[10px] font-bold text-amber-800 block">
@@ -310,7 +310,7 @@ export default function ItemConfigModal({
                       Dimensi Ukuran & Kuantitas ({configuringItem.unit}) *
                     </label>
                     <span className="text-[10px] text-slate-500 font-bold">
-                      Tarif: Rp {configuringItem.price.toLocaleString('id-ID')} / m²
+                      Tarif: Rp {unitRate.toLocaleString('id-ID')} / m²
                     </span>
                   </div>
 
@@ -388,7 +388,7 @@ export default function ItemConfigModal({
                       Jumlah Kuantitas ({configuringItem.unit}) *
                     </label>
                     <span className="text-[10px] text-slate-400 font-bold">
-                      Tarif: Rp {configuringItem.price.toLocaleString('id-ID')} / {configuringItem.unit}
+                      Tarif: Rp {unitRate.toLocaleString('id-ID')} / {configuringItem.unit}
                     </span>
                   </div>
 
@@ -600,12 +600,12 @@ export default function ItemConfigModal({
               <span className="text-base sm:text-lg font-black text-[#5f1340]">
                 Rp {(
                   isAddon
-                    ? (parseFloat(itemSpecs.qty || 0) * configuringItem.price)
+                    ? (parseFloat(itemSpecs.qty || 0) * unitRate)
                     : configuringItem.category === 'Kiloan'
-                    ? (Math.max(parseFloat(itemSpecs.weight || 0), minWeight) * configuringItem.price)
+                    ? (Math.max(parseFloat(itemSpecs.weight || 0), minWeight) * unitRate)
                     : isMeterService
-                      ? (((parseFloat(itemSpecs.length || 0)) * (parseFloat(itemSpecs.width || 0)) * (parseInt(itemSpecs.qty || 0, 10))) * configuringItem.price)
-                      : ((parseInt(itemSpecs.qty || 0, 10)) * configuringItem.price)
+                      ? (((parseFloat(itemSpecs.length || 0)) * (parseFloat(itemSpecs.width || 0)) * (parseInt(itemSpecs.qty || 0, 10))) * unitRate)
+                      : ((parseInt(itemSpecs.qty || 0, 10)) * unitRate)
                 ).toLocaleString('id-ID')}
               </span>
               {!isKiloan && !isAddon && parseInt(itemSpecs.qty, 10) > 1 && (

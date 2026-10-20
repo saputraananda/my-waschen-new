@@ -24,7 +24,8 @@ function tokenOk(headerValue) {
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(got));
 }
 
-function requireSyncToken(req, res, next) {
+/** Token server-ke-server dari Super App (header X-Complaint-Sync-Token). */
+export function requireSyncToken(req, res, next) {
   if (!tokenOk(req.headers['x-complaint-sync-token'])) {
     return res.status(401).json({ success: false, message: 'Tidak diizinkan' });
   }

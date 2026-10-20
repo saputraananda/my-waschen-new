@@ -6,6 +6,7 @@ import { formatWorkPercentage } from '../../../utils/workStatusMeta.js';
 import CombinedReceiptModal from '../../../components/CombinedReceiptModal.jsx';
 import ThermalNotaMerge from '../../../components/ThermalNotaMerge.jsx';
 import { isEventOutletId } from '../../../utils/authSession.js';
+import { customerPickLabel } from '../../../utils/customerPickLabel.js';
 import {
   Users,
   Search,
@@ -168,6 +169,7 @@ export default function ListCustomer({
             dbId: c.id,
             name: c.name,
             phone: c.phone,
+            place: customerPickLabel({ street: c.address, block: c.block, houseNumber: c.house_number }),
             homeBranch: c.home_branch || activeOutletName,
             tier: c.tier || 'One-Time',
             membershipTier: c.membership_tier || null,
@@ -387,7 +389,10 @@ export default function ListCustomer({
                         {(page - 1) * PAGE_SIZE + idx + 1}
                       </td>
                       <td className="py-3.5 px-4">
-                        <span className="font-extrabold text-[#313030] block text-xs">{formatName(cust.name)}</span>
+                        <span className="font-black text-[#313030] block text-lg leading-tight">{formatName(cust.name)}</span>
+                        {cust.place && (
+                          <span className="text-sm font-bold text-[#5f1340] leading-snug block line-clamp-2 mt-1 max-w-[280px]">{cust.place}</span>
+                        )}
                       </td>
                       <td className="py-3.5 px-4">
                         {cust.phone && cust.phone !== '-' ? (

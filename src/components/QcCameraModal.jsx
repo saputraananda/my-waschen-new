@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { X, RefreshCw, Loader2 } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { X, RefreshCw, Loader2, Camera, CameraOff } from 'lucide-react';
 import { drawTextOverlay } from '../utils/qcPhotoStamp.js';
 
 /**
@@ -91,26 +92,44 @@ export default function QcCameraModal({ open, title = 'Ambil Foto QC', buildOver
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-[200] bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white w-full max-w-md max-h-[100dvh] overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-[#e0e0e0] shadow-2xl pb-[env(safe-area-inset-bottom)]">
-        <div className="px-4 py-3 border-b border-[#e0e0e0] flex items-center justify-between">
-          <p className="text-sm font-black text-[#313030]">{title}</p>
-          <button type="button" onClick={onClose} aria-label="Tutup" className="w-8 h-8 rounded-xl border border-[#e0e0e0] grid place-items-center">
-            <X className="h-4 w-4" />
+  // Portal ke body: modal induk yang punya transform/overflow-hidden tidak boleh memotong kamera
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[200] bg-[#313030]/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
+      onClick={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-white w-full max-w-lg max-h-[100dvh] sm:max-h-[92dvh] flex flex-col rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden pb-[env(safe-area-inset-bottom)] animate-fade-in">
+        <div className="px-5 py-4 border-b border-[#e0e0e0] bg-[#f8f8f8] flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2.5 bg-[#5f1340]/10 text-[#5f1340] rounded-xl shrink-0">
+              <Camera className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-black text-[#313030] truncate">{title}</p>
+              <p className="text-[11px] text-slate-400">Waktu & nomor nota tercetak otomatis di foto</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Tutup"
+            className="w-9 h-9 rounded-xl text-slate-400 hover:text-[#313030] hover:bg-slate-200/60 grid place-items-center shrink-0 cursor-pointer transition-colors"
+          >
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="p-3">
+        <div className="p-4 sm:p-5 overflow-y-auto flex-1">
           {camError ? (
-            <div className="rounded-2xl bg-[#313030] aspect-[3/4] flex items-center justify-center px-6 text-center">
+            <div className="rounded-2xl bg-[#313030] aspect-[3/4] sm:aspect-[4/3] flex items-center justify-center px-6 text-center">
               <div>
-                <p className="text-red-400 text-xs font-black mb-1">Kamera Tidak Tersedia</p>
+                <CameraOff className="h-8 w-8 text-white/40 mx-auto mb-2" />
+                <p className="text-rose-300 text-xs font-black mb-1">Kamera Tidak Tersedia</p>
                 <p className="text-white/60 text-[11px]">{camError}</p>
               </div>
             </div>
           ) : (
-            <div className="rounded-2xl overflow-hidden bg-black relative aspect-[3/4] max-h-[58dvh] mx-auto">
+            <div className="rounded-2xl overflow-hidden bg-black relative aspect-[3/4] sm:aspect-[4/3] max-h-[60dvh] mx-auto ring-1 ring-black/5">
               <video
                 ref={videoRef}
                 playsInline
@@ -123,7 +142,8 @@ export default function QcCameraModal({ open, title = 'Ambil Foto QC', buildOver
                 type="button"
                 onClick={() => setFacingMode((p) => (p === 'user' ? 'environment' : 'user'))}
                 aria-label="Ganti kamera"
-                className="absolute top-2 right-2 w-9 h-9 rounded-full bg-black/50 grid place-items-center text-white"
+                title="Ganti kamera depan/belakang"
+                className="absolute top-3 right-3 w-10 h-10 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-sm grid place-items-center text-white cursor-pointer transition-colors"
               >
                 <RefreshCw className="h-4 w-4" />
               </button>
@@ -144,21 +164,31 @@ export default function QcCameraModal({ open, title = 'Ambil Foto QC', buildOver
             </div>
           )}
 
-          {!videoReady && !camError && <p className="mt-2 text-[11px] font-bold text-slate-500">Menyiapkan kamera…</p>}
+          {!videoReady && !camError && (
+            <p className="mt-2 text-[11px] font-bold text-slate-500 text-center">Menyiapkan kamera…</p>
+          )}
+        </div>
 
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button type="button" onClick={onClose} className="h-11 rounded-2xl border border-[#e0e0e0] bg-white text-slate-700 text-xs font-black">Batal</button>
-            <button
-              type="button"
-              onClick={handleCapture}
-              disabled={!videoReady || !!camError || capturing}
-              className="h-11 rounded-2xl bg-[#5f1340] text-white text-xs font-black disabled:opacity-50"
-            >
-              {capturing ? 'Memproses…' : 'Ambil Foto'}
-            </button>
-          </div>
+        <div className="px-4 sm:px-5 py-3.5 border-t border-[#e0e0e0] bg-[#f8f8f8] grid grid-cols-[auto_1fr] gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-11 px-5 rounded-xl border border-[#e0e0e0] bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold cursor-pointer transition-colors"
+          >
+            Batal
+          </button>
+          <button
+            type="button"
+            onClick={handleCapture}
+            disabled={!videoReady || !!camError || capturing}
+            className="h-11 rounded-xl bg-[#5f1340] hover:bg-[#4d0f33] text-white text-xs font-black disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-md shadow-[#5f1340]/20 cursor-pointer transition-colors"
+          >
+            {capturing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+            <span>{capturing ? 'Memproses…' : 'Ambil Foto'}</span>
+          </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

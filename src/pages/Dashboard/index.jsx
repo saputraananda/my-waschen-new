@@ -20,6 +20,9 @@ import ThermalNota from '../../components/ThermalNota.jsx';
 import { mapDbTransactionToReceipt } from '../../utils/printerSettings.js';
 import { toCustomerNotaReceipt } from '../../utils/customerNotaWhatsApp.js';
 
+// Tracking Service sementara disembunyikan (2026-10-20). Ubah ke true untuk menampilkan lagi.
+const SHOW_TRACKING_SERVICE = false;
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const { activeShift, shiftChecked, openCloseModal, startOrderFlow, requestOpenShift, mustGateShift } = useShift();
@@ -411,6 +414,7 @@ export default function Dashboard() {
           setActiveFilterTab={setActiveFilterTab}
         />
 
+        {SHOW_TRACKING_SERVICE && (
         <TrackingService
           filteredOrders={filteredOrders}
           orders={outletOrders}
@@ -430,6 +434,7 @@ export default function Dashboard() {
           cutoffMonth={cutoffMonth}
           setCutoffMonth={setCutoffMonth}
         />
+        )}
 
       </main>
 

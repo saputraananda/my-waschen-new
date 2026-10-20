@@ -112,6 +112,7 @@ export default function History() {
           deleteApprovalStatus: t.delete_approval_status,
           deleteRequestedAt: t.delete_requested_at ? new Date(t.delete_requested_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : null,
           deleteReason: t.delete_reason || null,
+          deleteAttachmentUrl: t.delete_attachment_url || null,
           // Refund Request Fields
           isRefundRequested: t.is_refund_requested === 1 || t.is_refund_requested === true,
           refundApprovalStatus: t.refund_approval_status,

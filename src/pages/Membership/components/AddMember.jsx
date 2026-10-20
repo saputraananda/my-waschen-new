@@ -21,9 +21,11 @@ import {
 } from 'lucide-react';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import WaschenMemberCard from '../../../components/WaschenMemberCard.jsx';
+import PaymentProofFields from '../../../components/PaymentProofFields.jsx';
 import MemberExclusiveBenefits from '../../../components/MemberExclusiveBenefits.jsx';
 import { formatName } from '../../../utils/FormatName.js';
 import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
+import { customerPickLabel } from '../../../utils/customerPickLabel.js';
 
 const PAGE_SIZE = 6;
 
@@ -71,6 +73,7 @@ export default function AddMember({
   const [paidAmount, setPaidAmount] = useState('');
   const [overpaymentAction, setOverpaymentAction] = useState('change');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [paymentProofFile, setPaymentProofFile] = useState(null);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -234,6 +237,11 @@ export default function AddMember({
       return;
     }
 
+    if (!paymentProofFile) {
+      showToast('Bukti Pembayaran Wajib', 'Foto atau PDF bukti bayar wajib dilampirkan untuk setiap pembayaran membership.', 'error');
+      return;
+    }
+
     const resolvedPaymentMethod = resolvePaymentMethodString({
       mainCategory,
       edcCardType,
@@ -246,14 +254,18 @@ export default function AddMember({
 
     setIsSubmitting(true);
     try {
-      const memRes = await axios.post('/api/memberships', {
-        customerId: selectedCustomer.id,
-        packageId: selectedPackage.id,
-        outletId: parseInt(localStorage.getItem('activeOutletId')) || 2,
-        paymentMethod: resolvedPaymentMethod,
-        cashierEmployeeId: localStorage.getItem('employeeId') || null,
-        paidAmount: paid,
-        overpaymentAction: paid > Number(selectedPackage.top_up_amount || 0) ? overpaymentAction : 'change'
+      const fd = new FormData();
+      fd.append('customerId', selectedCustomer.id);
+      fd.append('packageId', selectedPackage.id);
+      fd.append('outletId', parseInt(localStorage.getItem('activeOutletId')) || 2);
+      fd.append('paymentMethod', resolvedPaymentMethod);
+      if (localStorage.getItem('employeeId')) fd.append('cashierEmployeeId', localStorage.getItem('employeeId'));
+      fd.append('paidAmount', paid);
+      fd.append('overpaymentAction', paid > Number(selectedPackage.top_up_amount || 0) ? overpaymentAction : 'change');
+      if (paymentProofFile) fd.append('proof', paymentProofFile);
+
+      const memRes = await axios.post('/api/memberships', fd, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
       });
 
       if (memRes.data?.success) {
@@ -383,22 +395,27 @@ export default function AddMember({
               {/* Customer Cards Grid — tanpa max-height agar card tidak terpotong */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1 content-start">
                 {displayedCustomers.length > 0 ? (
-                  displayedCustomers.map((c) => (
+                  displayedCustomers.map((c) => {
+                    const place = customerPickLabel({ street: c.address, block: c.block, houseNumber: c.house_number });
+                    return (
                     <div
                       key={c.id}
                       onClick={() => setSelectedCustId(c.id)}
                       className="group relative bg-white border border-[#e0e0e0] hover:border-[#5f1340] rounded-2xl p-3.5 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between shrink-0 min-h-[108px]"
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="h-9 w-9 rounded-full bg-[#5f1340]/10 text-[#5f1340] font-black text-xs flex items-center justify-center shrink-0">
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <div className="h-10 w-10 rounded-full bg-[#5f1340]/10 text-[#5f1340] font-black text-sm flex items-center justify-center shrink-0">
                             {c.name ? c.name.charAt(0).toUpperCase() : 'C'}
                           </div>
                           <div className="min-w-0">
-                            <h4 className="font-black text-xs text-[#313030] group-hover:text-[#5f1340] truncate">
+                            <h4 className="font-black text-xl leading-tight text-[#313030] group-hover:text-[#5f1340] truncate">
                               {formatName(c.name)}
                             </h4>
-                            <span className="text-[10px] text-slate-400 block truncate">
+                            {place && (
+                              <p className="text-base font-bold text-[#5f1340] leading-snug line-clamp-2 mt-1">{place}</p>
+                            )}
+                            <span className="text-xs text-slate-400 font-medium block truncate mt-0.5">
                               {c.phone}
                             </span>
                           </div>
@@ -415,7 +432,8 @@ export default function AddMember({
                         </span>
                       </div>
                     </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="col-span-full p-8 text-center bg-white border border-dashed border-[#e0e0e0] rounded-2xl">
                     <p className="text-xs font-bold text-slate-500">Tidak ada pelanggan pada tier/pencarian ini.</p>
@@ -602,6 +620,12 @@ export default function AddMember({
             />
           </div>
 
+          <PaymentProofFields
+            orderNo={`Aktivasi ${selectedCustomer?.customer_code || 'Member'}`}
+            file={paymentProofFile}
+            onFile={setPaymentProofFile}
+          />
+
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2">
               <label className="text-[11px] font-black text-slate-700">Nominal Dibayar *</label>
@@ -712,7 +736,7 @@ export default function AddMember({
           <div className="flex items-center gap-3 pt-4 border-t border-[#e0e0e0] mt-auto">
             <button
               type="submit"
-              disabled={isSubmitting || !selectedCustId || isUnderpaid || paidAmountNum <= 0}
+              disabled={isSubmitting || !selectedCustId || isUnderpaid || paidAmountNum <= 0 || !paymentProofFile}
               className="flex-1 py-3.5 bg-gradient-to-r from-[#5f1340] to-[#7d1956] hover:opacity-95 text-white font-black rounded-2xl text-xs shadow-lg shadow-[#5f1340]/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
               <Save className="h-4 w-4" />

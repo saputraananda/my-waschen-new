@@ -26,6 +26,9 @@ export const mapMemberFromApi = (c) => {
     dbId: c.id,
     name: c.name,
     phone: c.phone,
+    street: c.address || '',
+    block: c.block || '',
+    houseNumber: c.house_number || '',
     homeBranch: c.home_branch || 'Waschen Laundry Citra Gran',
     spendingTier: c.tier || 'Reguler',
     tier: c.membership_tier || 'Gold',
@@ -37,8 +40,7 @@ export const mapMemberFromApi = (c) => {
       ? new Date(c.membership_start_date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
       : new Date(c.created_at || Date.now()).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
     expiryDate: expiry.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
-    status: c.membership_status === 'Active' ? 'Aktif' : (c.membership_status || 'Aktif'),
-    mutations: []
+    status: c.membership_status === 'Active' ? 'Aktif' : (c.membership_status || 'Aktif')
   };
 };
 

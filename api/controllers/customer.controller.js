@@ -70,6 +70,20 @@ const CUSTOMER_SELECT_LIGHT = `
   LEFT JOIN mst_membership_package mpkg ON am.package_id = mpkg.id
 `;
 
+/** Daftar pilih pelanggan (Order Baru) — hanya kolom yang dipakai kartu, tanpa agregasi tr_transaction */
+const CUSTOMER_SELECT_PICKER = `
+  SELECT c.id, c.customer_code, c.name, c.phone, c.address, c.full_address, c.block, c.house_number,
+         c.notes, c.city, c.landmark, c.home_branch, c.preferred_outlet_id,
+         c.total_spent, c.monthly_spending, c.spending_value_year, c.total_orders,
+         c.deposit_balance, c.updated_at,
+         st.id AS spending_tier_id,
+         st.code AS spending_tier_code,
+         st.name AS tier,
+         st.label AS tier_label
+  FROM mst_customer c
+  LEFT JOIN mst_customer_tier st ON c.spending_tier_id = st.id
+`;
+
 const resolveSpendingTierId = async (tierId, tierName) => {
   if (tierId) {
     const [rows] = await myWaschenPool.query(
@@ -216,7 +230,7 @@ const resolveSourceId = async (sourceId, sourceName) => {
  */
 export const getCustomers = async (req, res) => {
   try {
-    const { search, tier, tier_id, outlet_id, has_membership } = req.query;
+    const { search, tier, tier_id, outlet_id, has_membership, home_branch, lite } = req.query;
     let sql = `${CUSTOMER_SELECT} WHERE c.is_active = 1`;
     const params = [];
 
@@ -236,6 +250,13 @@ export const getCustomers = async (req, res) => {
 
     if (has_membership === '1' || has_membership === 'true') {
       sql += ' AND c.active_membership_id IS NOT NULL';
+    }
+
+    // Cabang asal pelanggan; "Waschen Laundry X" dicocokkan ke "X". Pelanggan tanpa cabang tetap ikut.
+    const branchKey = String(home_branch || '').trim().replace(/^waschen laundry\s+/i, '').replace(/^outlet\s+/i, '');
+    if (branchKey && branchKey.toLowerCase() !== 'semua') {
+      sql += " AND (c.home_branch IS NULL OR c.home_branch = '' OR c.home_branch LIKE ?)";
+      params.push(`%${branchKey.replace(/[\\%_]/g, '\\$&')}%`);
     }
 
     if (outlet_id) {
@@ -260,7 +281,10 @@ export const getCustomers = async (req, res) => {
     const sortDir = String(req.query.dir || '').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
     const orderBy = `ORDER BY ${sortExpr} ${sortDir}, c.id DESC`;
     if (!pageNum) {
-      const [rows] = await myWaschenPool.query(`${sql} ${orderBy}`, params);
+      const listSql = lite === '1'
+        ? `${CUSTOMER_SELECT_PICKER} ${sql.slice(CUSTOMER_SELECT.length)}`
+        : sql;
+      const [rows] = await myWaschenPool.query(`${listSql} ${orderBy}`, params);
       return res.status(200).json({ success: true, data: rows });
     }
 

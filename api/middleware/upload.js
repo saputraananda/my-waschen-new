@@ -261,6 +261,13 @@ export const uploadDepositReport = createUploader(DEPOSIT_REPORT_FRONTLINER_SUBD
   maxFileSize: 5 * 1024 * 1024
 }).single('proof');
 
+/** Lampiran pengajuan hapus nota → {UPLOAD_BASE_DIR}/assets/delete-request */
+export const DELETE_REQUEST_SUBDIR = 'assets/delete-request';
+export const uploadDeleteRequestAttachment = createUploader(DELETE_REQUEST_SUBDIR, {
+  fileTypes: /jpeg|jpg|png|webp|pdf/,
+  maxFileSize: 5 * 1024 * 1024
+}).single('attachment');
+
 export const uploadEvidence = createUploader('assets/evidence');
 
 export default createUploader;

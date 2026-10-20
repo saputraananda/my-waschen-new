@@ -4,6 +4,7 @@ import { formatName } from '../../../utils/FormatName';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import WaschenMemberCard from '../../../components/WaschenMemberCard.jsx';
+import PaymentProofFields from '../../../components/PaymentProofFields.jsx';
 import {
   CreditCard,
   Users,
@@ -22,11 +23,39 @@ import {
   AlertCircle,
   Coins,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  FileText,
+  Loader2
 } from 'lucide-react';
 import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
+import { customerPickLabel } from '../../../utils/customerPickLabel.js';
 
 const PAGE_SIZE = 10;
+
+/** Mutasi yang menambah saldo (selain itu = pemakaian / refund). */
+const isCreditMutation = (type) => /^(topup|bonus)$/i.test(String(type || ''));
+
+const waHref = (rawPhone) => {
+  let digits = String(rawPhone || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('0')) digits = `62${digits.slice(1)}`;
+  else if (digits.startsWith('8')) digits = `62${digits}`;
+  return `https://wa.me/${digits}`;
+};
+
+const WhatsAppIcon = ({ className = 'h-3.5 w-3.5' }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+  </svg>
+);
+
+const formatMutationDate = (value) => {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '-';
+  return d.toLocaleString('id-ID', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+};
 
 function pageWindow(current, total, siblings = 1) {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
@@ -101,6 +130,9 @@ export default function ListMember({
   const [paidAmount, setPaidAmount] = useState('');
   const [overpaymentAction, setOverpaymentAction] = useState('change');
   const [isSubmittingTopUp, setIsSubmittingTopUp] = useState(false);
+  const [paymentProofFile, setPaymentProofFile] = useState(null);
+  const [mutations, setMutations] = useState([]);
+  const [isLoadingMutations, setIsLoadingMutations] = useState(false);
 
   useEffect(() => {
     if (activeOutletName) {
@@ -153,7 +185,24 @@ export default function ListMember({
     setIsCrossTransfer(false);
     setCrossBankOutletId(1);
     setOverpaymentAction('change');
+    setPaymentProofFile(null);
     setIsTopUpModalOpen(true);
+  };
+
+  const openMutationModal = async (member) => {
+    setSelectedMember(member);
+    setMutations([]);
+    setIsMutationModalOpen(true);
+    setIsLoadingMutations(true);
+    try {
+      const res = await axios.get('/api/memberships/mutations', { params: { customer_id: member.dbId } });
+      if (res.data?.success) setMutations(res.data.data || []);
+    } catch (err) {
+      console.error('Gagal memuat mutasi saldo:', err);
+      showToast('Gagal Memuat Mutasi', err.response?.data?.message || 'Terjadi kesalahan sistem', 'error');
+    } finally {
+      setIsLoadingMutations(false);
+    }
   };
 
   const handleTopUpSubmit = async (e) => {
@@ -170,6 +219,11 @@ export default function ListMember({
       return;
     }
 
+    if (!paymentProofFile) {
+      showToast('Bukti Pembayaran Wajib', 'Foto atau PDF bukti bayar wajib dilampirkan untuk setiap pembayaran membership.', 'error');
+      return;
+    }
+
     const resolvedMethod = resolvePaymentMethodString({
       mainCategory,
       edcCardType,
@@ -182,14 +236,18 @@ export default function ListMember({
 
     setIsSubmittingTopUp(true);
     try {
-      const res = await axios.post('/api/memberships', {
-        customerId: selectedMember.dbId,
-        packageId: selectedPackage.id,
-        outletId: parseInt(localStorage.getItem('activeOutletId')) || 2,
-        paymentMethod: resolvedMethod,
-        cashierEmployeeId: localStorage.getItem('employeeId') || null,
-        paidAmount: paid,
-        overpaymentAction: paid > packagePrice ? overpaymentAction : 'change'
+      const fd = new FormData();
+      fd.append('customerId', selectedMember.dbId);
+      fd.append('packageId', selectedPackage.id);
+      fd.append('outletId', parseInt(localStorage.getItem('activeOutletId')) || 2);
+      fd.append('paymentMethod', resolvedMethod);
+      if (localStorage.getItem('employeeId')) fd.append('cashierEmployeeId', localStorage.getItem('employeeId'));
+      fd.append('paidAmount', paid);
+      fd.append('overpaymentAction', paid > packagePrice ? overpaymentAction : 'change');
+      if (paymentProofFile) fd.append('proof', paymentProofFile);
+
+      const res = await axios.post('/api/memberships', fd, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
       });
 
       if (res.data?.success) {
@@ -360,19 +418,34 @@ export default function ListMember({
             </thead>
             <tbody className="divide-y divide-[#e0e0e0]/70 font-semibold">
               {paginatedMembers.length > 0 ? (
-                paginatedMembers.map(m => (
+                paginatedMembers.map(m => {
+                  const place = customerPickLabel(m);
+                  return (
                   <tr key={m.id} className="hover:bg-[#f8f8f8]/60 transition-colors">
                     <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#5f1340] to-[#7d1956] text-white font-black text-xs flex items-center justify-center shadow-xs shrink-0">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#5f1340] to-[#7d1956] text-white font-black text-sm flex items-center justify-center shadow-xs shrink-0">
                           {m.name.charAt(0).toUpperCase()}
                         </div>
-                        <div>
-                          <span className="font-extrabold text-[#313030] block text-xs">{formatName(m.name)}</span>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="font-mono text-[10px] text-[#5f1340] bg-[#5f1340]/10 px-1.5 py-0.5 rounded font-bold">{m.cardNumber}</span>
-                            <span className="text-[10px] text-slate-400">{m.phone}</span>
-                          </div>
+                        <div className="min-w-0">
+                          <span className="font-black text-[#313030] block text-lg leading-tight">{formatName(m.name)}</span>
+                          {place && (
+                            <span className="text-sm font-bold text-[#5f1340] leading-snug block line-clamp-2 mt-1 max-w-[280px]">{place}</span>
+                          )}
+                          {waHref(m.phone) ? (
+                            <a
+                              href={waHref(m.phone)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 mt-1 text-xs text-emerald-700 hover:text-emerald-800 font-bold hover:underline"
+                              title={`Chat WhatsApp ${m.phone}`}
+                            >
+                              <WhatsAppIcon />
+                              <span>{m.phone}</span>
+                            </a>
+                          ) : (
+                            <span className="block mt-1 text-xs text-slate-300">—</span>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -409,10 +482,7 @@ export default function ListMember({
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            setSelectedMember(m);
-                            setIsMutationModalOpen(true);
-                          }}
+                          onClick={() => openMutationModal(m)}
                           className="px-2.5 py-1.5 bg-[#f8f8f8] hover:bg-[#e0e0e0] border border-[#e0e0e0] text-slate-700 font-bold rounded-xl text-[11px] transition-all flex items-center gap-1 cursor-pointer"
                           title="Lihat Riwayat Mutasi Saldo"
                         >
@@ -422,7 +492,8 @@ export default function ListMember({
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               ) : (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-slate-400">
@@ -574,6 +645,12 @@ export default function ListMember({
                 />
               </div>
 
+              <PaymentProofFields
+                orderNo={`Top-Up ${selectedMember.cardNumber}`}
+                file={paymentProofFile}
+                onFile={setPaymentProofFile}
+              />
+
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between gap-2">
                   <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Nominal Dibayar *</label>
@@ -682,7 +759,7 @@ export default function ListMember({
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingTopUp || isUnderpaid || paidAmountNum <= 0}
+                  disabled={isSubmittingTopUp || isUnderpaid || paidAmountNum <= 0 || !paymentProofFile}
                   className="flex-1 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 text-white font-black rounded-xl text-xs cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-[#5f1340]/20"
                 >
                   <CheckCircle2 className="h-4 w-4" />
@@ -722,26 +799,59 @@ export default function ListMember({
                 {renderMembershipBadge(selectedMember.membershipTier || selectedMember.tier)}
               </div>
 
-              <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
-                {selectedMember.mutations && selectedMember.mutations.length > 0 ? (
-                  selectedMember.mutations.map((mut) => (
-                    <div key={mut.id} className="p-3 border border-[#e0e0e0] rounded-xl flex items-center justify-between text-xs hover:bg-[#f8f8f8] transition-colors">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black ${
-                          mut.type === 'Top-Up' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-                        }`}>
-                          {mut.type === 'Top-Up' ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownLeft className="h-4 w-4" />}
+              <div className="space-y-2.5 max-h-[50vh] overflow-y-auto pr-1">
+                {isLoadingMutations ? (
+                  <p className="text-center text-xs text-slate-400 py-6 flex items-center justify-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Memuat mutasi...
+                  </p>
+                ) : mutations.length > 0 ? (
+                  mutations.map((mut) => {
+                    const isCredit = isCreditMutation(mut.type);
+                    const amount = Math.abs(parseFloat(mut.amount) || 0);
+                    const proofUrl = mut.payment_proof_url;
+                    const isPdfProof = /\.pdf($|\?)/i.test(proofUrl || '');
+                    return (
+                      <div key={mut.id} className="p-3 border border-[#e0e0e0] rounded-xl flex flex-col gap-2.5 text-xs hover:bg-[#f8f8f8] transition-colors">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black shrink-0 ${
+                              isCredit ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                            }`}>
+                              {isCredit ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownLeft className="h-4 w-4" />}
+                            </div>
+                            <div className="min-w-0">
+                              <span className="font-bold text-[#313030] block break-words">{mut.notes || mut.type}</span>
+                              <span className="text-[10px] text-slate-400 block">
+                                {formatMutationDate(mut.created_at)}
+                                {mut.payment_method ? ` · ${mut.payment_method}` : ''}
+                              </span>
+                            </div>
+                          </div>
+                          <span className={`font-black whitespace-nowrap ${isCredit ? 'text-emerald-700' : 'text-rose-700'}`}>
+                            {isCredit ? '+' : '-'} Rp {amount.toLocaleString('id-ID')}
+                          </span>
                         </div>
-                        <div>
-                          <span className="font-bold text-[#313030] block">{mut.desc}</span>
-                          <span className="text-[10px] text-slate-400 block">{mut.date}</span>
-                        </div>
+                        {proofUrl && (
+                          <a
+                            href={proofUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="ml-11 flex items-center gap-2.5 p-1.5 pr-3 bg-white border border-[#e0e0e0] rounded-lg hover:border-[#5f1340]/40 self-start"
+                            title="Lihat bukti pembayaran"
+                          >
+                            {isPdfProof ? (
+                              <div className="w-10 h-10 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                                <FileText className="h-5 w-5" />
+                              </div>
+                            ) : (
+                              <img src={proofUrl} alt="Bukti pembayaran" className="w-10 h-10 rounded-md object-cover shrink-0" />
+                            )}
+                            <span className="text-[10px] font-bold text-[#5f1340]">Lihat Bukti Pembayaran</span>
+                          </a>
+                        )}
                       </div>
-                      <span className={`font-black ${mut.type === 'Top-Up' ? 'text-emerald-700' : 'text-rose-700'}`}>
-                        {mut.type === 'Top-Up' ? `+ Rp ${(mut.amount + (mut.bonus || 0)).toLocaleString('id-ID')}` : `- Rp ${Math.abs(mut.amount).toLocaleString('id-ID')}`}
-                      </span>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <p className="text-center text-xs text-slate-400 py-6">Belum ada catatan mutasi transaksi</p>
                 )}

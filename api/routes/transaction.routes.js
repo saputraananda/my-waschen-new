@@ -14,7 +14,7 @@ import {
   uploadPaymentProof,
   ensureDigitalNotaAccess
 } from '../controllers/transaction.controller.js';
-import { uploadPaymentReceipt, verifyUploadContents } from '../middleware/upload.js';
+import { uploadPaymentReceipt, uploadDeleteRequestAttachment, verifyUploadContents } from '../middleware/upload.js';
 import { requirePosAuth } from '../middleware/requireAuth.js';
 
 const router = express.Router();
@@ -34,7 +34,7 @@ router.patch('/:id/status', updateWorkStatus);
 router.put('/:id/status', updateWorkStatus);
 router.patch('/:id/pay', markTransactionAsPaid);
 router.put('/:id/pay', markTransactionAsPaid);
-router.patch('/:id/request-delete', requestDeleteTransaction);
+router.patch('/:id/request-delete', requirePosAuth, uploadDeleteRequestAttachment, verifyUploadContents, requestDeleteTransaction);
 router.patch('/:id/request-refund', requestRefundTransaction);
 
 export default router;

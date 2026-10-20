@@ -1,5 +1,7 @@
 import { myWaschenPool } from '../db/pool.js';
 import { todayWibISO, toWibDateKey, addWibDays } from '../utils/wib.js';
+import { buildPaymentProofUrl } from '../utils/paymentLog.js';
+import { safeUnlinkAbsPath } from '../middleware/upload.js';
 
 /**
  * GET /api/memberships/packages
@@ -79,6 +81,38 @@ export const getMemberships = async (req, res) => {
 };
 
 /**
+ * GET /api/memberships/mutations?customer_id=
+ * Riwayat mutasi saldo kartu (tr_customer_deposit) + bukti bayar top-up.
+ */
+export const getMembershipMutations = async (req, res) => {
+  try {
+    const customerId = parseInt(req.query.customer_id, 10);
+    if (!customerId) {
+      return res.status(400).json({ success: false, message: 'customer_id wajib diisi' });
+    }
+
+    const [rows] = await myWaschenPool.query(
+      `SELECT id, type, amount, balance_before, balance_after, payment_method,
+              payment_proof_url, membership_id, notes, created_at
+       FROM tr_customer_deposit
+       WHERE customer_id = ?
+       ORDER BY created_at DESC, id DESC
+       LIMIT 200`,
+      [customerId]
+    );
+
+    return res.status(200).json({ success: true, data: rows });
+  } catch (error) {
+    console.error('Error fetching membership mutations:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal mengambil riwayat mutasi saldo',
+      error: error.message
+    });
+  }
+};
+
+/**
  * POST /api/memberships
  * Aktivasi / Top-Up Paket Membership Pelanggan
  * Rules:
@@ -90,9 +124,12 @@ export const getMemberships = async (req, res) => {
  *    - change  → kembalian tunai (tidak masuk saldo)
  *    - deposit → kelebihan ditambahkan ke saldo deposit
  *    - refund  → kelebihan dicatat menunggu refund (tidak masuk saldo)
+ * 5. Semua metode bayar (termasuk tunai) wajib melampirkan bukti bayar (multipart field `proof`),
+ *    URL-nya disimpan di baris mutasi tr_customer_deposit.
  */
 export const createMembership = async (req, res) => {
   const connection = await myWaschenPool.getConnection();
+  let committed = false;
   try {
     const {
       customerId,
@@ -110,6 +147,16 @@ export const createMembership = async (req, res) => {
         message: 'Customer ID dan Package ID wajib diisi'
       });
     }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Bukti pembayaran wajib dilampirkan untuk setiap pembayaran membership.'
+      });
+    }
+    const paymentProofUrl = req.file
+      ? buildPaymentProofUrl(req.file.filename || req.file.path)
+      : null;
 
     await connection.beginTransaction();
 
@@ -274,8 +321,8 @@ export const createMembership = async (req, res) => {
     // Catat mutasi deposit
     await connection.query(
       `INSERT INTO tr_customer_deposit
-       (customer_id, outlet_id, cashier_employee_id, type, amount, balance_before, balance_after, payment_method, membership_id, notes)
-       VALUES (?, ?, ?, 'Topup', ?, ?, ?, ?, ?, ?)`,
+       (customer_id, outlet_id, cashier_employee_id, type, amount, balance_before, balance_after, payment_method, payment_proof_url, membership_id, notes)
+       VALUES (?, ?, ?, 'Topup', ?, ?, ?, ?, ?, ?, ?)`,
       [
         customerId,
         outletId || null,
@@ -284,12 +331,14 @@ export const createMembership = async (req, res) => {
         balanceBefore,
         balanceAfter,
         paymentMethod || 'Tunai',
+        paymentProofUrl,
         membershipId,
         depositNotes
       ]
     );
 
     await connection.commit();
+    committed = true;
 
     const extrasMsg = excessToDeposit > 0
       ? ` Kelebihan Rp ${excessToDeposit.toLocaleString('id-ID')} disimpan ke saldo.`
@@ -315,7 +364,8 @@ export const createMembership = async (req, res) => {
         totalCredit,
         balanceAfter,
         startDate,
-        endDate
+        endDate,
+        paymentProofUrl
       }
     });
   } catch (error) {
@@ -328,5 +378,7 @@ export const createMembership = async (req, res) => {
     });
   } finally {
     connection.release();
+    // Transaksi batal → hapus file bukti yang sudah terunggah
+    if (!committed && req.file?.path) await safeUnlinkAbsPath(req.file.path);
   }
 };

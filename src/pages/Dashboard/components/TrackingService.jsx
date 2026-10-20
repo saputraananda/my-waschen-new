@@ -550,8 +550,20 @@ export default function TrackingService({
 
                     {/* Pelanggan */}
                     <td className="py-3.5 px-6 text-center">
-                      <span className="font-extrabold text-[#313030] block leading-tight">{formatName(order.customerName)}</span>
-                      <span className="text-[10px] text-slate-500 font-mono font-bold mt-0.5 block">{order.customerPhone}</span>
+                      <div className="mx-auto min-w-[160px] max-w-[260px]">
+                        <span className="block text-sm sm:text-[15px] font-black text-[#313030] leading-tight break-words">
+                          {formatName(order.customerName)}
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-mono font-bold mt-0.5 block">{order.customerPhone}</span>
+                        {order.customerAddress && order.customerAddress !== '-' && (
+                          <span
+                            className="mt-1 block text-[11px] font-medium text-slate-500 leading-snug line-clamp-2 break-words"
+                            title={order.customerAddress}
+                          >
+                            {order.customerAddress}
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Status Pengerjaan */}
@@ -712,6 +724,11 @@ export default function TrackingService({
                   <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Pelanggan</span>
                   <span className="font-extrabold text-[#313030] text-sm mt-0.5 block">{selectedOrderModal.customerName}</span>
                   <span className="text-[10px] text-slate-500 font-mono font-bold">{selectedOrderModal.customerPhone}</span>
+                  {selectedOrderModal.customerAddress && selectedOrderModal.customerAddress !== '-' && (
+                    <span className="mt-1 block text-[11px] text-slate-500 leading-snug break-words">
+                      {selectedOrderModal.customerAddress}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Kategori & Parfum</span>

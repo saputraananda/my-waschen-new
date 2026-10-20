@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -18,6 +19,7 @@ import inventoryRoutes from './routes/inventory.routes.js';
 import qcRoutes from './routes/qc.routes.js';
 import complaintRoutes from './routes/complaint.routes.js';
 import complaintInternalRoutes from './routes/complaintInternal.routes.js';
+import deleteRequestInternalRoutes from './routes/deleteRequestInternal.routes.js';
 import eventRoutes from './routes/event.routes.js';
 import { getBaseUploadDir, getUploadUrlPrefix, uploadPaymentReceipt, verifyUploadContents, buildUploadPublicUrl, safeUnlinkUploadUrl } from './middleware/upload.js';
 import { requirePosAuth } from './middleware/requireAuth.js';
@@ -29,6 +31,8 @@ const app = express();
 
 // Middleware
 app.use(cors());
+// gzip respons JSON (daftar pelanggan bisa beberapa MB); file gambar/PDF dilewati otomatis
+app.use(compression());
 app.use(express.json());
 
 // Serve static uploaded files — prefix URL = nama folder UPLOAD_BASE_DIR
@@ -66,6 +70,7 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/qc', qcRoutes);
 app.use('/api/complaints', complaintRoutes);
 app.use('/api/internal/complaint-docs', complaintInternalRoutes);
+app.use('/api/internal/delete-request-docs', deleteRequestInternalRoutes);
 app.use('/api/event', eventRoutes);
 
 export default app;

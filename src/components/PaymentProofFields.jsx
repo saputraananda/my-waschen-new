@@ -6,8 +6,15 @@ import { useAppDialog } from '../context/AppDialogContext.jsx';
 
 const allowed = (file) => file?.type === 'application/pdf' || /^image\/(jpeg|png|webp)$/.test(file?.type || '');
 
-/** Pilih file atau foto kamera untuk bukti bayar non-tunai. */
-export default function PaymentProofFields({ orderNo = 'Bukti Bayar', file, onFile, label = 'Upload Bukti Pembayaran (Wajib)' }) {
+/** Pilih file atau foto kamera untuk bukti bayar non-tunai (atau lampiran lain lewat `stage`). */
+export default function PaymentProofFields({
+  orderNo = 'Bukti Bayar',
+  file,
+  onFile,
+  label = 'Upload Bukti Pembayaran (Wajib)',
+  stage = 'payment',
+  cameraTitle = 'Ambil Foto Bukti Bayar'
+}) {
   const { showAlert } = useAppDialog();
   const [open, setOpen] = useState(false);
 
@@ -24,7 +31,7 @@ export default function PaymentProofFields({ orderNo = 'Bukti Bayar', file, onFi
     try {
       onFile(stamped || raw.type === 'application/pdf'
         ? raw
-        : await burnQcPhoto(raw, { orderNo, stage: 'payment' }));
+        : await burnQcPhoto(raw, { orderNo, stage }));
     } catch {
       showAlert({ title: 'Foto tidak valid', message: 'Pilih foto jpeg, png, atau webp.', type: 'error' });
     }
@@ -69,8 +76,8 @@ export default function PaymentProofFields({ orderNo = 'Bukti Bayar', file, onFi
       )}
       <QcCameraModal
         open={open}
-        title="Ambil Foto Bukti Bayar"
-        buildOverlayLines={(date) => buildQcPhotoLines({ orderNo, stage: 'payment', date })}
+        title={cameraTitle}
+        buildOverlayLines={(date) => buildQcPhotoLines({ orderNo, stage, date })}
         onCapture={(next) => { setOpen(false); accept(next, true); }}
         onClose={() => setOpen(false)}
       />

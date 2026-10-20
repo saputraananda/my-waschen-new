@@ -147,6 +147,24 @@ export default function RequestDeleteTransaction({ transactions, outlets }) {
                         <div className="p-2.5 bg-rose-50/60 border border-rose-100 rounded-xl text-[#313030] text-xs leading-relaxed">
                           "{t.deleteReason || 'Pengajuan Hapus Nota oleh Kasir'}"
                         </div>
+                        {t.deleteAttachmentUrl && (
+                          <a
+                            href={t.deleteAttachmentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-2 inline-flex items-center gap-2 p-1.5 pr-3 bg-white border border-[#e0e0e0] rounded-lg hover:border-rose-400"
+                            title="Lihat lampiran pengajuan"
+                          >
+                            {/\.pdf($|\?)/i.test(t.deleteAttachmentUrl) ? (
+                              <span className="w-9 h-9 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                                <FileText className="h-4 w-4" />
+                              </span>
+                            ) : (
+                              <img src={t.deleteAttachmentUrl} alt="Lampiran hapus nota" loading="lazy" className="w-9 h-9 rounded-md object-cover shrink-0" />
+                            )}
+                            <span className="text-[10px] font-bold text-rose-700">Lihat Lampiran</span>
+                          </a>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-right font-black text-[#313030] text-sm whitespace-nowrap">
                         Rp {t.grandTotal.toLocaleString('id-ID')}

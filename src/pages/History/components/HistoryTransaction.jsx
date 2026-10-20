@@ -73,6 +73,7 @@ export default function HistoryTransaction({
   const [printingNotaId, setPrintingNotaId] = useState(null);
   const [deleteModalOrder, setDeleteModalOrder] = useState(null);
   const [deleteReason, setDeleteReason] = useState('');
+  const [deleteAttachment, setDeleteAttachment] = useState(null);
   const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
 
   // Payment update modal
@@ -376,16 +377,28 @@ export default function HistoryTransaction({
       });
       return;
     }
+    if (!deleteAttachment) {
+      showAlert({
+        title: 'Lampiran Wajib',
+        message: 'Lampirkan foto atau dokumen (PDF) pendukung sebelum mengirim pengajuan hapus nota.',
+        type: 'warning'
+      });
+      return;
+    }
 
     setIsSubmittingDelete(true);
     try {
-      await axios.patch(`/api/transactions/${deleteModalOrder.dbId || deleteModalOrder.id}/request-delete`, {
-        reason: deleteReason
+      const fd = new FormData();
+      fd.append('reason', deleteReason);
+      fd.append('attachment', deleteAttachment);
+      await axios.patch(`/api/transactions/${deleteModalOrder.dbId || deleteModalOrder.id}/request-delete`, fd, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
       });
 
       showAlert({ title: 'Request Delete Dikirim', message: `Pengajuan hapus nota ${deleteModalOrder.id} telah dikirim (Status: Pending)`, type: 'success' });
       setDeleteModalOrder(null);
       setDeleteReason('');
+      setDeleteAttachment(null);
       fetchTransactions();
     } catch (err) {
       console.error('Gagal pengajuan hapus nota:', err);
@@ -654,7 +667,19 @@ export default function HistoryTransaction({
 
                     {/* Pelanggan */}
                     <td className="py-3.5 px-6 text-center">
-                      <span className="font-extrabold text-[#313030] leading-tight">{formatName(order.customerName)}</span>
+                      <div className="mx-auto min-w-[160px] max-w-[260px]">
+                        <span className="block text-sm sm:text-[15px] font-black text-[#313030] leading-tight break-words">
+                          {formatName(order.customerName)}
+                        </span>
+                        {order.customerAddress && order.customerAddress !== '-' && (
+                          <span
+                            className="mt-1 block text-[11px] font-medium text-slate-500 leading-snug line-clamp-2 break-words"
+                            title={order.customerAddress}
+                          >
+                            {order.customerAddress}
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* No. WhatsApp (Clickable — buka chat WA langsung) */}
@@ -751,6 +776,8 @@ export default function HistoryTransaction({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
+                            setDeleteReason('');
+                            setDeleteAttachment(null);
                             setDeleteModalOrder(order);
                           }}
                           className="p-2 rounded-xl border border-rose-200 bg-rose-50/80 hover:bg-rose-600 hover:text-white text-rose-700 transition-all cursor-pointer shadow-2xs inline-flex items-center justify-center group/del"
@@ -777,8 +804,8 @@ export default function HistoryTransaction({
       {/* MODAL: REQUEST DELETE TRANSACTION */}
       {deleteModalOrder && (
         <div className="fixed inset-0 z-50 bg-[#313030]/60 backdrop-blur-xs flex justify-center items-center p-4">
-          <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-md shadow-2xl overflow-hidden animate-fade-in">
-            <div className="p-5 border-b border-[#e0e0e0] flex justify-between items-center bg-rose-50/50">
+          <div className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-md shadow-2xl overflow-hidden animate-fade-in flex flex-col max-h-[calc(100vh-2rem)]">
+            <div className="p-5 border-b border-[#e0e0e0] flex justify-between items-center bg-rose-50/50 shrink-0">
               <div className="flex items-center gap-2">
                 <Trash2 className="h-5 w-5 text-rose-600" />
                 <div>
@@ -791,7 +818,7 @@ export default function HistoryTransaction({
               </button>
             </div>
 
-            <div className="p-5 space-y-4 text-xs">
+            <div className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
               <div className="p-3 bg-slate-50 border border-[#e0e0e0] rounded-xl space-y-1">
                 <div className="flex justify-between">
                   <span className="font-bold text-slate-500">Pelanggan:</span>
@@ -816,12 +843,21 @@ export default function HistoryTransaction({
                 />
               </div>
 
+              <PaymentProofFields
+                orderNo={deleteModalOrder.id}
+                file={deleteAttachment}
+                onFile={setDeleteAttachment}
+                stage="delete_request"
+                label="Lampiran Pendukung — Foto / Dokumen PDF (Wajib)"
+                cameraTitle="Ambil Foto Lampiran Hapus Nota"
+              />
+
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 font-medium">
                 ⚠️ <strong>Catatan:</strong> Nota tidak akan langsung terhapus permanen dari sistem. Status akan berubah menjadi <strong>Pending Approval</strong> dan menunggu persetujuan dari Aplikasi Utama / Manager.
               </div>
             </div>
 
-            <div className="p-4 bg-slate-50 border-t border-[#e0e0e0] flex justify-end gap-2">
+            <div className="p-4 bg-slate-50 border-t border-[#e0e0e0] flex justify-end gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setDeleteModalOrder(null)}
@@ -831,9 +867,9 @@ export default function HistoryTransaction({
               </button>
               <button
                 type="button"
-                disabled={isSubmittingDelete}
+                disabled={isSubmittingDelete || !deleteReason.trim() || !deleteAttachment}
                 onClick={handleSubmitDeleteRequest}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs cursor-pointer flex items-center gap-1.5 shadow-2xs"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 <span>{isSubmittingDelete ? 'Mengirim...' : 'Kirim Request Hapus'}</span>

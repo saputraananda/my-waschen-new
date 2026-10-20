@@ -1,21 +1,7 @@
 import React from 'react';
 import { Users, Plus, Search, ArrowRight, ChevronLeft, ChevronRight, RefreshCw, Loader2 } from 'lucide-react';
 import { isEventOutletActive } from '../../../utils/authSession.js';
-
-function customerPickLabel(c) {
-  const street = String(c.street || '').trim();
-  const block = String(c.block || '').trim();
-  const house = String(c.houseNumber || '').trim();
-  const parts = [];
-  if (street && street !== '-') parts.push(street);
-  if (block && !street.toLowerCase().includes(block.toLowerCase())) {
-    parts.push(/^blok\b/i.test(block) ? block : `Blok ${block}`);
-  }
-  if (house && !street.toLowerCase().includes(house.toLowerCase())) {
-    parts.push(/^no\.?\b/i.test(house) ? house : `No. ${house}`);
-  }
-  return parts.join(', ');
-}
+import { customerPickLabel } from '../../../utils/customerPickLabel.js';
 
 /** Visible page buttons with ellipsis — avoids rendering 200+ buttons. */
 function pageWindow(current, total, siblings = 1) {
@@ -200,13 +186,13 @@ export default function SelectCustomer({
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <h3 className="font-black text-sm text-[#313030] group-hover:text-[#5f1340] transition-colors truncate min-w-0">
+                      <h3 className="font-black text-xl leading-tight text-[#313030] group-hover:text-[#5f1340] transition-colors truncate min-w-0">
                         {formatName(c.name)}
                       </h3>
                       {renderTierBadge(c.tier)}
                     </div>
                     {place && (
-                      <p className="text-[10px] font-bold text-[#5f1340] leading-snug line-clamp-2 mt-0.5">{place}</p>
+                      <p className="text-base font-bold text-[#5f1340] leading-snug line-clamp-2 mt-1">{place}</p>
                     )}
                     <span className="text-xs text-slate-400 font-medium block mt-0.5">{c.phone}</span>
                   </div>

@@ -2,7 +2,8 @@ const STAGE_PROCESS_LABEL = {
   frontliner: 'Frontliner',
   delivery: 'Pengantaran',
   handover: 'Serah Terima',
-  payment: 'Bukti Bayar'
+  payment: 'Bukti Bayar',
+  delete_request: 'Lampiran Hapus Nota'
 };
 
 function formatPhotoTimestampWib(date = new Date()) {

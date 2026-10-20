@@ -9,7 +9,7 @@ import { generateAccessCode } from '../utils/accessCode.js';
 import { isEventOutlet, isEventOutletOpen } from '../utils/eventOutlet.js';
 import { getEmployeeNames, fillFallbackNames } from '../utils/employeeName.js';
 import { buildCustomerTrackingUrl } from '../utils/customerTrackingUrl.js';
-import { replaceUploadUrl, safeUnlinkAbsPath } from '../middleware/upload.js';
+import { replaceUploadUrl, safeUnlinkAbsPath, buildUploadPublicUrl, DELETE_REQUEST_SUBDIR } from '../middleware/upload.js';
 import { toWibYmdCompact, formatWibTime } from '../utils/wib.js';
 import path from 'path';
 
@@ -1328,11 +1328,18 @@ export const markTransactionAsPaid = async (req, res) => {
  * Pengajuan Hapus Nota oleh Kasir (Status = Pending / 0, Menunggu Approval = 1)
  * Jika nota sudah dibayar (terutama Saldo Member), ikut tandai pengajuan refund
  * sebesar paid_amount agar app approval bisa mengembalikan dana.
+ * Wajib melampirkan foto/PDF pendukung (multipart field `attachment`).
  */
 export const requestDeleteTransaction = async (req, res) => {
+  let saved = false;
   try {
     const { id } = req.params;
     const { reason } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Lampiran foto/dokumen wajib disertakan untuk pengajuan hapus nota.' });
+    }
+    const attachmentUrl = buildUploadPublicUrl(`${DELETE_REQUEST_SUBDIR}/${path.basename(req.file.filename || req.file.path)}`);
 
     const [orderRows] = await myWaschenPool.query('SELECT * FROM tr_transaction WHERE id = ? OR order_no = ?', [id, id]);
     if (orderRows.length === 0) {
@@ -1350,6 +1357,7 @@ export const requestDeleteTransaction = async (req, res) => {
            delete_approval_status = 0,
            delete_requested_at = NOW(),
            delete_reason = ?,
+           delete_attachment_url = ?,
            is_refund_requested = CASE WHEN ? THEN 1 ELSE is_refund_requested END,
            refund_approval_status = CASE WHEN ? THEN 0 ELSE refund_approval_status END,
            refund_requested_at = CASE WHEN ? THEN NOW() ELSE refund_requested_at END,
@@ -1359,6 +1367,7 @@ export const requestDeleteTransaction = async (req, res) => {
        WHERE id = ?`,
       [
         reason || 'Request Hapus Nota oleh Kasir',
+        attachmentUrl,
         shouldRefundOnDelete ? 1 : 0,
         shouldRefundOnDelete ? 1 : 0,
         shouldRefundOnDelete ? 1 : 0,
@@ -1371,6 +1380,9 @@ export const requestDeleteTransaction = async (req, res) => {
         order.id
       ]
     );
+    saved = true;
+    // Pengajuan ulang: lampiran lama tidak dipakai lagi
+    await replaceUploadUrl(order.delete_attachment_url, attachmentUrl);
 
     emitDashboardRefresh('transaction:updated', {
       outletId: order.outlet_id,
@@ -1386,6 +1398,7 @@ export const requestDeleteTransaction = async (req, res) => {
         orderNo: order.order_no,
         isDeleteRequested: 1,
         deleteApprovalStatus: 0,
+        deleteAttachmentUrl: attachmentUrl,
         isRefundRequested: shouldRefundOnDelete ? 1 : 0,
         refundAmount: shouldRefundOnDelete ? paidAmount : 0
       }
@@ -1397,6 +1410,9 @@ export const requestDeleteTransaction = async (req, res) => {
       message: 'Gagal mengajukan hapus nota',
       error: error.message
     });
+  } finally {
+    // Pengajuan gagal → hapus file lampiran yang sudah terunggah
+    if (!saved && req.file?.path) await safeUnlinkAbsPath(req.file.path);
   }
 };
 

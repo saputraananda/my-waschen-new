@@ -105,15 +105,20 @@ export default function TransactionPage() {
     setCustomersError('');
     try {
       // Outlet Event: hanya pelanggan event tersebut, bukan seluruh pelanggan cabang
-      const params = isEventOutletActive() ? { outlet_id: activeOutletId } : undefined;
+      const isEvent = isEventOutletActive();
+      const params = isEvent ? { outlet_id: activeOutletId, lite: 1 } : { lite: 1 };
+      // Cabang biasa: muat pelanggan cabang yang dipilih saja; "Semua Cabang Outlet" = semua
+      const branch = String(selectedBranchFilter || '').trim();
+      if (!isEvent && branch && branch.toLowerCase() !== 'semua') params.home_branch = branch;
       const pendingAutoId = localStorage.getItem('autoSelectCustId');
-      if (params && pendingAutoId) pinnedCustIdsRef.current.add(pendingAutoId);
+      // Pelanggan pilihan otomatis bisa dari cabang lain / di luar event → tetap disertakan
+      if (pendingAutoId) pinnedCustIdsRef.current.add(pendingAutoId);
       const res = await axios.get('/api/customers', { params });
       // Abaikan response lama jika ada request lebih baru (hindari race double-fetch)
       if (reqId !== customersReqRef.current) return;
       if (res.data?.success && Array.isArray(res.data.data)) {
         const rows = [...res.data.data];
-        if (params && pinnedCustIdsRef.current.size) {
+        if (pinnedCustIdsRef.current.size) {
           const missing = [...pinnedCustIdsRef.current].filter(
             (pid) => !rows.some((c) => c.customer_code === pid || String(c.id) === pid)
           );
@@ -166,7 +171,7 @@ export default function TransactionPage() {
         setCustomersLoading(false);
       }
     }
-  }, [activeOutletId]);
+  }, [activeOutletId, selectedBranchFilter]);
 
   // Fetch pelanggan hanya saat Step 1 (hindari double-call di mount + auth effect)
   useEffect(() => {
