@@ -100,6 +100,14 @@ export default function EventDistribution() {
     return next;
   });
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(selectable.map((it) => it.id)));
+  // Klik satu nota -> pilih / batal pilih semua item nota itu yang belum terkunci
+  const toggleNota = (rows) => setSelected((prev) => {
+    const ids = rows.filter((it) => !it.locked).map((it) => it.id);
+    const next = new Set(prev);
+    if (ids.every((id) => next.has(id))) ids.forEach((id) => next.delete(id));
+    else ids.forEach((id) => next.add(id));
+    return next;
+  });
 
   const grouped = useMemo(() => {
     const map = new Map();
@@ -137,7 +145,7 @@ export default function EventDistribution() {
         setActiveOutletId={setActiveOutletId}
         userProfile={userProfile}
       />
-      <main className="max-w-[1200px] w-full mx-auto p-3 sm:p-5 lg:p-6 flex flex-col gap-4">
+      <main className="max-w-[1500px] w-full min-w-0 mx-auto p-3 sm:p-6 flex-grow flex flex-col gap-4 sm:gap-6">
         <div className="bg-white border border-[#e0e0e0] rounded-3xl p-4 sm:p-6">
           <h1 className="text-lg sm:text-2xl font-black flex items-center gap-2">
             <Share2 className="h-5 w-5 sm:h-6 sm:w-6 text-[#5f1340] shrink-0" />
@@ -235,13 +243,39 @@ export default function EventDistribution() {
             <p className="py-12 text-center text-sm text-slate-400">Tidak ada item event pada filter ini.</p>
           ) : (
             <div className="flex flex-col gap-3">
-              {grouped.map(({ head, rows }) => (
-                <div key={head.transaction_id} className="border border-[#e0e0e0] rounded-2xl overflow-hidden">
-                  <div className="px-3 py-2 bg-[#f8f8f8] flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span className="text-sm font-black">{head.order_no}</span>
-                    <span className="text-xs text-slate-500 font-bold">{head.customer_name}</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-lg bg-white border border-[#e0e0e0] font-extrabold">{head.payment_status}</span>
-                  </div>
+              {grouped.map(({ head, rows }) => {
+                const open = rows.filter((it) => !it.locked);
+                const picked = open.filter((it) => selected.has(it.id)).length;
+                const notaChecked = open.length > 0 && picked === open.length;
+                return (
+                <div
+                  key={head.transaction_id}
+                  className={`border rounded-2xl overflow-hidden ${picked ? 'border-[#5f1340]/40' : 'border-[#e0e0e0]'}`}
+                >
+                  <label
+                    className={`px-3 py-2.5 flex items-start gap-3 ${picked ? 'bg-[#5f1340]/5' : 'bg-[#f8f8f8]'} ${open.length ? 'cursor-pointer hover:bg-[#5f1340]/10' : 'cursor-not-allowed'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={notaChecked}
+                      ref={(el) => { if (el) el.indeterminate = picked > 0 && !notaChecked; }}
+                      disabled={!open.length}
+                      onChange={() => toggleNota(rows)}
+                      aria-label={`Pilih semua item nota ${head.order_no}`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span className="text-sm font-black">{head.order_no}</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-lg bg-white border border-[#e0e0e0] font-extrabold">{head.payment_status}</span>
+                        {picked > 0 && (
+                          <span className="text-[10px] font-extrabold text-[#5f1340]">{picked}/{open.length} item dipilih</span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-sm font-extrabold text-[#313030] break-words">{head.customer_name || '-'}</p>
+                      <p className="text-xs text-slate-500 break-words">{head.customer_address || 'Alamat belum diisi'}</p>
+                    </div>
+                  </label>
                   <ul className="divide-y divide-[#f0f0f0]">
                     {rows.map((it) => (
                       <li key={it.id} className="px-3 py-2 flex items-center gap-3">
@@ -271,7 +305,8 @@ export default function EventDistribution() {
                     ))}
                   </ul>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

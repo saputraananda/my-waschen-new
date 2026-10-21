@@ -183,8 +183,12 @@ const ITEM_SQL = `
   SELECT d.id, d.transaction_id, d.service_name, d.qty, d.unit, d.item_work_status,
          d.has_finding, d.finding_note, d.is_on_hold, d.hold_stage, d.requires_ironing,
          d.fulfillment_type, d.brand, d.color, d.condition_notes,
+         d.is_event, d.production_outlet_id, po.name AS production_outlet_name,
+         t.outlet_id AS txn_outlet_id,
          cat.code AS category_code
   FROM tr_transaction_detail d
+  JOIN tr_transaction t ON t.id = d.transaction_id
+  LEFT JOIN mst_outlet po ON po.id = d.production_outlet_id
   LEFT JOIN mst_service s ON s.id = d.service_id
   LEFT JOIN mst_service_category cat ON cat.id = s.category_id
   WHERE d.transaction_id IN (?) AND d.is_production = 1
@@ -211,7 +215,13 @@ export const getQcList = async (req, res) => {
       : (isDeliveryStaff ? 'delivery' : 'all');
 
     const statuses = tab === 'delivery' ? ['Siap Diantar', 'Sedang Diantar'] : ['Antrean'];
-    const params = [outletId, ...statuses];
+    // Item event yang sudah dibagi ke outlet ini tapi belum QC awal juga muncul di tab Frontliner
+    // (barang bisa tiba di cabang lebih dulu). Stand Event tetap melihatnya lewat t.outlet_id.
+    const includeAssignedEvent = tab === 'frontliner';
+    const outletScopeSql = includeAssignedEvent
+      ? `(t.outlet_id = ? OR (d.is_event = 1 AND d.production_outlet_id = ?))`
+      : `t.outlet_id = ?`;
+    const params = includeAssignedEvent ? [outletId, outletId, ...statuses] : [outletId, ...statuses];
     let extra = '';
     if (tab === 'delivery' || pickup === 'delivery') {
       extra += ` AND d.fulfillment_type = 'Delivery_Kurir'`;
@@ -231,7 +241,7 @@ export const getQcList = async (req, res) => {
        FROM tr_transaction t
        JOIN tr_transaction_detail d ON d.transaction_id = t.id
        LEFT JOIN mst_customer c ON c.id = t.customer_id
-       WHERE t.outlet_id = ?
+       WHERE ${outletScopeSql}
          AND d.item_work_status IN (${statuses.map(() => '?').join(',')})
          AND COALESCE(d.item_work_status, '') != 'Dibatalkan'
          ${extra}
@@ -243,7 +253,13 @@ export const getQcList = async (req, res) => {
     let items = [];
     if (txns.length) {
       const [detailRows] = await myWaschenPool.query(ITEM_SQL, [txns.map((t) => t.id)]);
-      items = detailRows;
+      // Nota event: stand Event melihat semua item notanya; cabang hanya item yang dibagi ke cabangnya
+      items = detailRows.filter(
+        (d) =>
+          Number(d.is_event) !== 1 ||
+          Number(d.txn_outlet_id) === outletId ||
+          Number(d.production_outlet_id) === outletId
+      );
     }
 
     let holds = [];
@@ -261,10 +277,11 @@ export const getQcList = async (req, res) => {
          LEFT JOIN mst_service_category cat ON cat.id = s.category_id
          JOIN tr_item_progress p ON p.transaction_detail_id = d.id
            AND p.status IN ('hold','returned') AND p.hold_resolved_at IS NULL
-         WHERE d.is_on_hold = 1 AND t.outlet_id = ?
+         WHERE d.is_on_hold = 1
+           AND (t.outlet_id = ? OR (d.is_event = 1 AND d.production_outlet_id = ?))
            AND COALESCE(p.returned_to_stage, p.stage) = 'frontliner'
          ORDER BY p.created_at ASC`,
-        [outletId]
+        [outletId, outletId]
       );
 
       // Foto bukti temuan tersimpan di server Waschen Mobile -> URL absolut ke sana

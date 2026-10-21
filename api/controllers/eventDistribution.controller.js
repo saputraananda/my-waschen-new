@@ -76,6 +76,7 @@ export const getEventItems = async (req, res) => {
     const [rows] = await myWaschenPool.query(
       `SELECT d.id, d.transaction_id, t.order_no, t.order_date, t.payment_status,
               c.name AS customer_name, c.phone AS customer_phone,
+              COALESCE(NULLIF(TRIM(c.full_address), ''), NULLIF(TRIM(c.address), '')) AS customer_address,
               d.service_name, d.qty, d.unit, d.item_work_status,
               d.production_outlet_id, o.name AS production_outlet_name,
               d.production_assigned_at,
