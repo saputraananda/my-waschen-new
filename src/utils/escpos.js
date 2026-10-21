@@ -209,13 +209,13 @@ async function renderHeaderRaster(row) {
   const laidOut = [];
   lines.forEach((l, i) => {
     const font = i === 0 && !titleLines.length
-      ? (large ? 'bold 21px monospace' : 'bold 18px monospace')
-      : (large ? '18px monospace' : '16px monospace');
-    const h = large ? (i === 0 ? 25 : 22) : lineH;
+      ? (large ? 'bold 26px monospace' : 'bold 18px monospace')
+      : (large ? 'bold 22px monospace' : '16px monospace');
+    const h = large ? (i === 0 ? 30 : 26) : lineH;
     ctx.font = font;
     if (large && ((row.nowrap || []).includes(i) || !l.trim().includes(' '))) {
       // Wajib satu baris (mis. no. telp): jangan dipotong/dibungkus, kecilkan huruf sampai muat
-      let px = i === 0 && !titleLines.length ? 21 : 18;
+      let px = i === 0 && !titleLines.length ? 26 : 22;
       const weight = font.startsWith('bold') ? 'bold ' : '';
       while (px > 12 && ctx.measureText(l).width > maxTextW) {
         px -= 1;

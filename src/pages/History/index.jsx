@@ -160,10 +160,10 @@ export default function History() {
 
           <button
             onClick={startOrderFlow}
-            className="flex items-center gap-2 px-5 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] text-white font-black rounded-xl text-xs transition-all shadow-2xs cursor-pointer"
+            className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] text-white font-black rounded-xl text-xs transition-all shadow-2xs cursor-pointer whitespace-nowrap"
           >
             <ShoppingBag className="h-4 w-4" />
-            <span>+ Order Transaksi Baru</span>
+            <span>Order</span>
           </button>
         </div>
 

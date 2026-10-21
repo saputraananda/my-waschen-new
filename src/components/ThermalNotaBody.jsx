@@ -61,8 +61,8 @@ export default function ThermalNotaBody({
                         key={i}
                         className={`${row.size === 'large' && ((row.nowrap || []).includes(i) || !String(l).trim().includes(' ')) ? 'whitespace-nowrap' : 'break-words'} ${
                           i === 0 && !row.title
-                            ? (row.size === 'large' ? 'font-bold text-[12px] sm:text-[13px] leading-tight' : 'font-bold text-[10px] sm:text-[11px]')
-                            : (row.size === 'large' ? 'text-[10px] sm:text-[11px] leading-snug' : 'text-[8px] sm:text-[9px]')
+                            ? (row.size === 'large' ? 'font-bold text-[15px] sm:text-[16px] leading-tight' : 'font-bold text-[10px] sm:text-[11px]')
+                            : (row.size === 'large' ? 'font-semibold text-[13px] sm:text-[14px] leading-snug' : 'text-[8px] sm:text-[9px]')
                         }`}
                       >
                         {l}

@@ -226,7 +226,8 @@ export const getQcList = async (req, res) => {
 
     const [txns] = await myWaschenPool.query(
       `SELECT DISTINCT t.id, t.order_no, t.order_date, t.payment_status, t.outlet_id,
-              c.name AS customer_name, c.phone AS customer_phone
+              c.name AS customer_name, c.phone AS customer_phone,
+              c.address AS customer_street, c.block AS customer_block, c.house_number AS customer_house_number
        FROM tr_transaction t
        JOIN tr_transaction_detail d ON d.transaction_id = t.id
        LEFT JOIN mst_customer c ON c.id = t.customer_id
@@ -305,6 +306,23 @@ export const getQcList = async (req, res) => {
   }
 };
 
+/** GET /api/qc/item-kg — master jenis pakaian kiloan (aktif) untuk rinci opsional Frontliner/Delivery */
+export const getItemKgMaster = async (req, res) => {
+  try {
+    const actor = await resolveActor(req);
+    if (!actor) {
+      return res.status(401).json({ success: false, message: 'Sesi tidak valid, silakan login ulang' });
+    }
+    const [rows] = await myWaschenPool.query(
+      'SELECT id, name FROM mst_item_kg WHERE is_active = 1 ORDER BY sort_order ASC, name ASC'
+    );
+    return res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error('getItemKgMaster:', error);
+    return res.status(500).json({ success: false, message: 'Gagal memuat master jenis pakaian' });
+  }
+};
+
 export const submitPosQc = async (req, res) => {
   try {
     const actor = await resolveActor(req);
@@ -316,7 +334,7 @@ export const submitPosQc = async (req, res) => {
     fd.append('employee_id', String(actor.employeeId));
     for (const key of [
       'transaction_detail_id', 'stage', 'qc_status', 'qc_decision', 'returned_to_stage',
-      'notes', 'wa_contacted', 'requires_ironing', 'bags', 'packings'
+      'notes', 'wa_contacted', 'requires_ironing', 'bags', 'packings', 'kg_items'
     ]) {
       const value = req.body?.[key];
       if (value != null && String(value) !== '') fd.append(key, String(value));

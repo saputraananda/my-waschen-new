@@ -2,11 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { ClipboardCheck, Camera, Images, QrCode, X, Loader2, Truck, Store, MessageCircle, CheckCircle2, XCircle, PauseCircle, Plus, Trash2 } from 'lucide-react';
+import { ClipboardCheck, Camera, Images, QrCode, X, Loader2, Truck, Store, MessageCircle, CheckCircle2, XCircle, PauseCircle, Plus, Trash2, ChevronDown } from 'lucide-react';
 import HeaderNav from '../../../components/HeaderNav';
 import QcCameraModal from '../../../components/QcCameraModal.jsx';
 import { extractOrderNo } from '../../../utils/extractOrderNo.js';
 import { burnQcPhoto, buildQcPhotoLines } from '../../../utils/qcPhotoStamp.js';
+import { customerPickLabel } from '../../../utils/customerPickLabel.js';
 
 const MAX_PHOTOS = 5;
 const QC_PHOTO = { maxEdge: 2560, quality: 0.95 };
@@ -97,6 +98,11 @@ async function downloadPhotoUrls(urls) {
   }));
 }
 
+/** Total pcs rinci jenis pakaian satu plastik (master + lainnya). */
+const kgBagSum = (b) =>
+  Object.values(b.kg || {}).reduce((s, v) => s + (Number(v) || 0), 0) +
+  (b.others || []).reduce((s, o) => s + (Number(o.qty) || 0), 0);
+
 const isKiloan = (item) =>
   item?.category_code === 'KILOAN' || String(item?.unit || '').toLowerCase() === 'kg';
 
@@ -158,7 +164,8 @@ function QcSheet({ target, onClose, onSaved }) {
   const [notes, setNotes] = useState('');
   const [waContacted, setWaContacted] = useState(false);
   const [requiresIroning, setRequiresIroning] = useState(Number(item?.requires_ironing) !== 0);
-  const [bags, setBags] = useState([{ qty: '' }]);
+  const [bags, setBags] = useState([{ qty: '', kg: {}, others: [] }]);
+  const [kgMaster, setKgMaster] = useState([]);
   const [photos, setPhotos] = useState([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -173,6 +180,16 @@ function QcSheet({ target, onClose, onSaved }) {
   useEffect(() => () => {
     photosRef.current.forEach((p) => URL.revokeObjectURL(p.preview));
   }, []);
+
+  // Rinci jenis pakaian opsional (bantu Tim Cuci saat load penuh)
+  useEffect(() => {
+    if (!needBags) return undefined;
+    let cancelled = false;
+    axios.get('/api/qc/item-kg', authCfg())
+      .then((res) => { if (!cancelled) setKgMaster(res.data?.data || []); })
+      .catch(() => { if (!cancelled) setKgMaster([]); });
+    return () => { cancelled = true; };
+  }, [needBags]);
 
   const addPhoto = async (file, { alreadyStamped = false } = {}) => {
     if (!file || photos.length >= MAX_PHOTOS) return;
@@ -202,6 +219,18 @@ function QcSheet({ target, onClose, onSaved }) {
       setError('Isi jumlah pakaian di setiap plastik.');
       return;
     }
+    if (needBags) {
+      const mismatchIdx = bags.findIndex((b) => kgBagSum(b) > 0 && kgBagSum(b) !== Number(b.qty));
+      if (mismatchIdx >= 0) {
+        const b = bags[mismatchIdx];
+        setError(`Plastik ${mismatchIdx + 1}: total rincian (${kgBagSum(b)}) harus sama dengan jumlah plastik (${Number(b.qty)}), atau kosongkan rinciannya.`);
+        return;
+      }
+      if (bags.some((b) => b.others.some((o) => Number(o.qty) > 0 && !o.name.trim()))) {
+        setError('Rincian "Lainnya": nama jenis pakaian wajib diisi.');
+        return;
+      }
+    }
     setBusy(true);
     try {
       const fd = new FormData();
@@ -214,6 +243,15 @@ function QcSheet({ target, onClose, onSaved }) {
       if (askIroning) fd.append('requires_ironing', requiresIroning ? '1' : '0');
       if (needBags) {
         fd.append('bags', JSON.stringify(bags.map((b, i) => ({ bag_no: i + 1, qty_pcs: Number(b.qty) }))));
+        const kgItems = bags.flatMap((b, i) => [
+          ...Object.entries(b.kg)
+            .filter(([, q]) => Number(q) > 0)
+            .map(([id, q]) => ({ bag_no: i + 1, item_kg_id: Number(id), qty_pcs: Number(q) })),
+          ...b.others
+            .filter((o) => Number(o.qty) > 0)
+            .map((o) => ({ bag_no: i + 1, item_name: o.name.trim(), qty_pcs: Number(o.qty) }))
+        ]);
+        if (kgItems.length) fd.append('kg_items', JSON.stringify(kgItems));
       }
       photos.forEach((p) => fd.append('photos', p.file, p.file.name));
       const res = await axios.post('/api/qc/submit', fd, authCfg());
@@ -247,27 +285,103 @@ function QcSheet({ target, onClose, onSaved }) {
 
           {needBags && (
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Rincian Plastik — {STAGE_LABEL[stage] || stage}</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Rincian Plastik — {STAGE_LABEL[stage] || stage}</p>
+              <p className="text-[10.5px] text-slate-500 leading-snug mb-2">
+                Rinci jenis pakaian boleh dilewati (dikerjakan Tim Cuci). Jika diisi, total rincian per plastik harus sama dengan jumlah plastik.
+              </p>
               <div className="flex flex-col gap-2">
-                {bags.map((b, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="text-[11px] font-bold text-slate-500 w-[70px] shrink-0">Plastik {i + 1}</span>
-                    <input
-                      inputMode="numeric"
-                      value={b.qty}
-                      onChange={(e) => setBags((prev) => prev.map((row, idx) => idx === i ? { qty: e.target.value.replace(/[^\d]/g, '') } : row))}
-                      placeholder="Contoh : 10"
-                      className="flex-1 min-w-0 text-xs font-bold text-slate-700 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl px-3 py-2 outline-none"
-                    />
-                    {bags.length > 1 && (
-                      <button type="button" onClick={() => setBags((prev) => prev.filter((_, idx) => idx !== i))} className="w-8 h-8 rounded-[10px] border border-red-200 bg-red-50 text-red-500 grid place-items-center shrink-0" aria-label={`Hapus plastik ${i + 1}`}>
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                {bags.map((b, i) => {
+                  const patchBag = (fn) => setBags((prev) => prev.map((row, idx) => (idx === i ? fn(row) : row)));
+                  const kgSum = kgBagSum(b);
+                  const kgMatch = kgSum > 0 && kgSum === Number(b.qty);
+                  return (
+                    <div key={i} className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold text-slate-500 w-[70px] shrink-0">Plastik {i + 1}</span>
+                        <input
+                          inputMode="numeric"
+                          value={b.qty}
+                          onChange={(e) => patchBag((row) => ({ ...row, qty: e.target.value.replace(/[^\d]/g, '') }))}
+                          placeholder="Contoh : 10"
+                          className="flex-1 min-w-0 text-xs font-bold text-slate-700 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl px-3 py-2 outline-none"
+                        />
+                        {bags.length > 1 && (
+                          <button type="button" onClick={() => setBags((prev) => prev.filter((_, idx) => idx !== i))} className="w-8 h-8 rounded-[10px] border border-red-200 bg-red-50 text-red-500 grid place-items-center shrink-0" aria-label={`Hapus plastik ${i + 1}`}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      <details className="group sm:ml-[78px] rounded-xl border border-dashed border-[#5f1340]/30 bg-[#5f1340]/[0.03] overflow-hidden">
+                        <summary className="list-none cursor-pointer px-3 py-2 flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-extrabold text-[#5f1340]">Rinci jenis pakaian (opsional)</span>
+                          <span className="flex items-center gap-1.5 text-[10.5px] font-extrabold">
+                            {kgSum > 0 && (
+                              <span className={kgMatch ? 'text-emerald-600' : 'text-amber-600'}>
+                                {kgSum}/{Number(b.qty) || 0} pcs
+                              </span>
+                            )}
+                            <ChevronDown className="w-4 h-4 text-[#5f1340] transition-transform group-open:rotate-180" />
+                          </span>
+                        </summary>
+                        <div className="border-t border-[#5f1340]/10 bg-white p-2 flex flex-col gap-1.5">
+                          {kgMaster.map((m) => (
+                            <div key={m.id} className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-semibold text-slate-700 min-w-0 truncate">{m.name}</span>
+                              <input
+                                inputMode="numeric"
+                                placeholder="0"
+                                aria-label={`Plastik ${i + 1} ${m.name}`}
+                                value={b.kg[m.id] ?? ''}
+                                onChange={(e) => patchBag((row) => ({ ...row, kg: { ...row.kg, [m.id]: e.target.value.replace(/[^\d]/g, '').slice(0, 3) } }))}
+                                className="w-16 shrink-0 text-xs font-bold text-slate-700 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl px-2 py-1.5 outline-none text-center"
+                              />
+                            </div>
+                          ))}
+                          {b.others.map((o, oi) => {
+                            const patchOther = (p) => patchBag((row) => ({ ...row, others: row.others.map((y, yi) => (yi === oi ? { ...y, ...p } : y)) }));
+                            return (
+                              <div key={`o${oi}`} className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  maxLength={100}
+                                  placeholder="Lainnya, contoh : Selimut"
+                                  value={o.name}
+                                  onChange={(e) => patchOther({ name: e.target.value })}
+                                  className="flex-1 min-w-0 text-xs font-semibold text-slate-700 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl px-2.5 py-1.5 outline-none"
+                                />
+                                <input
+                                  inputMode="numeric"
+                                  placeholder="0"
+                                  aria-label={`Plastik ${i + 1} lainnya ${oi + 1}`}
+                                  value={o.qty}
+                                  onChange={(e) => patchOther({ qty: e.target.value.replace(/[^\d]/g, '').slice(0, 3) })}
+                                  className="w-16 shrink-0 text-xs font-bold text-slate-700 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl px-2 py-1.5 outline-none text-center"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => patchBag((row) => ({ ...row, others: row.others.filter((_, yi) => yi !== oi) }))}
+                                  className="w-8 h-8 rounded-[10px] border border-red-200 bg-red-50 text-red-500 grid place-items-center shrink-0"
+                                  aria-label={`Hapus lainnya ${oi + 1}`}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                          <button
+                            type="button"
+                            onClick={() => patchBag((row) => ({ ...row, others: [...row.others, { name: '', qty: '' }] }))}
+                            className="self-start pt-1 text-[11px] font-extrabold text-[#5f1340] flex items-center gap-1"
+                          >
+                            <Plus className="w-3.5 h-3.5" /> Lainnya
+                          </button>
+                        </div>
+                      </details>
+                    </div>
+                  );
+                })}
               </div>
-              <button type="button" onClick={() => setBags((prev) => [...prev, { qty: '' }])} className="mt-2 text-[11px] font-extrabold text-[#5f1340] flex items-center gap-1">
+              <button type="button" onClick={() => setBags((prev) => [...prev, { qty: '', kg: {}, others: [] }])} className="mt-2 text-[11px] font-extrabold text-[#5f1340] flex items-center gap-1">
                 <Plus className="w-3.5 h-3.5" /> Tambah Plastik
               </button>
             </div>
@@ -837,13 +951,21 @@ export default function QCFrontDeliv() {
               const items = visibleItems(txn);
               const lunas = String(txn.payment_status || '').toLowerCase() === 'lunas';
               const isPickup = items.some((it) => it.fulfillment_type === 'Delivery_Kurir');
+              const place = customerPickLabel({
+                street: txn.customer_street,
+                block: txn.customer_block,
+                houseNumber: txn.customer_house_number
+              });
               return (
                 <div key={txn.id} className="bg-white border border-[#e0e0e0] rounded-3xl p-4 sm:p-5 flex flex-col gap-4 min-w-0">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-black text-sm text-[#5f1340] truncate">{txn.order_no}</p>
-                      <p className="text-xs text-slate-500 truncate mt-0.5">{txn.customer_name}</p>
-                      {txn.customer_phone && <p className="text-[11px] text-slate-400 mt-0.5">{txn.customer_phone}</p>}
+                      <p className="font-black text-base leading-tight text-[#313030] truncate mt-1">{txn.customer_name}</p>
+                      {place && (
+                        <p className="text-sm font-bold text-[#5f1340] leading-snug line-clamp-2 mt-0.5">{place}</p>
+                      )}
+                      {txn.customer_phone && <p className="text-xs text-slate-400 font-medium mt-0.5">{txn.customer_phone}</p>}
                       <span className={`inline-flex items-center gap-1 mt-2 text-[10px] font-black px-2.5 py-1 rounded-lg border ${isPickup ? 'bg-[#5f1340]/5 text-[#5f1340] border-[#5f1340]/20' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
                         {isPickup ? <Truck className="h-3 w-3" /> : <Store className="h-3 w-3" />}
                         {isPickup ? 'Antar-Jemput' : 'Ambil di Outlet'}
