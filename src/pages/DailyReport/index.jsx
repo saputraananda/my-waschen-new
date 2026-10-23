@@ -181,7 +181,7 @@ export default function DailyReport() {
               {s.close_type === 'Final' && (
                 <div className="p-3 bg-slate-50 border border-[#e0e0e0] rounded-xl text-[11px] space-y-2">
                   <span className="text-[9px] text-slate-400 font-bold uppercase flex items-center gap-1.5">
-                    <Banknote className="h-3.5 w-3.5" /> Setoran Tunai (diupload hari berikutnya)
+                    <Banknote className="h-3.5 w-3.5" /> Setoran Tunai
                   </span>
                   {s.deposit_proof_url ? (
                     <div className="flex flex-wrap items-start gap-3">
@@ -198,12 +198,22 @@ export default function DailyReport() {
                       )}
                       {s.deposit_uploaded_at && (
                         <span className="text-slate-400">
-                          · {new Date(s.deposit_uploaded_at).toLocaleString('id-ID')}
+                          · {s.deposit_uploaded_by_name ? `${formatEmployeeName(s.deposit_uploaded_by_name)} · ` : ''}
+                          {new Date(s.deposit_uploaded_at).toLocaleString('id-ID')}
                         </span>
                       )}
                     </div>
                   ) : (
-                    <span className="text-amber-700 font-bold">Belum diupload</span>
+                    <span className="text-amber-700 font-bold">
+                      Belum diupload —{' '}
+                      <button
+                        type="button"
+                        onClick={() => navigate('/deposit-report')}
+                        className="underline cursor-pointer"
+                      >
+                        buka menu Setoran Tunai
+                      </button>
+                    </span>
                   )}
                 </div>
               )}

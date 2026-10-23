@@ -9,7 +9,8 @@ import {
   Package,
   ClipboardCheck,
   MessageSquareWarning,
-  Share2
+  Share2,
+  Banknote
 } from 'lucide-react';
 import { useShiftOptional } from '../../../context/ShiftContext.jsx';
 import { canUseEventDistribution } from '../../../utils/authSession.js';
@@ -99,6 +100,16 @@ const MENU_ITEMS = [
     labelHover: 'group-hover:text-orange-700'
   },
   {
+    key: 'deposit-report',
+    path: '/deposit-report',
+    label: 'Setoran Tunai',
+    hint: 'Bukti Setor Closing',
+    noShiftGate: true,
+    icon: Banknote,
+    iconWrap: 'bg-lime-50 text-lime-700 group-hover:bg-lime-100/60',
+    labelHover: 'group-hover:text-lime-700'
+  },
+  {
     key: 'event-distribusi',
     path: '/event-distribusi',
     label: 'Distribusi Event',
@@ -120,14 +131,22 @@ export default function Menu({ navigate, onOrderClick }) {
   const showShiftLock = Boolean(mustGateShift && shiftChecked && !isShiftReady);
 
   const visibleItems = MENU_ITEMS.filter((item) => !item.eventOnly || canUseEventDistribution());
-  // 10 menu (dengan Distribusi Event): 5 atas + 5 bawah. 9 menu: satu baris di layar lebar.
-  const gridCols = visibleItems.length === 10
-    ? 'md:grid-cols-5'
-    : 'lg:grid-cols-4 xl:grid-cols-9';
+  // 10 menu: 5 atas + 5 bawah. 11 menu (dengan Distribusi Event): 6 + 5. Selain itu satu baris di layar lebar.
+  const gridCols = visibleItems.length === 11
+    ? 'md:grid-cols-6'
+    : visibleItems.length === 10
+      ? 'md:grid-cols-5'
+      : 'lg:grid-cols-4 xl:grid-cols-9';
 
   const handleMenuClick = (item) => {
     if (item.useOrderFlow && onOrderClick) {
       onOrderClick();
+      return;
+    }
+
+    // Halaman laporan (mis. Setoran Tunai) boleh dibuka tanpa shift terbuka
+    if (item.noShiftGate) {
+      navigate(item.path);
       return;
     }
 
@@ -152,7 +171,7 @@ export default function Menu({ navigate, onOrderClick }) {
       <div className={`grid grid-cols-2 sm:grid-cols-3 gap-3.5 ${gridCols}`}>
         {visibleItems.map((item) => {
           const Icon = item.icon;
-          const locked = showShiftLock;
+          const locked = showShiftLock && !item.noShiftGate;
           return (
             <button
               key={item.key}

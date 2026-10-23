@@ -8,18 +8,13 @@ import {
   closeShift,
   getDailyReport,
   verifyPin,
-  resumeShift,
-  getPendingDeposit,
-  uploadDepositProof
+  resumeShift
 } from '../controllers/shift.controller.js';
-import { uploadDepositReport, verifyUploadContents } from '../middleware/upload.js';
-import { requirePosAuth } from '../middleware/requireAuth.js';
 
 const router = Router();
 
 router.get('/current', getCurrentShift);
 router.get('/previous-closing', getPreviousClosing);
-router.get('/pending-deposit', getPendingDeposit);
 router.get('/daily-report', getDailyReport);
 router.post('/open', openShift);
 router.post('/verify-pin', verifyPin);
@@ -27,6 +22,5 @@ router.post('/:id/resume', resumeShift);
 router.get('/:id/transactions', getShiftTransactions);
 router.post('/:id/verify-txn', verifyShiftTxn);
 router.post('/:id/close', closeShift);
-router.post('/:id/deposit-proof', requirePosAuth, uploadDepositReport, verifyUploadContents, uploadDepositProof);
 
 export default router;

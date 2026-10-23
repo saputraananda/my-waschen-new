@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 import { formatRupiah, parseRupiah } from '../../utils/FormatRupiah.js';
-import { Wallet, AlertTriangle, X } from 'lucide-react';
+import { Wallet, AlertTriangle, X, Banknote, ChevronRight } from 'lucide-react';
 
 export default function OpenShiftModal({
   outletId,
@@ -9,6 +10,7 @@ export default function OpenShiftModal({
   onOpened,
   onCancel
 }) {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [previousCash, setPreviousCash] = useState(0);
@@ -18,6 +20,21 @@ export default function OpenShiftModal({
   const [showReasonModal, setShowReasonModal] = useState(false);
   const [imbalanceReason, setImbalanceReason] = useState('');
   const [error, setError] = useState('');
+  /** Closing Final yang belum ada bukti setoran tunainya. Hanya pemberitahuan, tidak memblokir. */
+  const [pendingDeposit, setPendingDeposit] = useState({ pendingCount: 0, lateCount: 0 });
+
+  useEffect(() => {
+    let cancelled = false;
+    axios.get('/api/deposit-report/pending-count', {
+      params: { outlet_id: outletId || 2 },
+      headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+    })
+      .then((res) => {
+        if (!cancelled && res.data?.success) setPendingDeposit(res.data.data);
+      })
+      .catch(() => { /* badge opsional */ });
+    return () => { cancelled = true; };
+  }, [outletId]);
 
   useEffect(() => {
     const load = async () => {
@@ -123,6 +140,29 @@ export default function OpenShiftModal({
               </button>
             )}
           </div>
+
+          {pendingDeposit.pendingCount > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                onCancel?.();
+                navigate('/deposit-report');
+              }}
+              className={`w-full px-5 py-3 flex items-center gap-3 text-left border-b cursor-pointer transition-colors ${
+                pendingDeposit.lateCount > 0
+                  ? 'bg-rose-50 border-rose-200 hover:bg-rose-100/70'
+                  : 'bg-amber-50 border-amber-200 hover:bg-amber-100/70'
+              }`}
+            >
+              <Banknote className={`h-4 w-4 shrink-0 ${pendingDeposit.lateCount > 0 ? 'text-rose-700' : 'text-amber-700'}`} />
+              <span className={`flex-1 text-[11px] font-black ${pendingDeposit.lateCount > 0 ? 'text-rose-800' : 'text-amber-800'}`}>
+                Ada {pendingDeposit.pendingCount} Setoran Belum Diupload
+                {pendingDeposit.lateCount > 0 && ` (${pendingDeposit.lateCount} terlambat)`}
+                <span className="block text-[10px] font-medium opacity-80">Tidak menghalangi open shift. Ketuk untuk upload di menu Setoran Tunai.</span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+            </button>
+          )}
 
           {loading ? (
             <div className="p-10 text-center text-xs text-slate-400 font-bold">Memuat riwayat closing...</div>

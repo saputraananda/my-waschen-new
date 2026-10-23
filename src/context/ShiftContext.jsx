@@ -4,7 +4,6 @@ import axios from 'axios';
 import OpenShiftModal from '../pages/Shift/OpenShiftModal.jsx';
 import CloseShiftModal from '../pages/Shift/CloseShiftModal.jsx';
 import ResumeShiftModal from '../pages/Shift/ResumeShiftModal.jsx';
-import UploadDepositModal from '../pages/Shift/UploadDepositModal.jsx';
 import {
   clearShiftFromStorage,
   getLoggedInEmployeeId,
@@ -18,7 +17,7 @@ import {
 const ShiftContext = createContext(null);
 
 /** Path yang boleh diakses tanpa shift terbuka. Daily report tetap dibuka setelah close shift. */
-const SHIFT_FREE_PATHS = ['/login', '/', '/dashboard', '/daily-report', '/event-distribusi'];
+const SHIFT_FREE_PATHS = ['/login', '/', '/dashboard', '/daily-report', '/deposit-report', '/event-distribusi'];
 
 function isShiftFreePath(pathname) {
   if (!pathname) return false;
@@ -63,10 +62,6 @@ export function ShiftProvider({ children }) {
   const [isCloseShiftOpen, setIsCloseShiftOpen] = useState(false);
   const [pendingNavigatePath, setPendingNavigatePath] = useState(null);
   const [outletId, setOutletId] = useState(localStorage.getItem('activeOutletId') || '2');
-  /** Setoran tunai closing Final sebelumnya yang belum diupload buktinya (gate open/close shift) */
-  const [pendingDeposit, setPendingDeposit] = useState(null);
-  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
-  const [depositGateReason, setDepositGateReason] = useState(null); // 'open' | 'close'
   /** Reactive auth flags — di-sync setelah login / ganti route (localStorage tidak trigger re-render) */
   const [mustGateShift, setMustGateShift] = useState(() => requiresShiftGate());
   const [hasToken, setHasToken] = useState(() => !!localStorage.getItem('token'));
@@ -241,67 +236,21 @@ export function ShiftProvider({ children }) {
     return fetchCurrentShift(oid, { soft: options.soft !== false });
   }, [fetchCurrentShift, outletId]);
 
-  /** Cek closing Final terlama yang belum diupload bukti setorannya. Return true jika ada (dan modal deposit ditampilkan). */
-  const checkPendingDeposit = useCallback(async (reason) => {
-    const oid = localStorage.getItem('activeOutletId') || outletId || '2';
-    try {
-      const res = await axios.get('/api/shifts/pending-deposit', { params: { outlet_id: oid } });
-      const pending = res.data?.success ? res.data.data : null;
-      if (pending) {
-        setPendingDeposit({ ...pending, _gateReason: reason });
-        setDepositGateReason(reason);
-        setIsDepositModalOpen(true);
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.error('Gagal cek pending deposit:', err);
-      return false;
-    }
-  }, [outletId]);
-
-  const openCloseModal = useCallback(async () => {
-    const blocked = await checkPendingDeposit('close');
-    if (blocked) return;
+  const openCloseModal = useCallback(() => {
     setIsCloseShiftOpen(true);
-  }, [checkPendingDeposit]);
+  }, []);
 
   const requestOpenShift = useCallback(async (options = {}) => {
     if (options.thenNavigate) {
       setPendingNavigatePath(typeof options.thenNavigate === 'string' ? options.thenNavigate : '/transaction');
     }
-    const blocked = await checkPendingDeposit('open');
-    if (blocked) {
-      // Jangan tampilkan Open Shift di belakang modal setoran
-      setIsOpenShiftModalOpen(false);
-      return;
-    }
     setIsOpenShiftModalOpen(true);
-  }, [checkPendingDeposit]);
-
-  const handleDepositUploaded = useCallback(() => {
-    const reason = depositGateReason;
-    setIsDepositModalOpen(false);
-    setPendingDeposit(null);
-    setDepositGateReason(null);
-    // Lanjutkan aksi yang tadi digate (bisa jadi masih ada pending lain — checkPendingDeposit akan cek ulang)
-    if (reason === 'close') {
-      openCloseModal();
-    } else if (reason === 'open') {
-      requestOpenShift();
-    }
-  }, [depositGateReason, openCloseModal, requestOpenShift]);
-
-  const cancelDepositModal = useCallback(() => {
-    setIsDepositModalOpen(false);
-    setPendingDeposit(null);
-    setDepositGateReason(null);
   }, []);
 
   /**
    * Guard navigasi menu: company_id=5 wajib shift terbuka.
    * company_id=1 (HQ) dan selain 5 bebas.
-   * Belum open shift → cek setoran dulu (Upload Setoran Tunai), baru Open Shift.
+   * Belum open shift → tampilkan modal Open Shift.
    */
   const ensureShiftThenNavigate = useCallback((path = '/transaction') => {
     if (!mustGateShift) {
@@ -413,13 +362,11 @@ export function ShiftProvider({ children }) {
     cancelShiftGate,
     mustGateShift,
     isHq,
-    isShiftReady: !mustGateShift || (Boolean(activeShift) && sessionReady),
-    checkPendingDeposit
+    isShiftReady: !mustGateShift || (Boolean(activeShift) && sessionReady)
   }), [
     activeShift,
     applyOpenShift,
     cancelShiftGate,
-    checkPendingDeposit,
     ensureShiftForOrder,
     ensureShiftThenNavigate,
     isCloseShiftOpen,
@@ -463,15 +410,6 @@ export function ShiftProvider({ children }) {
           employeeId={employeeId}
           onClose={() => setIsCloseShiftOpen(false)}
           onClosed={handleShiftClosed}
-        />
-      )}
-
-      {showShiftGate && isDepositModalOpen && pendingDeposit && (
-        <UploadDepositModal
-          pendingDeposit={pendingDeposit}
-          employeeId={employeeId}
-          onUploaded={handleDepositUploaded}
-          onCancel={cancelDepositModal}
         />
       )}
     </ShiftContext.Provider>

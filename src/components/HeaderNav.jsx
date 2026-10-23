@@ -59,6 +59,7 @@ export default function HeaderNav({
       path === '/services' ||
       path === '/petty-cash' ||
       path === '/daily-report' ||
+      path === '/deposit-report' ||
       path === '/settings/printer'
     ) {
       return '/dashboard';
