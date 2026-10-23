@@ -1,99 +1,80 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
+import { ProofLink } from '../../../components/ImageLightbox.jsx';
 import { formatName, formatEmployeeName } from '../../../utils/FormatName';
 import {
   RefreshCcw,
   Search,
   Clock,
   CheckCircle2,
-  ShieldAlert
+  XCircle,
+  ShieldAlert,
+  Paperclip
 } from 'lucide-react';
 
-export default function RequestRefundTransaction({ transactions }) {
+const TYPE_BADGE = {
+  Refund: 'bg-sky-50 text-sky-800 border-sky-200',
+  Deposit: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  Tips: 'bg-amber-50 text-amber-800 border-amber-200'
+};
+
+const formatWhen = (value) => (value
+  ? new Date(value).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
+  : '-');
+
+/** Tab Request Refund: daftar pengajuan di tr_transaction_refund (Phase 13). */
+export default function RequestRefundTransaction({ outletId }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [approvalFilter, setApprovalFilter] = useState('Semua'); // Semua | Pending | Approved
+  const [statusFilter, setStatusFilter] = useState('Semua'); // Semua | Pending | Approved | Rejected
 
-  const refundRequests = transactions.filter((t) => t.isRefundRequested);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    axios.get('/api/transactions/refunds', { params: { outlet_id: outletId || undefined } })
+      .then((res) => {
+        if (!cancelled && res.data?.success) setRows(res.data.data || []);
+      })
+      .catch((err) => console.error('Gagal memuat pengajuan refund:', err))
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [outletId]);
 
-  const filteredRequests = refundRequests.filter((t) => {
-    const q = searchQuery.toLowerCase();
-    const matchesSearch =
-      String(t.id).toLowerCase().includes(q) ||
-      String(t.customerName || '').toLowerCase().includes(q) ||
-      String(t.customerPhone || '').includes(q) ||
-      (t.refundReason && t.refundReason.toLowerCase().includes(q));
+  const countBy = (status) => rows.filter((r) => r.status === status).length;
 
-    const matchesApproval =
-      approvalFilter === 'Semua' ||
-      (approvalFilter === 'Pending' &&
-        (t.refundApprovalStatus === 0 ||
-          t.refundApprovalStatus === '0' ||
-          t.refundApprovalStatus === null)) ||
-      (approvalFilter === 'Approved' &&
-        (t.refundApprovalStatus === 1 || t.refundApprovalStatus === '1'));
-
-    return matchesSearch && matchesApproval;
+  const q = searchQuery.toLowerCase();
+  const filtered = rows.filter((r) => {
+    const matchesSearch = !q
+      || String(r.order_no || '').toLowerCase().includes(q)
+      || String(r.customer_name || '').toLowerCase().includes(q)
+      || String(r.customer_phone || '').includes(q)
+      || String(r.reason || '').toLowerCase().includes(q);
+    return matchesSearch && (statusFilter === 'Semua' || r.status === statusFilter);
   });
 
-  const pendingCount = refundRequests.filter(
-    (t) => t.refundApprovalStatus === 0 || t.refundApprovalStatus === null
-  ).length;
-  const approvedCount = refundRequests.filter(
-    (t) => t.refundApprovalStatus === 1 || t.refundApprovalStatus === '1'
-  ).length;
+  const cards = [
+    { label: 'Total Pengajuan', value: rows.length, note: 'Refund / Deposit / Tips', Icon: RefreshCcw, box: 'border-[#e0e0e0]', icon: 'bg-sky-50 text-sky-700', text: 'text-[#313030]' },
+    { label: 'Pending Approval', value: countBy('Pending'), note: 'Menunggu admin Alora SuperApp', Icon: Clock, box: 'border-amber-200', icon: 'bg-amber-100 text-amber-800', text: 'text-amber-900' },
+    { label: 'Disetujui', value: countBy('Approved'), note: 'Sudah diproses admin', Icon: CheckCircle2, box: 'border-emerald-200', icon: 'bg-emerald-100 text-emerald-800', text: 'text-emerald-900' },
+    { label: 'Ditolak', value: countBy('Rejected'), note: 'Lihat catatan admin', Icon: XCircle, box: 'border-rose-200', icon: 'bg-rose-100 text-rose-700', text: 'text-rose-800' }
+  ];
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white border border-[#e0e0e0] rounded-2xl p-5 shadow-2xs flex items-center gap-4">
-          <div className="p-3 bg-sky-50 text-sky-700 rounded-xl">
-            <RefreshCcw className="h-6 w-6" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {cards.map(({ label, value, note, Icon, box, icon, text }) => (
+          <div key={label} className={`bg-white border ${box} rounded-2xl p-5 shadow-2xs flex items-center gap-4`}>
+            <div className={`p-3 rounded-xl ${icon}`}>
+              <Icon className="h-6 w-6" />
+            </div>
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{label}</span>
+              <span className={`text-xl font-black block mt-0.5 ${text}`}>{value} Pengajuan</span>
+              <span className="text-[10px] text-slate-400 font-medium">{note}</span>
+            </div>
           </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Total Request Refund
-            </span>
-            <span className="text-xl font-black text-[#313030] block mt-0.5">
-              {refundRequests.length} Pengajuan
-            </span>
-            <span className="text-[10px] text-slate-400 font-medium">
-              Kelebihan bayar / hapus nota
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-white border border-amber-200 rounded-2xl p-5 shadow-2xs flex items-center gap-4 bg-gradient-to-r from-amber-50/40 via-white to-amber-50/20">
-          <div className="p-3 bg-amber-100 text-amber-800 rounded-xl">
-            <Clock className="h-6 w-6" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">
-              Pending Approval
-            </span>
-            <span className="text-xl font-black text-amber-900 block mt-0.5">
-              {pendingCount} Nota
-            </span>
-            <span className="text-[10px] text-amber-700 font-bold">
-              Menunggu Konfirmasi App Utama
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-white border border-emerald-200 rounded-2xl p-5 shadow-2xs flex items-center gap-4 bg-gradient-to-r from-emerald-50/40 via-white to-emerald-50/20">
-          <div className="p-3 bg-emerald-100 text-emerald-800 rounded-xl">
-            <CheckCircle2 className="h-6 w-6" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">
-              Approved / Disetujui
-            </span>
-            <span className="text-xl font-black text-emerald-900 block mt-0.5">
-              {approvedCount} Nota
-            </span>
-            <span className="text-[10px] text-emerald-700 font-bold">
-              Diproses oleh Admin (Saldo / Tunai)
-            </span>
-          </div>
-        </div>
+        ))}
       </div>
 
       <div className="bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-2xs flex flex-col gap-4">
@@ -109,18 +90,19 @@ export default function RequestRefundTransaction({ transactions }) {
             />
           </div>
 
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-[#e0e0e0]">
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-[#e0e0e0] overflow-x-auto max-w-full">
             {[
-              { id: 'Semua', label: `Semua (${refundRequests.length})` },
-              { id: 'Pending', label: `Pending (${pendingCount})` },
-              { id: 'Approved', label: `Approved (${approvedCount})` }
+              { id: 'Semua', label: `Semua (${rows.length})` },
+              { id: 'Pending', label: `Pending (${countBy('Pending')})` },
+              { id: 'Approved', label: `Disetujui (${countBy('Approved')})` },
+              { id: 'Rejected', label: `Ditolak (${countBy('Rejected')})` }
             ].map((tab) => (
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setApprovalFilter(tab.id)}
+                onClick={() => setStatusFilter(tab.id)}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                  approvalFilter === tab.id
+                  statusFilter === tab.id
                     ? 'bg-sky-600 text-white shadow-2xs font-extrabold'
                     : 'text-slate-600 hover:text-[#313030]'
                 }`}
@@ -137,87 +119,103 @@ export default function RequestRefundTransaction({ transactions }) {
               <tr className="bg-[#f8f8f8] text-slate-400 font-extrabold uppercase text-[10px] border-b border-[#e0e0e0]">
                 <th className="py-3.5 px-4">No. Nota & Waktu Request</th>
                 <th className="py-3.5 px-4">Pelanggan</th>
-                <th className="py-3.5 px-4">Cabang Outlet</th>
-                <th className="py-3.5 px-4">Alasan / Keterangan</th>
-                <th className="py-3.5 px-4 text-right">Wajib Bayar</th>
-                <th className="py-3.5 px-4 text-right">Aktual Bayar</th>
-                <th className="py-3.5 px-4 text-right">Gap Refund</th>
-                <th className="py-3.5 px-4 text-center">Status Approval</th>
+                <th className="py-3.5 px-4">Jenis</th>
+                <th className="py-3.5 px-4">Alasan / Bukti</th>
+                <th className="py-3.5 px-4 text-right">Tagihan</th>
+                <th className="py-3.5 px-4 text-right">Nominal</th>
+                <th className="py-3.5 px-4 text-center">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#e0e0e0]/70 font-semibold">
-              {filteredRequests.length > 0 ? (
-                filteredRequests.map((t) => {
-                  const isApproved =
-                    t.refundApprovalStatus === 1 || t.refundApprovalStatus === '1';
-                  const gap =
-                    parseFloat(t.refundAmount) ||
-                    Math.max(0, (parseFloat(t.paidAmount) || 0) - (parseFloat(t.grandTotal) || 0));
-
-                  return (
-                    <tr key={t.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-3.5 px-4">
-                        <span className="font-mono font-black text-sky-700 block text-xs">
-                          {t.id}
-                        </span>
-                        <span className="text-[10px] text-slate-400 block mt-0.5">
-                          Req: {t.refundRequestedAt || t.createdAt}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="font-extrabold text-[#313030] text-xs block">
-                          {formatName(t.customerName)}
-                        </span>
-                        <span className="text-[10px] text-slate-400 block mt-0.5">
-                          {t.customerPhone}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="text-slate-600 font-bold block">{t.branch}</span>
-                        <span className="text-[10px] text-slate-400">
-                          {formatEmployeeName(t.cashierName)}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 max-w-xs">
-                        <div className="p-2.5 bg-sky-50/60 border border-sky-100 rounded-xl text-[#313030] text-xs leading-relaxed">
-                          &quot;{t.refundReason || 'Pengajuan Refund Kelebihan Bayar'}&quot;
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-black text-[#313030] text-sm whitespace-nowrap">
-                        Rp {(parseFloat(t.grandTotal) || 0).toLocaleString('id-ID')}
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-black text-[#313030] text-sm whitespace-nowrap">
-                        Rp {(parseFloat(t.paidAmount) || 0).toLocaleString('id-ID')}
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-black text-sky-700 text-sm whitespace-nowrap">
-                        Rp {gap.toLocaleString('id-ID')}
-                      </td>
-                      <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                        {isApproved ? (
-                          <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 font-black text-[10px] px-3 py-1 rounded-full inline-flex items-center gap-1 shadow-2xs">
-                            <CheckCircle2 className="h-3 w-3 text-emerald-600" />
-                            <span>Approved</span>
-                          </span>
-                        ) : (
-                          <span className="bg-amber-100 text-amber-900 border border-amber-300 font-black text-[10px] px-3 py-1 rounded-full inline-flex items-center gap-1 shadow-2xs animate-pulse">
-                            <Clock className="h-3 w-3 text-amber-700" />
-                            <span>Pending</span>
-                          </span>
+              {loading ? (
+                <tr>
+                  <td colSpan="7" className="py-12 text-center text-slate-400 font-bold">Memuat pengajuan refund...</td>
+                </tr>
+              ) : filtered.length > 0 ? (
+                filtered.map((r) => (
+                  <tr key={r.id} className="hover:bg-slate-50 transition-colors align-top">
+                    <td className="py-3.5 px-4">
+                      <span className="font-mono font-black text-sky-700 block text-xs">{r.order_no}</span>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">Req: {formatWhen(r.requested_at)}</span>
+                      {r.requested_by_name && (
+                        <span className="text-[10px] text-slate-400 block">oleh {formatEmployeeName(r.requested_by_name)}</span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className="font-extrabold text-[#313030] text-xs block">{formatName(r.customer_name)}</span>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">{r.customer_phone}</span>
+                    </td>
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      <span className={`px-2.5 py-0.5 rounded-full border text-[10px] font-black ${TYPE_BADGE[r.refund_type] || ''}`}>
+                        {r.refund_type}
+                      </span>
+                      {r.source === 'Hapus Nota' && (
+                        <span className="block text-[10px] text-rose-600 font-bold mt-1">dari Hapus Nota</span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 max-w-xs">
+                      <div className="p-2.5 bg-sky-50/60 border border-sky-100 rounded-xl text-[#313030] text-xs leading-relaxed">
+                        &quot;{r.reason}&quot;
+                      </div>
+                      <div className="flex flex-wrap gap-2 mt-1.5">
+                        {r.payment_proof_url && (
+                          <ProofLink url={r.payment_proof_url} title={`Bukti Bayar — ${r.order_no || ''}`} className="text-[10px] font-bold text-sky-700 hover:underline inline-flex items-center gap-1 cursor-pointer">
+                            <Paperclip className="h-3 w-3" /> Bukti bayar
+                          </ProofLink>
                         )}
-                      </td>
-                    </tr>
-                  );
-                })
+                        {r.attachment_url && (
+                          <ProofLink url={r.attachment_url} title={`Bukti Tambahan — ${r.order_no || ''}`} className="text-[10px] font-bold text-sky-700 hover:underline inline-flex items-center gap-1 cursor-pointer">
+                            <Paperclip className="h-3 w-3" /> Bukti tambahan
+                          </ProofLink>
+                        )}
+                      </div>
+                      {r.status === 'Approved' && (r.approve_path || r.approve_notes) && (
+                        <div className="mt-1.5 rounded-lg border border-emerald-100 bg-emerald-50/60 px-2 py-1.5">
+                          <p className="text-[10px] font-black text-emerald-700">Disetujui admin</p>
+                          {r.approve_path && (
+                            <ProofLink url={r.approve_path} title={`Bukti Pembayaran Refund — ${r.order_no || ''}`} className="text-[10px] font-bold text-emerald-700 hover:underline inline-flex items-center gap-1 cursor-pointer">
+                              <Paperclip className="h-3 w-3" /> Bukti pembayaran refund
+                            </ProofLink>
+                          )}
+                          {r.approve_notes && <p className="text-[10px] text-slate-600 font-semibold">Catatan admin: {r.approve_notes}</p>}
+                        </div>
+                      )}
+                      {r.status === 'Rejected' && r.decline_notes && (
+                        <p className="text-[10px] text-rose-700 font-bold mt-1.5">Alasan penolakan: {r.decline_notes}</p>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-black text-[#313030] text-sm whitespace-nowrap">
+                      Rp {(parseFloat(r.grand_total) || 0).toLocaleString('id-ID')}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-black text-sky-700 text-sm whitespace-nowrap">
+                      Rp {(parseFloat(r.amount) || 0).toLocaleString('id-ID')}
+                    </td>
+                    <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                      {r.status === 'Approved' ? (
+                        <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 font-black text-[10px] px-3 py-1 rounded-full inline-flex items-center gap-1 shadow-2xs">
+                          <CheckCircle2 className="h-3 w-3 text-emerald-600" /> Disetujui
+                        </span>
+                      ) : r.status === 'Rejected' ? (
+                        <span className="bg-rose-100 text-rose-800 border border-rose-300 font-black text-[10px] px-3 py-1 rounded-full inline-flex items-center gap-1 shadow-2xs">
+                          <XCircle className="h-3 w-3 text-rose-600" /> Ditolak
+                        </span>
+                      ) : (
+                        <span className="bg-amber-100 text-amber-900 border border-amber-300 font-black text-[10px] px-3 py-1 rounded-full inline-flex items-center gap-1 shadow-2xs animate-pulse">
+                          <Clock className="h-3 w-3 text-amber-700" /> Pending
+                        </span>
+                      )}
+                      {r.reviewed_at && (
+                        <span className="block text-[10px] text-slate-400 mt-1">{formatWhen(r.reviewed_at)}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))
               ) : (
                 <tr>
-                  <td colSpan="8" className="py-12 text-center text-slate-400">
+                  <td colSpan="7" className="py-12 text-center text-slate-400">
                     <ShieldAlert className="h-10 w-10 mx-auto text-slate-300 mb-2" />
-                    <p className="font-bold text-xs text-[#313030]">
-                      Tidak ada pengajuan refund yang ditemukan
-                    </p>
-                    <p className="text-[11px] mt-0.5">
-                      Pilih opsi Refund pada Kelebihan Bayar saat pembayaran / pelunasan
-                    </p>
+                    <p className="font-bold text-xs text-[#313030]">Tidak ada pengajuan refund yang ditemukan</p>
+                    <p className="text-[11px] mt-0.5">Ajukan lewat tombol Refund di kolom aksi tab Riwayat Transaksi</p>
                   </td>
                 </tr>
               )}

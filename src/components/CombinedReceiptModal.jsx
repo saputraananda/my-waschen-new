@@ -9,10 +9,8 @@ import {
   Upload,
   Loader2,
   CheckCircle2,
-  AlertCircle,
-  Coins
+  AlertCircle
 } from 'lucide-react';
-import { formatRupiah, parseRupiah } from '../utils/FormatRupiah.js';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from './CascadingPaymentSelector.jsx';
 import PaymentProofFields from './PaymentProofFields.jsx';
 import PinVerifyModal from '../pages/Shift/PinVerifyModal.jsx';
@@ -33,8 +31,7 @@ export default function CombinedReceiptModal({
   const [edcCardType, setEdcCardType] = useState('Debit Card');
   const [isCrossTransfer, setIsCrossTransfer] = useState(false);
   const [crossBankOutletId, setCrossBankOutletId] = useState(1);
-  const [paidAmountInput, setPaidAmountInput] = useState('');
-  const [overpaymentAction, setOverpaymentAction] = useState('change');
+
   const [paymentProofUrl, setPaymentProofUrl] = useState('');
   const [proofFile, setProofFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -79,16 +76,6 @@ export default function CombinedReceiptModal({
     return sum + unpaid;
   }, 0);
 
-  useEffect(() => {
-    if (totalSelectedAmount > 0) {
-      setPaidAmountInput(formatRupiah(totalSelectedAmount));
-    } else {
-      setPaidAmountInput('');
-    }
-  }, [totalSelectedAmount]);
-
-  const paidAmountNum = parseRupiah(paidAmountInput);
-  const excessAmount = Math.max(0, paidAmountNum - totalSelectedAmount);
 
   if (!isOpen) return null;
 
@@ -145,11 +132,6 @@ export default function CombinedReceiptModal({
       return;
     }
 
-    if (paidAmountNum < totalSelectedAmount) {
-      setErrorMessage(`Nominal bayar kurang Rp ${(totalSelectedAmount - paidAmountNum).toLocaleString('id-ID')}`);
-      return;
-    }
-
     if (mainCategory !== 'Tunai' && !proofFile && !paymentProofUrl) {
       setErrorMessage('Foto atau PDF bukti bayar wajib untuk pembayaran selain tunai.');
       return;
@@ -167,11 +149,6 @@ export default function CombinedReceiptModal({
 
     if (totalSelectedAmount <= 0) {
       setErrorMessage('Total tagihan nota terpilih adalah Rp 0.');
-      return;
-    }
-
-    if (paidAmountNum < totalSelectedAmount) {
-      setErrorMessage(`Nominal bayar kurang Rp ${(totalSelectedAmount - paidAmountNum).toLocaleString('id-ID')}`);
       return;
     }
 
@@ -220,8 +197,6 @@ export default function CombinedReceiptModal({
         paymentMethod: resolvedPaymentMethod,
         paymentProofUrl: proofUrl,
         notes,
-        paidAmount: paidAmountNum,
-        overpaymentToDeposit: overpaymentAction === 'deposit',
         items: selectedOrders.map((o) => {
           const total = parseFloat(o.amount || o.grand_total || o.grandTotal) || 0;
           const paid = parseFloat(o.paidAmount || o.paid_amount) || 0;
@@ -405,67 +380,14 @@ export default function CombinedReceiptModal({
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700 block">Nominal Uang Diterima / Dibayar (Rp)</label>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={paidAmountInput}
-                onChange={(e) => setPaidAmountInput(formatRupiah(e.target.value))}
-                placeholder={`Contoh : ${formatRupiah(totalSelectedAmount)}`}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 focus:outline-hidden focus:border-[#5f1340]"
-              />
-              <div className="flex flex-wrap gap-1.5 mt-1">
-                {[totalSelectedAmount, 50000, 100000, 200000, 500000]
-                  .filter((v, i, arr) => v > 0 && arr.indexOf(v) === i && v >= totalSelectedAmount)
-                  .slice(0, 4)
-                  .map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setPaidAmountInput(formatRupiah(preset))}
-                      className="px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 text-[10px] font-bold text-slate-700 hover:border-[#5f1340] hover:bg-[#5f1340]/5 cursor-pointer transition-colors"
-                    >
-                      {preset === totalSelectedAmount ? 'Pas' : formatRupiah(preset, true)}
-                    </button>
-                  ))}
+              <label className="text-xs font-bold text-slate-700 block">Nominal Pelunasan (Rp)</label>
+              <div className="w-full px-3.5 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs font-black text-slate-900">
+                Rp {totalSelectedAmount.toLocaleString('id-ID')}
               </div>
+              <p className="text-[10px] text-slate-500 font-medium">
+                Terkunci sesuai total sisa tagihan. Kelebihan bayar diajukan lewat aksi Refund di Riwayat.
+              </p>
             </div>
-
-            {excessAmount > 0 && (
-              <div className="sm:col-span-2 p-3.5 bg-amber-50 border border-amber-200 rounded-2xl space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-black text-amber-900">
-                    <Coins className="h-4 w-4 text-amber-600 shrink-0" />
-                    <span>Kelebihan Uang Diterima: Rp {excessAmount.toLocaleString('id-ID')}</span>
-                  </div>
-                  <span className="text-[10px] font-extrabold text-amber-700 uppercase">Pilih Aksi</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setOverpaymentAction('change')}
-                    className={`py-2 px-3 rounded-xl text-xs font-black cursor-pointer transition-colors ${
-                      overpaymentAction === 'change'
-                        ? 'bg-amber-600 text-white shadow-xs'
-                        : 'bg-white border border-amber-300 text-amber-900 hover:bg-amber-100'
-                    }`}
-                  >
-                    Kembalian Tunai (Rp {excessAmount.toLocaleString('id-ID')})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setOverpaymentAction('deposit')}
-                    className={`py-2 px-3 rounded-xl text-xs font-black cursor-pointer transition-colors ${
-                      overpaymentAction === 'deposit'
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'bg-white border border-emerald-300 text-emerald-900 hover:bg-emerald-100'
-                    }`}
-                  >
-                    Simpan ke Saldo Deposit
-                  </button>
-                </div>
-              </div>
-            )}
 
             <div className="sm:col-span-2">
               {mainCategory === 'Tunai' ? (

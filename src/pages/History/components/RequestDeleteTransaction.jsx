@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { formatName, formatEmployeeName } from '../../../utils/FormatName';
+import { ProofLink } from '../../../components/ImageLightbox.jsx';
 import {
   Trash2,
   Search,
@@ -148,11 +149,9 @@ export default function RequestDeleteTransaction({ transactions, outlets }) {
                           "{t.deleteReason || 'Pengajuan Hapus Nota oleh Kasir'}"
                         </div>
                         {t.deleteAttachmentUrl && (
-                          <a
-                            href={t.deleteAttachmentUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-2 inline-flex items-center gap-2 p-1.5 pr-3 bg-white border border-[#e0e0e0] rounded-lg hover:border-rose-400"
+                          <ProofLink
+                            url={t.deleteAttachmentUrl}
+                            className="mt-2 inline-flex items-center gap-2 p-1.5 pr-3 bg-white border border-[#e0e0e0] rounded-lg hover:border-rose-400 cursor-pointer"
                             title="Lihat lampiran pengajuan"
                           >
                             {/\.pdf($|\?)/i.test(t.deleteAttachmentUrl) ? (
@@ -163,7 +162,7 @@ export default function RequestDeleteTransaction({ transactions, outlets }) {
                               <img src={t.deleteAttachmentUrl} alt="Lampiran hapus nota" loading="lazy" className="w-9 h-9 rounded-md object-cover shrink-0" />
                             )}
                             <span className="text-[10px] font-bold text-rose-700">Lihat Lampiran</span>
-                          </a>
+                          </ProofLink>
                         )}
                       </td>
                       <td className="py-3.5 px-4 text-right font-black text-[#313030] text-sm whitespace-nowrap">

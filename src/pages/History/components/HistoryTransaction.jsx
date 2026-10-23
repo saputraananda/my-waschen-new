@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { formatName, formatEmployeeName } from '../../../utils/FormatName';
-import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah';
+
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 import { useShiftOptional } from '../../../context/ShiftContext.jsx';
 import { getWorkPercentage, percentageTone, formatWorkPercentage } from '../../../utils/workStatusMeta.js';
@@ -19,7 +19,6 @@ import {
   CreditCard,
   Upload,
   Wallet,
-  Coins,
   History,
   QrCode,
   MessageCircle
@@ -38,6 +37,8 @@ import {
 } from '../../../utils/customerNotaWhatsApp.js';
 import ThermalNota from '../../../components/ThermalNota.jsx';
 import { mapDbTransactionToReceipt } from '../../../utils/printerSettings.js';
+import RefundRequestModal from './RefundRequestModal.jsx';
+import { ProofLink } from '../../../components/ImageLightbox.jsx';
 
 export default function HistoryTransaction({
   transactions,
@@ -75,6 +76,7 @@ export default function HistoryTransaction({
   const [deleteReason, setDeleteReason] = useState('');
   const [deleteAttachment, setDeleteAttachment] = useState(null);
   const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
+  const [refundModalOrder, setRefundModalOrder] = useState(null);
 
   // Payment update modal
   const [paymentModalOrder, setPaymentModalOrder] = useState(null);
@@ -84,11 +86,7 @@ export default function HistoryTransaction({
   const [edcCardType, setEdcCardType] = useState('Debit Card');
   const [isCrossTransfer, setIsCrossTransfer] = useState(false);
   const [crossBankOutletId, setCrossBankOutletId] = useState(1);
-  const [paymentForm, setPaymentForm] = useState({
-    additionalAmount: '',
-    notes: '',
-    overpaymentAction: 'change'
-  });
+  const [paymentForm, setPaymentForm] = useState({ notes: '' });
   const [proofFile, setProofFile] = useState(null);
   const [cashProof, setCashProof] = useState(null);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
@@ -182,11 +180,7 @@ export default function HistoryTransaction({
     setEdcCardType('Debit Card');
     setIsCrossTransfer(false);
     setCrossBankOutletId(1);
-    setPaymentForm({
-      additionalAmount: '',
-      notes: '',
-      overpaymentAction: 'change'
-    });
+    setPaymentForm({ notes: '' });
     setProofFile(null);
     setIsLoadingPayment(true);
     try {
@@ -220,19 +214,14 @@ export default function HistoryTransaction({
     }
   };
 
+  // Nominal pelunasan dikunci = sisa tagihan (Phase 13)
+  const remainingOf = (order) => paymentDetail?.remaining
+    ?? Math.max(0, (order?.grandTotal || 0) - (order?.paidAmount || 0));
+
   const requestSubmitPaymentUpdate = () => {
     if (!paymentModalOrder) return;
-    if (normalizePaymentStatus(paymentModalOrder.paymentStatus) === 'Lunas') {
+    if (normalizePaymentStatus(paymentModalOrder.paymentStatus) === 'Lunas' || remainingOf(paymentModalOrder) <= 0) {
       showAlert({ title: 'Sudah Lunas', message: 'Nota ini sudah lunas.', type: 'error' });
-      return;
-    }
-    const addAmount = parseRupiah(paymentForm.additionalAmount);
-    if (addAmount <= 0) {
-      showAlert({
-        title: 'Nominal Kosong',
-        message: 'Nominal bayar wajib diisi sebelum menyimpan pembayaran.',
-        type: 'warning'
-      });
       return;
     }
     if (mainCategory !== 'Tunai' && !proofFile) {
@@ -244,6 +233,16 @@ export default function HistoryTransaction({
       return;
     }
     setShowPayPinModal(true);
+  };
+
+  // Tutup modal; kalau pembayaran tunai sudah tersimpan (tahap unggah bukti), muat ulang daftar
+  const closePaymentModal = () => {
+    const alreadyPaid = Boolean(cashProof);
+    setPaymentModalOrder(null);
+    setPaymentDetail(null);
+    setCashProof(null);
+    setProofFile(null);
+    if (alreadyPaid) fetchTransactions();
   };
 
   const saveCashProof = async () => {
@@ -269,8 +268,7 @@ export default function HistoryTransaction({
 
   const handleSubmitPaymentUpdate = async (cashierEmployeeId) => {
     if (!paymentModalOrder) return;
-    const remaining = paymentDetail?.remaining ?? Math.max(0, (paymentModalOrder.grandTotal || 0) - (paymentModalOrder.paidAmount || 0));
-    const addAmount = parseRupiah(paymentForm.additionalAmount);
+    const addAmount = remainingOf(paymentModalOrder);
     const resolvedCashierId = Number(cashierEmployeeId);
     if (!resolvedCashierId) {
       showAlert({
@@ -281,16 +279,8 @@ export default function HistoryTransaction({
       return;
     }
 
-    if (normalizePaymentStatus(paymentModalOrder.paymentStatus) === 'Lunas') {
+    if (normalizePaymentStatus(paymentModalOrder.paymentStatus) === 'Lunas' || addAmount <= 0) {
       showAlert({ title: 'Sudah Lunas', message: 'Nota ini sudah lunas.', type: 'error' });
-      return;
-    }
-    if (addAmount <= 0) {
-      showAlert({
-        title: 'Nominal Kosong',
-        message: 'Nominal bayar wajib diisi sebelum menyimpan pembayaran.',
-        type: 'warning'
-      });
       return;
     }
 
@@ -324,9 +314,6 @@ export default function HistoryTransaction({
         paymentMethod: resolvedMethod,
         paymentProofUrl: proofUrl,
         notes: paymentForm.notes || `Pelunasan nota ${paymentModalOrder.id}`,
-        overpaymentToDeposit: paymentForm.overpaymentAction === 'deposit',
-        overpaymentToRefund: paymentForm.overpaymentAction === 'refund',
-        overpaymentAction: paymentForm.overpaymentAction,
         cashierEmployeeId: resolvedCashierId
       });
 
@@ -338,8 +325,7 @@ export default function HistoryTransaction({
               paymentStatus: updated?.paymentStatus || t.paymentStatus,
               paymentMethod: updated?.paymentMethod || t.paymentMethod,
               paidAmount: updated?.paidAmount ?? t.paidAmount,
-              paymentProofUrl: updated?.paymentProofUrl || t.paymentProofUrl,
-              isRefundRequested: paymentForm.overpaymentAction === 'refund' ? true : t.isRefundRequested
+              paymentProofUrl: updated?.paymentProofUrl || t.paymentProofUrl
             }
           : t
       )));
@@ -347,6 +333,10 @@ export default function HistoryTransaction({
       if (mainCategory === 'Tunai') {
         setCashProof({ txnId, orderNo: paymentModalOrder.id });
         setProofFile(null);
+        // Ringkasan modal (Sudah Bayar / Sisa / riwayat) ikut diperbarui
+        axios.get(`/api/history/transactions/${txnId}/payments`)
+          .then((r) => { if (r.data?.success) setPaymentDetail(r.data.data); })
+          .catch(() => {});
         showAlert({
           title: 'Pembayaran Tunai Tersimpan',
           message: 'Cetak nota, minta tanda tangan konsumen, lalu unggah fotonya.',
@@ -712,9 +702,12 @@ export default function HistoryTransaction({
                         const ps = normalizePaymentStatus(order.paymentStatus);
                         if (ps === 'Lunas') {
                           return (
-                            <span className="px-3 py-1 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black inline-flex items-center gap-1 shadow-2xs whitespace-nowrap">
+                            <span
+                              title={order.paymentMethod ? `Lunas (${order.paymentMethod})` : 'Lunas'}
+                              className="px-3 py-1 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black inline-flex items-center gap-1 shadow-2xs whitespace-nowrap"
+                            >
                               <CheckCircle2 className="h-3 w-3 text-emerald-600" />
-                              <span>Lunas ({order.paymentMethod})</span>
+                              <span>Lunas</span>
                             </span>
                           );
                         }
@@ -724,10 +717,10 @@ export default function HistoryTransaction({
                               type="button"
                               onClick={(e) => openPaymentModal(order, e)}
                               className="px-3 py-1 rounded-xl bg-amber-50 hover:bg-amber-600 text-amber-800 hover:text-white border border-amber-200 text-[10px] font-black inline-flex items-center gap-1 transition-all shadow-2xs cursor-pointer whitespace-nowrap group/pay"
-                              title="Klik untuk pelunasan / update pembayaran"
+                              title={`DP Rp ${(order.paidAmount || 0).toLocaleString('id-ID')} — klik untuk pelunasan / update pembayaran`}
                             >
                               <Wallet className="h-3 w-3" />
-                              <span>DP Rp {(order.paidAmount || 0).toLocaleString('id-ID')}</span>
+                              <span>DP</span>
                             </button>
                           );
                         }
@@ -772,6 +765,34 @@ export default function HistoryTransaction({
                           <MessageCircle className="h-4 w-4" />
                         </button>
 
+                        {(() => {
+                          const pendingRefunds = order.refundPendingCount || 0;
+                          const unpaid = (order.paidAmount || 0) <= 0;
+                          return (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRefundModalOrder(order);
+                              }}
+                              disabled={unpaid}
+                              className="relative p-2 rounded-xl border border-sky-200 bg-sky-50/80 hover:bg-sky-600 hover:text-white text-sky-700 transition-all cursor-pointer shadow-2xs inline-flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-sky-50/80 disabled:hover:text-sky-700"
+                              title={unpaid
+                                ? 'Nota belum ada pembayaran'
+                                : pendingRefunds > 0
+                                  ? `Ajukan Refund / Deposit / Tips (${pendingRefunds} pengajuan masih Pending)`
+                                  : 'Ajukan Refund / Deposit / Tips'}
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                              {pendingRefunds > 0 && (
+                                <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-white text-[9px] font-black leading-4 text-center">
+                                  {pendingRefunds}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })()}
+
                         <button
                           type="button"
                           onClick={(e) => {
@@ -800,6 +821,18 @@ export default function HistoryTransaction({
       <div className="px-4 py-2.5 border-t border-[#e0e0e0]/70 bg-slate-50/50 flex justify-between items-center text-[10px] text-slate-400 font-bold">
         <span>Menampilkan {displayOrders.length} dari {activeTransactions.length} transaksi terdaftar</span>
       </div>
+
+      {/* MODAL: AKSI REFUND */}
+      {refundModalOrder && (
+        <RefundRequestModal
+          order={refundModalOrder}
+          onClose={() => setRefundModalOrder(null)}
+          onSubmitted={() => {
+            setRefundModalOrder(null);
+            fetchTransactions();
+          }}
+        />
+      )}
 
       {/* MODAL: REQUEST DELETE TRANSACTION */}
       {deleteModalOrder && (
@@ -853,7 +886,7 @@ export default function HistoryTransaction({
               />
 
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 font-medium">
-                ⚠️ <strong>Catatan:</strong> Nota tidak akan langsung terhapus permanen dari sistem. Status akan berubah menjadi <strong>Pending Approval</strong> dan menunggu persetujuan dari Aplikasi Utama / Manager.
+                <strong>Catatan:</strong> Nota tidak akan langsung terhapus permanen dari sistem. Status akan berubah menjadi <strong>Pending Approval</strong> dan menunggu persetujuan dari Aplikasi Utama / Manager.
               </div>
             </div>
 
@@ -1002,7 +1035,7 @@ export default function HistoryTransaction({
               </div>
               <button
                 type="button"
-                onClick={() => { setPaymentModalOrder(null); setPaymentDetail(null); }}
+                onClick={closePaymentModal}
                 className="p-1 text-slate-400 hover:text-[#313030]"
               >
                 <X className="h-4.5 w-4.5" />
@@ -1049,14 +1082,13 @@ export default function HistoryTransaction({
                   {(paymentDetail?.order?.payment_proof_url || paymentModalOrder.paymentProofUrl) && (
                     <div className="p-3 bg-slate-50 border border-[#e0e0e0] rounded-xl">
                       <span className="text-[10px] font-bold text-slate-400 block mb-1">Bukti Pembayaran Terakhir</span>
-                      <a
-                        href={paymentDetail?.order?.payment_proof_url || paymentModalOrder.paymentProofUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[11px] font-bold text-[#5f1340] hover:underline"
+                      <ProofLink
+                        url={paymentDetail?.order?.payment_proof_url || paymentModalOrder.paymentProofUrl}
+                        title={`Bukti Pembayaran — ${paymentModalOrder.id || ''}`}
+                        className="text-[11px] font-bold text-[#5f1340] hover:underline cursor-pointer"
                       >
                         Lihat bukti pembayaran
-                      </a>
+                      </ProofLink>
                     </div>
                   )}
 
@@ -1102,34 +1134,14 @@ export default function HistoryTransaction({
 
                       <div>
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                          Nominal Bayar / Pelunasan (Rp)
+                          Nominal Pelunasan (Rp)
                         </label>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={paymentForm.additionalAmount}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, additionalAmount: formatRupiah(e.target.value) })}
-                          placeholder={`Contoh : ${formatRupiah(paymentDetail?.remaining || paymentModalOrder.grandTotal || 0)}`}
-                          className="w-full px-4 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-sm font-black outline-none focus:border-[#5f1340]"
-                        />
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {[
-                            paymentDetail?.remaining || Math.max(0, (paymentModalOrder.grandTotal || 0) - (paymentModalOrder.paidAmount || 0)),
-                            50000, 100000, 200000
-                          ]
-                            .filter((v, i, arr) => v > 0 && arr.indexOf(v) === i)
-                            .slice(0, 4)
-                            .map((preset) => (
-                              <button
-                                key={preset}
-                                type="button"
-                                onClick={() => setPaymentForm({ ...paymentForm, additionalAmount: formatRupiah(preset) })}
-                                className="px-3 py-1 rounded-lg bg-[#f8f8f8] border border-[#e0e0e0] text-[10px] font-bold text-slate-600 hover:border-[#5f1340] cursor-pointer"
-                              >
-                                {preset === (paymentDetail?.remaining || 0) ? 'Lunas Pas' : formatRupiah(preset, true)}
-                              </button>
-                            ))}
+                        <div className="w-full px-4 py-2.5 bg-slate-50 border border-[#e0e0e0] rounded-xl text-sm font-black text-[#313030]">
+                          Rp {remainingOf(paymentModalOrder).toLocaleString('id-ID')}
                         </div>
+                        <p className="text-[10px] text-slate-500 font-medium mt-1">
+                          Terkunci sesuai sisa tagihan. Kelebihan bayar diajukan lewat aksi Refund.
+                        </p>
                       </div>
 
                       <div>
@@ -1162,48 +1174,6 @@ export default function HistoryTransaction({
                         <PaymentProofFields orderNo={paymentModalOrder.id} file={proofFile} onFile={setProofFile} />
                       )}
 
-                      {!cashProof && parseRupiah(paymentForm.additionalAmount) > (paymentDetail?.remaining || 0) && (
-                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
-                          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
-                            <Coins className="h-4 w-4" />
-                            Kelebihan bayar: Rp {(parseRupiah(paymentForm.additionalAmount) - (paymentDetail?.remaining || 0)).toLocaleString('id-ID')}
-                          </div>
-                          <div className="grid grid-cols-3 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setPaymentForm({ ...paymentForm, overpaymentAction: 'change' })}
-                              className={`py-2 rounded-lg text-[10px] font-black cursor-pointer ${
-                                paymentForm.overpaymentAction === 'change' ? 'bg-amber-600 text-white' : 'bg-white border border-amber-300 text-amber-900'
-                              }`}
-                            >
-                              Kembalian Tunai
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setPaymentForm({ ...paymentForm, overpaymentAction: 'deposit' })}
-                              className={`py-2 rounded-lg text-[10px] font-black cursor-pointer ${
-                                paymentForm.overpaymentAction === 'deposit' ? 'bg-emerald-600 text-white' : 'bg-white border border-emerald-300 text-emerald-800'
-                              }`}
-                            >
-                              Simpan ke Saldo
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setPaymentForm({ ...paymentForm, overpaymentAction: 'refund' })}
-                              className={`py-2 rounded-lg text-[10px] font-black cursor-pointer ${
-                                paymentForm.overpaymentAction === 'refund' ? 'bg-sky-600 text-white' : 'bg-white border border-sky-300 text-sky-800'
-                              }`}
-                            >
-                              Refund
-                            </button>
-                          </div>
-                          {paymentForm.overpaymentAction === 'refund' && (
-                            <p className="text-[10px] text-sky-800 font-medium">
-                              Gap refund akan diajukan (Pending Approval di app utama).
-                            </p>
-                          )}
-                        </div>
-                      )}
                     </>
                   )}
                 </>
@@ -1214,7 +1184,7 @@ export default function HistoryTransaction({
               <div className="p-4 border-t border-[#e0e0e0] bg-[#f8f8f8] flex gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={() => { setPaymentModalOrder(null); setPaymentDetail(null); }}
+                  onClick={closePaymentModal}
                   className="px-4 py-2.5 bg-white border border-[#e0e0e0] hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs cursor-pointer"
                 >
                   Batal

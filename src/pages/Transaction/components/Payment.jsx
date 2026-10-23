@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Receipt, ArrowLeft, CreditCard, Save, Wallet, Coins, Upload, Camera, X, Loader2 } from 'lucide-react';
+import { Receipt, ArrowLeft, CreditCard, Save, Upload, Camera, X, Loader2, Lock } from 'lucide-react';
 import { formatEmployeeName } from '../../../utils/FormatName.js';
 import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
 import CascadingPaymentSelector from '../../../components/CascadingPaymentSelector.jsx';
@@ -32,8 +32,6 @@ export default function Payment({
   paymentMethods = [],
   paidAmountInput,
   setPaidAmountInput,
-  overpaymentAction,
-  setOverpaymentAction,
   isOutstandingDropOff,
   setIsOutstandingDropOff,
   paymentProofFile,
@@ -74,27 +72,21 @@ export default function Payment({
 
   const isMemberBalanceMethod = mainCategory === 'Potong Saldo Member';
 
+  // Nominal bayar dikunci (Phase 13): Lunas = grand total, tidak bisa diubah.
+  // Kurang bayar → catat sebagai DP. Kelebihan bayar → aksi Refund di Riwayat.
   const paidAmountNum = parseRupiah(paidAmountInput);
   const isOutstanding = paymentStatus === 'Outstanding';
   const isLunas = paymentStatus === 'Lunas';
   const isDP = paymentStatus === 'DP';
   const showPaymentFields = !isOutstanding;
 
-  const excessAmount = isLunas && !isMemberBalanceMethod
-    ? Math.max(0, paidAmountNum - calculations.grandTotal)
-    : 0;
-  const isUnderpaidLunas = isLunas && !isMemberBalanceMethod
-    && paidAmountNum > 0
-    && paidAmountNum < calculations.grandTotal;
-  const isInvalidDP = isDP && (paidAmountNum <= 0 || paidAmountNum >= calculations.grandTotal);
+  const isValidDP = isDP && paidAmountNum > 0 && paidAmountNum < calculations.grandTotal;
+  const isInvalidDP = isDP && !isValidDP;
 
   const isCash = mainCategory === 'Tunai';
   const hasProof = Boolean(paymentProofFile);
-  const canSubmit = isOutstanding
-    || (isCash && isLunas && (isMemberBalanceMethod || (paidAmountNum >= calculations.grandTotal && !isUnderpaidLunas)))
-    || (isCash && isDP && paidAmountNum > 0 && paidAmountNum < calculations.grandTotal)
-    || (hasProof && isLunas && (isMemberBalanceMethod || (paidAmountNum >= calculations.grandTotal && !isUnderpaidLunas)))
-    || (hasProof && isDP && paidAmountNum > 0 && paidAmountNum < calculations.grandTotal);
+  const amountOk = isLunas || isValidDP;
+  const canSubmit = isOutstanding || ((isCash || hasProof) && amountOk);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full animate-fade-in">
@@ -344,115 +336,58 @@ export default function Payment({
 
                 {!isMemberBalanceMethod && (
                   <>
-                    <div>
-                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                        Nominal Bayar (Rp)
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={paidAmountInput}
-                        onChange={(e) => setPaidAmountInput(formatRupiah(e.target.value))}
-                        placeholder={`Contoh : ${isDP ? formatRupiah(Math.floor(calculations.grandTotal / 2)) : formatRupiah(calculations.grandTotal)}`}
-                        className="w-full px-4 py-3 bg-white border border-[#e0e0e0] rounded-2xl text-sm font-black text-[#313030] outline-none focus:border-[#5f1340]"
-                      />
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {(isDP
-                          ? [50000, 100000, 200000, Math.floor(calculations.grandTotal / 2)]
-                          : [calculations.grandTotal, 100000, 200000, 500000]
-                        )
-                          .filter((v, i, arr) => v > 0 && arr.indexOf(v) === i)
-                          .filter((v) => isDP ? v < calculations.grandTotal : v >= calculations.grandTotal || v === calculations.grandTotal)
-                          .slice(0, 4)
-                          .map((preset) => (
-                          <button
-                            key={preset}
-                            type="button"
-                            onClick={() => setPaidAmountInput(formatRupiah(preset))}
-                            className="px-3 py-1.5 rounded-lg bg-[#f8f8f8] border border-[#e0e0e0] text-[10px] font-bold text-slate-600 hover:border-[#5f1340] cursor-pointer"
-                          >
-                            {!isDP && preset === calculations.grandTotal ? 'Pas' : formatRupiah(preset, true)}
-                          </button>
-                        ))}
+                    {isLunas ? (
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                          Nominal Bayar (Rp)
+                        </label>
+                        <div className="w-full px-4 py-3 bg-slate-50 border border-[#e0e0e0] rounded-2xl text-sm font-black text-[#313030] flex items-center justify-between gap-2">
+                          <span>Rp {calculations.grandTotal.toLocaleString('id-ID')}</span>
+                          <Lock className="h-4 w-4 text-slate-400 shrink-0" />
+                        </div>
+                        <p className="text-[10px] text-slate-500 font-medium mt-1.5 leading-relaxed">
+                          Nominal terkunci sesuai total tagihan. Uang kurang? Pilih DP. Kelebihan bayar diajukan lewat aksi Refund di Riwayat.
+                        </p>
                       </div>
-                    </div>
-
-                    {isDP && paidAmountNum > 0 && (
-                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-900">
-                        Sisa tagihan: Rp {Math.max(0, calculations.grandTotal - paidAmountNum).toLocaleString('id-ID')}
+                    ) : (
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                          Nominal DP (Rp)
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={paidAmountInput}
+                          onChange={(e) => setPaidAmountInput(formatRupiah(e.target.value))}
+                          placeholder={`Contoh : ${formatRupiah(Math.floor(calculations.grandTotal / 2))}`}
+                          className="w-full px-4 py-3 bg-white border border-[#e0e0e0] rounded-2xl text-sm font-black text-[#313030] outline-none focus:border-[#5f1340]"
+                        />
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {[50000, 100000, 200000, Math.floor(calculations.grandTotal / 2)]
+                            .filter((v, i, arr) => v > 0 && arr.indexOf(v) === i && v < calculations.grandTotal)
+                            .map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => setPaidAmountInput(formatRupiah(preset))}
+                              className="px-3 py-1.5 rounded-lg bg-[#f8f8f8] border border-[#e0e0e0] text-[10px] font-bold text-slate-600 hover:border-[#5f1340] cursor-pointer"
+                            >
+                              {formatRupiah(preset, true)}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
 
-                    {isUnderpaidLunas && (
-                      <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700">
-                        Nominal bayar kurang Rp {(calculations.grandTotal - paidAmountNum).toLocaleString('id-ID')}
+                    {isValidDP && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-900">
+                        Sisa tagihan: Rp {Math.max(0, calculations.grandTotal - paidAmountNum).toLocaleString('id-ID')}
                       </div>
                     )}
 
                     {isInvalidDP && paidAmountNum > 0 && (
                       <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700">
                         Nominal DP harus lebih dari 0 dan kurang dari total tagihan.
-                      </div>
-                    )}
-
-                    {isLunas && excessAmount > 0 && (
-                      <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-3">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-amber-900 flex items-center gap-1.5">
-                            <Coins className="h-4 w-4" />
-                            Kelebihan Bayar
-                          </span>
-                          <span className="font-black text-amber-900">
-                            Rp {excessAmount.toLocaleString('id-ID')}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setOverpaymentAction('change')}
-                            className={`py-2.5 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer ${
-                              overpaymentAction === 'change'
-                                ? 'bg-amber-600 text-white'
-                                : 'bg-white text-amber-900 border border-amber-300'
-                            }`}
-                          >
-                            Kembalian Tunai
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setOverpaymentAction('deposit')}
-                            className={`py-2.5 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer ${
-                              overpaymentAction === 'deposit'
-                                ? 'bg-emerald-600 text-white'
-                                : 'bg-white text-emerald-800 border border-emerald-300'
-                            }`}
-                          >
-                            Simpan ke Saldo
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setOverpaymentAction('refund')}
-                            className={`py-2.5 rounded-xl text-[10px] sm:text-[11px] font-black transition-all cursor-pointer ${
-                              overpaymentAction === 'refund'
-                                ? 'bg-sky-600 text-white'
-                                : 'bg-white text-sky-800 border border-sky-300'
-                            }`}
-                          >
-                            Refund
-                          </button>
-                        </div>
-                        {overpaymentAction === 'deposit' && (
-                          <p className="text-[10px] text-emerald-800 font-medium">
-                            Kelebihan Rp {excessAmount.toLocaleString('id-ID')} masuk saldo member.
-                            Saldo baru: Rp {((selectedCustomer?.memberBalance || 0) + excessAmount).toLocaleString('id-ID')}
-                          </p>
-                        )}
-                        {overpaymentAction === 'refund' && (
-                          <p className="text-[10px] text-sky-800 font-medium">
-                            Pengajuan refund Rp {excessAmount.toLocaleString('id-ID')} akan dicatat di Riwayat (Pending Approval).
-                            Gap = aktual bayar − wajib bayar.
-                          </p>
-                        )}
                       </div>
                     )}
                   </>

@@ -14,6 +14,26 @@ function parseIsPettyCash(value, fallback = 1) {
   return 1;
 }
 
+/** Tanggal hari ini (WIB) dalam format YYYY-MM-DD. */
+function todayWib() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
+}
+
+/**
+ * Tanggal transaksi pilihan kasir (YYYY-MM-DD). Kosong / hari ini → null (pakai NOW()).
+ * Return { date } atau { error }.
+ */
+function parseTransactionDate(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return { date: null };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw) || Number.isNaN(Date.parse(`${raw}T00:00:00Z`))) {
+    return { error: 'Format tanggal transaksi tidak valid' };
+  }
+  const today = todayWib();
+  if (raw > today) return { error: 'Tanggal transaksi tidak boleh melebihi hari ini' };
+  return { date: raw === today ? null : raw };
+}
+
 function usesPettyCashBalance(row) {
   return parseIsPettyCash(row?.is_petty_cash, 1) === 1;
 }
@@ -173,7 +193,8 @@ export const addPettyCashEntry = async (req, res) => {
       amount,
       description,
       receiptPhotoUrl,
-      isPettyCash
+      isPettyCash,
+      transactionDate
     } = req.body;
 
     let evidenceUrl = receiptPhotoUrl || null;
@@ -191,6 +212,12 @@ export const addPettyCashEntry = async (req, res) => {
       });
     }
 
+    const { date: pickedDate, error: dateError } = parseTransactionDate(transactionDate);
+    if (dateError) {
+      if (req.file?.path) await safeUnlinkAbsPath(req.file.path);
+      return res.status(400).json({ success: false, message: dateError });
+    }
+
     const resolvedOutletId = outletId || 2;
     const { shiftId: openShiftId, initialPettyCash } = await getOpenShiftPettyFloat(resolvedOutletId);
     // shiftId dari client tidak dipercaya (bisa basi setelah ganti outlet); pakai shift terbuka outlet ini.
@@ -203,7 +230,7 @@ export const addPettyCashEntry = async (req, res) => {
     const [result] = await myWaschenPool.query(
       `INSERT INTO tr_petty_cash 
        (outlet_id, shift_id, cashier_employee_id, type, category, is_petty_cash, amount, balance_before, balance_after, description, receipt_photo_url, status, transaction_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, IF(? IS NULL, NOW(), TIMESTAMP(?, CURTIME())))`,
       [
         resolvedOutletId,
         resolvedShiftId,
@@ -216,7 +243,9 @@ export const addPettyCashEntry = async (req, res) => {
         balanceSnapshot,
         description.trim(),
         evidenceUrl,
-        PENDING_STATUS
+        PENDING_STATUS,
+        pickedDate,
+        pickedDate
       ]
     );
 

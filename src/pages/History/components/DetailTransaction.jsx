@@ -6,7 +6,7 @@ import ThermalNota from '../../../components/ThermalNota.jsx';
 import ThermalNotaMerge from '../../../components/ThermalNotaMerge.jsx';
 import CombinedReceiptModal from '../../../components/CombinedReceiptModal.jsx';
 import { formatName, formatEmployeeName } from '../../../utils/FormatName.js';
-import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
+
 import { formatDateId } from '../../../utils/FilterDate.js';
 import { STATUS_STEPS, DEFAULT_WORK_STATUSES, getWorkPercentage, percentageTone, formatWorkPercentage } from '../../../utils/workStatusMeta.js';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
@@ -15,16 +15,16 @@ import { getBankAccountForOutlet, getAllBankAccounts, OUTLET_BANK_ACCOUNTS } fro
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import PaymentProofFields from '../../../components/PaymentProofFields.jsx';
 import TransactionBarcodeCard from '../../../components/TransactionBarcodeCard.jsx';
+import ItemPhotoField from '../../../components/ItemPhotoField.jsx';
 import ChangeFulfillmentModal from '../../../components/ChangeFulfillmentModal.jsx';
 import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
 import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
-  Coins,
+
   CreditCard,
   History,
-  Image,
   Printer,
   Receipt,
   Upload,
@@ -90,10 +90,8 @@ export default function DetailTransaction() {
   const [isCrossTransfer, setIsCrossTransfer] = useState(false);
   const [crossBankOutletId, setCrossBankOutletId] = useState(1);
   const [paymentForm, setPaymentForm] = useState({
-    additionalAmount: '',
     paymentMethod: 'Tunai',
-    notes: '',
-    overpaymentAction: 'change'
+    notes: ''
   });
   const [proofFile, setProofFile] = useState(null);
   const [proofBusy, setProofBusy] = useState(false);
@@ -338,10 +336,8 @@ export default function DetailTransaction() {
     setCashProof(null);
     setPaymentModalOpen(true);
     setPaymentForm({
-      additionalAmount: '',
       paymentMethod: order.paymentMethod && order.paymentMethod !== '-' ? order.paymentMethod : 'Tunai Kasir',
-      notes: '',
-      overpaymentAction: 'change'
+      notes: ''
     });
     setProofFile(null);
     setIsLoadingPayment(true);
@@ -372,19 +368,28 @@ export default function DetailTransaction() {
     }
   };
 
+  // Nominal pelunasan dikunci = sisa tagihan (Phase 13)
+  const lockedPayAmount = () => paymentDetail?.remaining
+    ?? Math.max(0, (order?.grandTotal || 0) - (order?.paidAmount || 0));
+
+  // Tutup modal; kalau pembayaran tunai sudah tersimpan (tahap unggah bukti), muat ulang nota
+  const closePaymentModal = () => {
+    const alreadyPaid = Boolean(cashProof);
+    setPaymentModalOpen(false);
+    setPaymentDetail(null);
+    setCashProof(null);
+    setProofFile(null);
+    if (alreadyPaid) fetchDetail();
+  };
+
   const requestSubmitPaymentUpdate = () => {
     if (!order) return;
     if (normalizePaymentStatus(order.paymentStatus) === 'Lunas') {
       showToast('Sudah Lunas', 'Nota ini sudah lunas.', 'error');
       return;
     }
-    const addAmount = parseRupiah(paymentForm.additionalAmount);
-    if (addAmount <= 0) {
-      showAlert({
-        title: 'Nominal Kosong',
-        message: 'Nominal bayar wajib diisi sebelum menyimpan pembayaran.',
-        type: 'warning'
-      });
+    if (lockedPayAmount() <= 0) {
+      showToast('Sudah Lunas', 'Tidak ada sisa tagihan.', 'error');
       return;
     }
     if (mainCategory !== 'Tunai' && !proofFile) {
@@ -421,7 +426,7 @@ export default function DetailTransaction() {
 
   const handleSubmitPaymentUpdate = async (cashierEmployeeId) => {
     if (!order) return;
-    const addAmount = parseRupiah(paymentForm.additionalAmount);
+    const addAmount = lockedPayAmount();
     const resolvedCashierId = Number(cashierEmployeeId);
     if (!resolvedCashierId) {
       showToast('PIN Tidak Valid', 'Identitas kasir dari PIN tidak ditemukan.', 'error');
@@ -432,11 +437,7 @@ export default function DetailTransaction() {
       return;
     }
     if (addAmount <= 0) {
-      showAlert({
-        title: 'Nominal Kosong',
-        message: 'Nominal bayar wajib diisi sebelum menyimpan pembayaran.',
-        type: 'warning'
-      });
+      showToast('Sudah Lunas', 'Tidak ada sisa tagihan.', 'error');
       return;
     }
 
@@ -467,9 +468,6 @@ export default function DetailTransaction() {
         paymentMethod: resolvedPaymentMethod,
         paymentProofUrl: proofUrl,
         notes: paymentForm.notes || `Pelunasan nota ${order.id}`,
-        overpaymentToDeposit: paymentForm.overpaymentAction === 'deposit',
-        overpaymentToRefund: paymentForm.overpaymentAction === 'refund',
-        overpaymentAction: paymentForm.overpaymentAction,
         cashierEmployeeId: resolvedCashierId
       });
 
@@ -477,6 +475,10 @@ export default function DetailTransaction() {
       if (mainCategory === 'Tunai') {
         setCashProof({ txnId: order.dbId, orderNo: order.id });
         setProofFile(null);
+        // Ringkasan modal (Sudah Bayar / Sisa / riwayat) ikut diperbarui
+        axios.get(`/api/history/transactions/${order.dbId}/payments`)
+          .then((r) => { if (r.data?.success) setPaymentDetail(r.data.data); })
+          .catch(() => {});
         showToast('Pembayaran Tunai Tersimpan', 'Cetak nota, minta tanda tangan konsumen, lalu unggah fotonya.');
         return;
       }
@@ -916,18 +918,12 @@ export default function DetailTransaction() {
                           <div className="flex flex-col lg:flex-row gap-3">
                             {/* Photo */}
                             <div className="shrink-0 w-full lg:w-[120px]">
-                              {it.photoUrl ? (
-                                <img
-                                  src={it.photoUrl}
-                                  alt={it.serviceName}
-                                  className="w-full lg:w-[120px] h-[120px] object-cover rounded-xl border border-[#e0e0e0]"
-                                />
-                              ) : (
-                                <div className="w-full lg:w-[120px] h-[120px] rounded-xl border border-dashed border-slate-300 bg-white flex flex-col items-center justify-center gap-1 text-slate-400">
-                                  <Image className="h-5 w-5" />
-                                  <span className="text-[10px] font-bold">Tidak ada foto</span>
-                                </div>
-                              )}
+                              <ItemPhotoField
+                                photoUrl={it.photoUrl}
+                                uploadUrl={`/api/transactions/${order.dbId}/items/${it.id}/photo`}
+                                orderLabel={order.id}
+                                onUploaded={(url) => setItems((prev) => prev.map((x) => (x.id === it.id ? { ...x, photoUrl: url } : x)))}
+                              />
                             </div>
 
                             {/* Specs grid */}
@@ -1056,7 +1052,7 @@ export default function DetailTransaction() {
                   <span className="text-[10px] text-slate-400">{formatName(order.customerName)}</span>
                 </div>
               </div>
-              <button type="button" onClick={() => { setPaymentModalOpen(false); setPaymentDetail(null); }} className="p-1 text-slate-400 hover:text-[#313030]">
+              <button type="button" onClick={closePaymentModal} className="p-1 text-slate-400 hover:text-[#313030]">
                 <X className="h-4.5 w-4.5" />
               </button>
             </div>
@@ -1168,30 +1164,13 @@ export default function DetailTransaction() {
                         grandTotal={paymentDetail?.remaining || remaining || order.grandTotal}
                       />
                       <div>
-                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Nominal Bayar (Rp)</label>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={paymentForm.additionalAmount}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, additionalAmount: formatRupiah(e.target.value) })}
-                          placeholder={`Contoh : ${formatRupiah(paymentDetail?.remaining || remaining || order.grandTotal)}`}
-                          className="w-full px-4 py-2.5 bg-white border border-[#e0e0e0] rounded-xl text-sm font-black outline-none focus:border-[#5f1340]"
-                        />
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {[paymentDetail?.remaining || remaining, 50000, 100000, 200000]
-                            .filter((v, i, arr) => v > 0 && arr.indexOf(v) === i)
-                            .slice(0, 4)
-                            .map((preset) => (
-                              <button
-                                key={preset}
-                                type="button"
-                                onClick={() => setPaymentForm({ ...paymentForm, additionalAmount: formatRupiah(preset) })}
-                                className="px-3 py-1 rounded-lg bg-[#f8f8f8] border border-[#e0e0e0] text-[10px] font-bold text-slate-600 hover:border-[#5f1340] cursor-pointer"
-                              >
-                                {preset === (paymentDetail?.remaining || remaining) ? 'Lunas Pas' : formatRupiah(preset, true)}
-                              </button>
-                            ))}
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Nominal Pelunasan (Rp)</label>
+                        <div className="w-full px-4 py-2.5 bg-slate-50 border border-[#e0e0e0] rounded-xl text-sm font-black text-[#313030]">
+                          Rp {lockedPayAmount().toLocaleString('id-ID')}
                         </div>
+                        <p className="text-[10px] text-slate-500 font-medium mt-1">
+                          Terkunci sesuai sisa tagihan. Kelebihan bayar diajukan lewat aksi Refund di Riwayat.
+                        </p>
                       </div>
                       <div>
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Catatan</label>
@@ -1219,22 +1198,6 @@ export default function DetailTransaction() {
                       ) : (
                         <PaymentProofFields orderNo={order.id} file={proofFile} onFile={setProofFile} />
                       )}
-                      {!cashProof && parseRupiah(paymentForm.additionalAmount) > (paymentDetail?.remaining || remaining || 0) && (
-                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
-                          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
-                            <Coins className="h-4 w-4" />
-                            Kelebihan: Rp {(parseRupiah(paymentForm.additionalAmount) - (paymentDetail?.remaining || remaining || 0)).toLocaleString('id-ID')}
-                          </div>
-                          <div className="grid grid-cols-3 gap-2">
-                            <button type="button" onClick={() => setPaymentForm({ ...paymentForm, overpaymentAction: 'change' })} className={`py-2 rounded-lg text-[10px] font-black cursor-pointer ${paymentForm.overpaymentAction === 'change' ? 'bg-amber-600 text-white' : 'bg-white border border-amber-300 text-amber-900'}`}>Kembalian Tunai</button>
-                            <button type="button" onClick={() => setPaymentForm({ ...paymentForm, overpaymentAction: 'deposit' })} className={`py-2 rounded-lg text-[10px] font-black cursor-pointer ${paymentForm.overpaymentAction === 'deposit' ? 'bg-emerald-600 text-white' : 'bg-white border border-emerald-300 text-emerald-800'}`}>Simpan ke Saldo</button>
-                            <button type="button" onClick={() => setPaymentForm({ ...paymentForm, overpaymentAction: 'refund' })} className={`py-2 rounded-lg text-[10px] font-black cursor-pointer ${paymentForm.overpaymentAction === 'refund' ? 'bg-sky-600 text-white' : 'bg-white border border-sky-300 text-sky-800'}`}>Refund</button>
-                          </div>
-                          {paymentForm.overpaymentAction === 'refund' && (
-                            <p className="text-[10px] text-sky-800 font-medium">Pengajuan refund kelebihan bayar (Pending Approval).</p>
-                          )}
-                        </div>
-                      )}
                     </>
                   )}
                 </>
@@ -1243,7 +1206,7 @@ export default function DetailTransaction() {
 
             {(paymentStatus !== 'Lunas' || cashProof) && !isLoadingPayment && (
               <div className="p-4 border-t border-[#e0e0e0] bg-[#f8f8f8] flex gap-2 shrink-0">
-                <button type="button" onClick={() => { setPaymentModalOpen(false); setPaymentDetail(null); setCashProof(null); }} className="px-4 py-2.5 bg-white border border-[#e0e0e0] text-slate-700 font-bold rounded-xl text-xs cursor-pointer">Batal</button>
+                <button type="button" onClick={closePaymentModal} className="px-4 py-2.5 bg-white border border-[#e0e0e0] text-slate-700 font-bold rounded-xl text-xs cursor-pointer">Batal</button>
                 <button type="button" disabled={isSubmittingPayment || (cashProof && !proofFile)} onClick={cashProof ? saveCashProof : requestSubmitPaymentUpdate} className="flex-1 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 text-white font-black rounded-xl text-xs cursor-pointer flex items-center justify-center gap-1.5">
                   <CheckCircle2 className="h-4 w-4" />
                   {isSubmittingPayment ? 'Menyimpan...' : cashProof ? 'Simpan Bukti' : 'Simpan Pembayaran'}

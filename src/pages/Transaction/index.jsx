@@ -184,7 +184,7 @@ export default function TransactionPage() {
   const [servicesList, setServicesList] = useState([]);
   const [serviceSearch, setServiceSearch] = useState('');
   const [serviceCurrentPage, setServiceCurrentPage] = useState(1);
-  const serviceItemsPerPage = 6;
+  const serviceItemsPerPage = 12;
 
   // Step 3: Keranjang State
   const [cartItems, setCartItems] = useState([]);
@@ -203,7 +203,6 @@ export default function TransactionPage() {
   const [isCrossTransfer, setIsCrossTransfer] = useState(false);
   const [crossBankOutletId, setCrossBankOutletId] = useState(1);
   const [paidAmountInput, setPaidAmountInput] = useState('');
-  const [overpaymentAction, setOverpaymentAction] = useState('change');
   const [paymentProofFile, setPaymentProofFile] = useState(null);
 
   // Item Config Modal
@@ -662,6 +661,12 @@ export default function TransactionPage() {
     )));
   };
 
+  const handleSetItemPhoto = (cartId, photoUrl) => {
+    setCartItems((prev) => prev.map((item) => (
+      item.cartId === cartId ? { ...item, photoUrl } : item
+    )));
+  };
+
   const handleToggleItemDryClean = (cartId) => {
     setCartItems(cartItems.map((item) => {
       if (item.cartId !== cartId || item.isDcRequired === true) return item;
@@ -709,7 +714,6 @@ export default function TransactionPage() {
   useEffect(() => {
     if (paymentStatus === 'Lunas' && !isMemberBalanceMethod && !isOutstandingDropOff) {
       setPaidAmountInput(formatRupiah(calculations.grandTotal));
-      setOverpaymentAction('change');
     } else if (paymentStatus === 'DP' && !paidAmountInput) {
       setPaidAmountInput(formatRupiah(Math.max(50000, Math.floor(calculations.grandTotal / 2))));
     }
@@ -758,25 +762,6 @@ export default function TransactionPage() {
       return;
     }
 
-    if (paymentStatus === 'Lunas' && !isMemberBalanceMethod) {
-      if (paidAmountNum <= 0) {
-        showAlert({
-          title: 'Nominal Bayar Kosong',
-          message: 'Nominal bayar wajib diisi untuk transaksi lunas.',
-          type: 'warning'
-        });
-        return;
-      }
-      if (paidAmountNum < calculations.grandTotal) {
-        showAlert({
-          title: 'Nominal Bayar Kurang',
-          message: `Nominal bayar kurang Rp ${(calculations.grandTotal - paidAmountNum).toLocaleString('id-ID')} dari total tagihan.`,
-          type: 'error'
-        });
-        return;
-      }
-    }
-
     if (paymentStatus === 'DP') {
       if (paidAmountNum <= 0 || paidAmountNum >= calculations.grandTotal) {
         showAlert({
@@ -788,18 +773,12 @@ export default function TransactionPage() {
       }
     }
 
-    const excessAmount = paymentStatus === 'Lunas' && !isMemberBalanceMethod
-      ? Math.max(0, paidAmountNum - calculations.grandTotal)
-      : 0;
-    const overpaymentToDeposit = excessAmount > 0 && overpaymentAction === 'deposit';
-    const overpaymentToRefund = excessAmount > 0 && overpaymentAction === 'refund';
-    const changeAmount = excessAmount > 0 && overpaymentAction === 'change' ? excessAmount : 0;
-
+    // Nominal Lunas dikunci = grand total (Phase 13)
     const resolvedStatus = isOutstanding ? 'Outstanding' : paymentStatus;
     const resolvedPaidAmount = isOutstanding
       ? 0
       : paymentStatus === 'Lunas'
-        ? (isMemberBalanceMethod ? calculations.grandTotal : paidAmountNum)
+        ? calculations.grandTotal
         : paidAmountNum;
 
     if (!cartItems.some(i => i.category !== 'Biaya')) {
@@ -850,10 +829,6 @@ export default function TransactionPage() {
       paymentStatus: resolvedStatus,
       paymentMethod: isOutstanding ? '-' : resolvedPaymentMethod,
       paidAmount: resolvedPaidAmount,
-      changeAmount: paymentStatus === 'Lunas' ? changeAmount : 0,
-      overpaymentToDeposit: paymentStatus === 'Lunas' ? overpaymentToDeposit : false,
-      overpaymentToRefund: paymentStatus === 'Lunas' ? overpaymentToRefund : false,
-      overpaymentAction: paymentStatus === 'Lunas' && excessAmount > 0 ? overpaymentAction : null,
       isDelivery,
       deliveryAddress: isDelivery ? (selectedCustomer.address || '-') : null,
       deliveryNotes: isDelivery ? generalOrderNotes : null,
@@ -872,7 +847,8 @@ export default function TransactionPage() {
         color: item.color,
         material: item.material,
         size: item.size,
-        conditionNotes: item.note
+        conditionNotes: item.note,
+        photoUrl: item.photoUrl || null
       }))
     };
 
@@ -917,10 +893,6 @@ export default function TransactionPage() {
 
       const depositDelta = orderResult?.deposit_delta ?? 0;
       const payloadPaid = payload.paidAmount || 0;
-      const payloadChange = payload.changeAmount || 0;
-      const payloadDepositAdded = payload.overpaymentToDeposit
-        ? Math.max(0, payloadPaid - calculations.grandTotal)
-        : 0;
       const newMemberBalance = Math.max(0, (selectedCustomer.memberBalance || 0) + depositDelta);
 
       if (depositDelta !== 0) {
@@ -963,8 +935,8 @@ export default function TransactionPage() {
         paymentStatus: orderResult?.payment_status || payload.paymentStatus,
         paymentMethod: orderResult?.payment_method || payload.paymentMethod,
         paidAmount: parseFloat(orderResult?.paid_amount) || payloadPaid,
-        changeAmount: parseFloat(orderResult?.change_amount) || payloadChange,
-        depositAdded: payloadDepositAdded,
+        changeAmount: 0,
+        depositAdded: 0,
         createdAt: new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
         createdAtRaw: new Date().toISOString(),
         estimatedCompletion: isExpress ? '1x24 Jam (Besok Selesai)' : '2-3 Hari Kerja',
@@ -1177,6 +1149,7 @@ export default function TransactionPage() {
             handleEditCartItem={handleEditCartItem}
             handleToggleItemCleanox={handleToggleItemCleanox}
             handleToggleItemDryClean={handleToggleItemDryClean}
+            handleSetItemPhoto={handleSetItemPhoto}
             configuringItem={configuringItem}
             setConfiguringItem={setConfiguringItem}
             itemSpecs={itemSpecs}
@@ -1233,8 +1206,6 @@ export default function TransactionPage() {
             paymentMethods={paymentMethods}
             paidAmountInput={paidAmountInput}
             setPaidAmountInput={setPaidAmountInput}
-            overpaymentAction={overpaymentAction}
-            setOverpaymentAction={setOverpaymentAction}
             isOutstandingDropOff={isOutstandingDropOff}
             setIsOutstandingDropOff={setIsOutstandingDropOff}
             paymentProofFile={paymentProofFile}

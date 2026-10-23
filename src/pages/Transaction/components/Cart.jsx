@@ -1,6 +1,7 @@
 import React from 'react';
 import { Receipt, Trash2, Edit3, Zap, Truck, ArrowLeft, ArrowRight } from 'lucide-react';
 import ItemConfigModal from './ItemConfigModal.jsx';
+import ItemPhotoField from '../../../components/ItemPhotoField.jsx';
 
 export default function Cart({
   cartItems,
@@ -9,6 +10,7 @@ export default function Cart({
   handleEditCartItem,
   handleToggleItemCleanox,
   handleToggleItemDryClean,
+  handleSetItemPhoto,
   configuringItem,
   setConfiguringItem,
   itemSpecs,
@@ -140,6 +142,15 @@ export default function Cart({
                       <span>Edit Rincian Item</span>
                     </span>
                     <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                      {item.category !== 'Biaya' && handleSetItemPhoto && (
+                        <ItemPhotoField
+                          compact
+                          photoUrl={item.photoUrl}
+                          uploadUrl="/api/transactions/item-photo"
+                          orderLabel={item.name}
+                          onUploaded={(url) => handleSetItemPhoto(item.cartId, url)}
+                        />
+                      )}
                       {item.size && item.size !== '-' && (
                         <span className="text-[10px] font-bold text-purple-900 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full">
                           Ukuran: {item.size}

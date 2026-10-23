@@ -1,22 +1,22 @@
 /**
  * Mutasi saldo deposit pelanggan saat pembayaran transaksi.
- * - Saldo Member: potong grand_total (Usage)
- * - Kelebihan bayar: deposit (Topup) | kembalian tunai | pengajuan refund (pending approval app lain)
+ * Nominal bayar dikunci = grand_total (Phase 13): tidak ada lagi kembalian,
+ * deposit, atau refund kelebihan bayar di sini. Kelebihan bayar diajukan
+ * lewat aksi Refund di Riwayat (tr_transaction_refund).
+ * - Saldo Member: potong grand_total (Payment_Debit)
+ * - Metode lain: tercatat persis grand_total
  */
 export async function applyDepositOnPayment(connection, {
   customerId,
   orderNo,
   grandTotal,
   paymentMethod,
-  paidAmount,
-  overpaymentToDeposit = false,
-  overpaymentToRefund = false,
   outletId,
   cashierEmployeeId
 }) {
   const total = parseFloat(grandTotal) || 0;
   if (total <= 0) {
-    return { paidAmount: 0, changeAmount: 0, depositDelta: 0, balanceAfter: null, refundAmount: 0 };
+    return { paidAmount: 0, depositDelta: 0, balanceAfter: null };
   }
 
   const [pmRows] = await connection.query(
@@ -29,8 +29,12 @@ export async function applyDepositOnPayment(connection, {
   const isMemberBalance = pmRows[0]?.requires_member_balance === 1
     || /saldo member/i.test(paymentMethod || '');
 
+  if (!isMemberBalance) {
+    return { paidAmount: total, depositDelta: 0, balanceAfter: null, isMemberBalance: false };
+  }
+
   const [custRows] = await connection.query(
-    'SELECT id, deposit_balance FROM mst_customer WHERE id = ? LIMIT 1',
+    'SELECT id, deposit_balance FROM mst_customer WHERE id = ? LIMIT 1 FOR UPDATE',
     [customerId]
   );
   if (!custRows.length) {
@@ -38,101 +42,40 @@ export async function applyDepositOnPayment(connection, {
   }
 
   const balanceBefore = parseFloat(custRows[0].deposit_balance) || 0;
-  let balanceAfter = balanceBefore;
-  let finalPaid = parseFloat(paidAmount);
-  let changeAmount = 0;
-  let depositDelta = 0;
-  let refundAmount = 0;
-
-  if (isMemberBalance) {
-    if (balanceBefore < total) {
-      throw new Error(
-        `Saldo member tidak cukup (tersedia Rp ${balanceBefore.toLocaleString('id-ID')})`
-      );
-    }
-
-    balanceAfter = balanceBefore - total;
-    depositDelta = -total;
-
-    await connection.query(
-      'UPDATE mst_customer SET deposit_balance = ?, updated_at = NOW() WHERE id = ?',
-      [balanceAfter, customerId]
+  if (balanceBefore < total) {
+    throw new Error(
+      `Saldo member tidak cukup (tersedia Rp ${balanceBefore.toLocaleString('id-ID')})`
     );
+  }
 
-    await connection.query(
-      `INSERT INTO tr_customer_deposit
-       (customer_id, outlet_id, cashier_employee_id, type, amount, balance_before, balance_after, payment_method, notes)
-       VALUES (?, ?, ?, 'Usage', ?, ?, ?, ?, ?)`,
-      [
-        customerId,
-        outletId || null,
-        cashierEmployeeId || null,
-        total,
-        balanceBefore,
-        balanceAfter,
-        paymentMethod || 'Saldo Member',
-        `Pembayaran nota ${orderNo}`
-      ]
-    );
+  const balanceAfter = balanceBefore - total;
 
-    return {
-      paidAmount: total,
-      changeAmount: 0,
-      depositDelta,
+  await connection.query(
+    'UPDATE mst_customer SET deposit_balance = ?, updated_at = NOW() WHERE id = ?',
+    [balanceAfter, customerId]
+  );
+
+  // enum type: Topup | Payment_Debit | Refund | Bonus
+  await connection.query(
+    `INSERT INTO tr_customer_deposit
+     (customer_id, outlet_id, cashier_employee_id, type, amount, balance_before, balance_after, payment_method, notes)
+     VALUES (?, ?, ?, 'Payment_Debit', ?, ?, ?, ?, ?)`,
+    [
+      customerId,
+      outletId || null,
+      cashierEmployeeId || null,
+      total,
+      balanceBefore,
       balanceAfter,
-      isMemberBalance: true,
-      refundAmount: 0
-    };
-  }
-
-  if (Number.isNaN(finalPaid) || finalPaid <= 0) {
-    finalPaid = total;
-  }
-
-  if (finalPaid < total) {
-    throw new Error('Nominal bayar kurang dari total tagihan');
-  }
-
-  const excess = Math.round((finalPaid - total) * 100) / 100;
-
-  if (excess > 0 && overpaymentToDeposit) {
-    balanceAfter = balanceBefore + excess;
-    depositDelta = excess;
-
-    await connection.query(
-      'UPDATE mst_customer SET deposit_balance = ?, updated_at = NOW() WHERE id = ?',
-      [balanceAfter, customerId]
-    );
-
-    await connection.query(
-      `INSERT INTO tr_customer_deposit
-       (customer_id, outlet_id, cashier_employee_id, type, amount, balance_before, balance_after, payment_method, notes)
-       VALUES (?, ?, ?, 'Topup', ?, ?, ?, ?, ?)`,
-      [
-        customerId,
-        outletId || null,
-        cashierEmployeeId || null,
-        excess,
-        balanceBefore,
-        balanceAfter,
-        paymentMethod || 'Tunai',
-        `Kelebihan bayar nota ${orderNo}`
-      ]
-    );
-  } else if (excess > 0 && overpaymentToRefund) {
-    // Dana kelebihan ditahan sebagai pengajuan refund (approval di app lain)
-    refundAmount = excess;
-    changeAmount = 0;
-  } else if (excess > 0) {
-    changeAmount = excess;
-  }
+      paymentMethod || 'Saldo Member',
+      `Pembayaran nota ${orderNo}`
+    ]
+  );
 
   return {
-    paidAmount: finalPaid,
-    changeAmount,
-    depositDelta,
-    balanceAfter: depositDelta > 0 ? balanceAfter : balanceBefore,
-    isMemberBalance: false,
-    refundAmount
+    paidAmount: total,
+    depositDelta: -total,
+    balanceAfter,
+    isMemberBalance: true
   };
 }

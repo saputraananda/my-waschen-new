@@ -71,14 +71,14 @@ export default function SelectServices({
                     <span className="text-[9px] font-black uppercase text-[#5f1340] bg-[#5f1340]/10 px-1.5 py-0.5 rounded inline-block mb-1">
                       {rec.categoryName}
                     </span>
-                    <h4 className="font-extrabold text-xs text-[#313030] group-hover:text-[#5f1340] line-clamp-1">
+                    <h4 className="font-extrabold text-sm sm:text-base text-[#313030] group-hover:text-[#5f1340] line-clamp-2 leading-snug">
                       {rec.name}
                     </h4>
                     {rec.isCleanox && (
                       <div className="mt-1"><CleanoxBadge /></div>
                     )}
-                    <span className="text-[10px] text-slate-400 block mt-0.5">
-                      Rp {rec.price.toLocaleString('id-ID')} / {rec.unit}
+                    <span className="text-xs sm:text-sm font-bold text-[#5f1340] block mt-1">
+                      Rp {rec.price.toLocaleString('id-ID')} <span className="text-[10px] sm:text-xs font-semibold text-slate-400">/ {rec.unit}</span>
                     </span>
                   </div>
                   <button
@@ -163,7 +163,7 @@ export default function SelectServices({
                       )}
                     </div>
                   </div>
-                  <h4 className="font-extrabold text-sm text-[#313030] group-hover:text-[#5f1340] transition-colors leading-snug">
+                  <h4 className="font-extrabold text-base sm:text-lg text-[#313030] group-hover:text-[#5f1340] transition-colors leading-snug break-words">
                     {service.name}
                   </h4>
                   {service.description ? (
@@ -173,10 +173,10 @@ export default function SelectServices({
 
                 <div className="mt-4 pt-3 border-t border-[#e0e0e0]/70 flex items-center justify-between">
                   <div>
-                    <span className="text-sm font-black text-[#5f1340] block">
+                    <span className="text-lg sm:text-xl font-black text-[#5f1340] block leading-tight">
                       Rp {service.price.toLocaleString('id-ID')}
                     </span>
-                    <span className="text-[10px] text-slate-400">
+                    <span className="text-[11px] sm:text-xs text-slate-400">
                       per {service.unit}
                       {service.isDcRequired ? ' · Wajib DC' : service.dcPriceAdd > 0 ? ` · +Rp ${Number(service.dcPriceAdd).toLocaleString('id-ID')} jika DC` : ''}
                     </span>

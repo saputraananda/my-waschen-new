@@ -6,12 +6,19 @@ import { RotateCcw, Save, Paperclip, X } from 'lucide-react';
 
 const AMOUNT_PRESETS = [25000, 50000, 100000, 200000, 500000];
 
+/** Tanggal hari ini (zona waktu perangkat) dalam format YYYY-MM-DD untuk <input type="date">. */
+const todayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 const getDefaultForm = (categoryId = '') => ({
   type: 'Keluar',
   categoryId,
   amount: '',
   desc: '',
-  isPettyCash: true
+  isPettyCash: true,
+  transactionDate: todayStr()
 });
 
 export default function AddPettyCash({
@@ -92,6 +99,10 @@ export default function AddPettyCash({
       showToast('Nominal Tidak Valid', 'Nominal harus diisi dengan benar!', 'error');
       return;
     }
+    if (logForm.transactionDate && logForm.transactionDate > todayStr()) {
+      showToast('Tanggal Tidak Valid', 'Tanggal transaksi tidak boleh melebihi hari ini.', 'error');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -105,6 +116,7 @@ export default function AddPettyCash({
       fd.append('amount', String(numAmount));
       fd.append('description', logForm.desc || 'Pengajuan kas outlet');
       fd.append('isPettyCash', logForm.isPettyCash ? '1' : '0');
+      fd.append('transactionDate', logForm.transactionDate || todayStr());
       if (evidenceFile) fd.append('evidence', evidenceFile);
 
       const res = await axios.post('/api/petty-cash', fd, {
@@ -122,7 +134,9 @@ export default function AddPettyCash({
           status: created.status || 'Pengajuan',
           isPettyCash: Number(created.is_petty_cash ?? created.isPettyCash ?? 1) !== 0,
           receiptPhotoUrl: created.receipt_photo_url || null,
-          date: 'Baru saja',
+          date: logForm.transactionDate && logForm.transactionDate !== todayStr() && created.transaction_date
+            ? new Date(created.transaction_date).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
+            : 'Baru saja',
           createdBy: formatEmployeeName(userProfile?.fullName, 'Staff Kasir')
         });
         showToast('Pengajuan Terkirim', res.data.message || 'Menunggu persetujuan.');
@@ -273,8 +287,36 @@ export default function AddPettyCash({
         </div>
 
         <div className="flex flex-col gap-5">
+          <div className="p-5 border border-[#e0e0e0] rounded-2xl bg-[#f8f8f8]/50 flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-black text-[#5f1340] uppercase tracking-wider">5. Tanggal Transaksi</span>
+              {logForm.transactionDate !== todayStr() && (
+                <button
+                  type="button"
+                  onClick={() => setLogForm({ ...logForm, transactionDate: todayStr() })}
+                  className="text-[10px] font-black text-[#5f1340] hover:underline cursor-pointer"
+                >
+                  Kembali ke hari ini
+                </button>
+              )}
+            </div>
+            <input
+              type="date"
+              required
+              max={todayStr()}
+              value={logForm.transactionDate}
+              onChange={(e) => setLogForm({ ...logForm, transactionDate: e.target.value })}
+              className="w-full px-4 py-3 border border-[#e0e0e0] rounded-xl bg-white text-sm font-bold text-[#313030] outline-none focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340] cursor-pointer"
+            />
+            <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+              {logForm.transactionDate === todayStr()
+                ? 'Default hari ini. Ubah bila transaksi terjadi di tanggal sebelumnya.'
+                : 'Pengajuan dicatat untuk tanggal yang dipilih (bukan hari ini).'}
+            </p>
+          </div>
+
           <div className="p-5 border border-[#e0e0e0] rounded-2xl bg-[#f8f8f8]/50 flex flex-col gap-4 flex-1">
-            <span className="text-[10px] font-black text-[#5f1340] uppercase tracking-wider">5. Keterangan</span>
+            <span className="text-[10px] font-black text-[#5f1340] uppercase tracking-wider">6. Keterangan</span>
             <textarea
               rows={5}
               required
@@ -286,7 +328,7 @@ export default function AddPettyCash({
           </div>
 
           <div className="p-5 border border-[#e0e0e0] rounded-2xl bg-[#f8f8f8]/50 flex flex-col gap-3">
-            <span className="text-[10px] font-black text-[#5f1340] uppercase tracking-wider">6. Bukti Pengajuan</span>
+            <span className="text-[10px] font-black text-[#5f1340] uppercase tracking-wider">7. Bukti Pengajuan</span>
             {evidenceFile ? (
               <div className="flex items-center gap-3 p-3 bg-white border border-[#e0e0e0] rounded-xl">
                 {evidencePreview ? (

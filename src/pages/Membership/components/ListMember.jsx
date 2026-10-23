@@ -32,8 +32,8 @@ import { customerPickLabel } from '../../../utils/customerPickLabel.js';
 
 const PAGE_SIZE = 10;
 
-/** Mutasi yang menambah saldo (selain itu = pemakaian / refund). */
-const isCreditMutation = (type) => /^(topup|bonus)$/i.test(String(type || ''));
+/** Mutasi yang menambah saldo. Refund = refund nota jadi deposit (disetujui admin Alsa). */
+const isCreditMutation = (type) => /^(topup|bonus|refund)$/i.test(String(type || ''));
 
 const waHref = (rawPhone) => {
   let digits = String(rawPhone || '').replace(/\D/g, '');

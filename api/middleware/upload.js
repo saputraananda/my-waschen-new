@@ -268,6 +268,33 @@ export const uploadDeleteRequestAttachment = createUploader(DELETE_REQUEST_SUBDI
   maxFileSize: 5 * 1024 * 1024
 }).single('attachment');
 
+/** Bukti tambahan pengajuan refund (opsional) → {UPLOAD_BASE_DIR}/assets/refund-request */
+export const REFUND_REQUEST_SUBDIR = 'assets/refund-request';
+export const uploadRefundRequestAttachment = createUploader(REFUND_REQUEST_SUBDIR, {
+  fileTypes: /jpeg|jpg|png|webp|pdf/,
+  maxFileSize: 5 * 1024 * 1024
+}).single('attachment');
+
+/** Bukti pembayaran refund dari admin Super App saat Approve → {UPLOAD_BASE_DIR}/assets/refund-approval */
+export const REFUND_APPROVAL_SUBDIR = 'assets/refund-approval';
+export const uploadRefundApprovalProof = createUploader(REFUND_APPROVAL_SUBDIR, {
+  fileTypes: /jpeg|jpg|png|webp|pdf/,
+  maxFileSize: 5 * 1024 * 1024
+}).single('attachment');
+
+/** Foto fisik item cucian saat terima (di luar QC) → {UPLOAD_BASE_DIR}/assets/item-photo */
+export const ITEM_PHOTO_SUBDIR = 'assets/item-photo';
+export const uploadItemPhotoFile = createUploader(ITEM_PHOTO_SUBDIR, {
+  fileTypes: /jpeg|jpg|png|webp/,
+  maxFileSize: 10 * 1024 * 1024 // foto item tidak dikompres berat agar detail noda terlihat
+}).single('photo');
+
+/** True jika URL memang berasal dari folder foto item (cegah URL sembarang masuk DB). */
+export const isItemPhotoUrl = (url) => {
+  if (!url || typeof url !== 'string') return false;
+  return url.startsWith(`${buildUploadPublicUrl(ITEM_PHOTO_SUBDIR)}/`) && !url.includes('..');
+};
+
 export const uploadEvidence = createUploader('assets/evidence');
 
 export default createUploader;

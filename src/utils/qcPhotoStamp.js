@@ -3,7 +3,9 @@ const STAGE_PROCESS_LABEL = {
   delivery: 'Pengantaran',
   handover: 'Serah Terima',
   payment: 'Bukti Bayar',
-  delete_request: 'Lampiran Hapus Nota'
+  item_photo: 'Foto Item',
+  delete_request: 'Lampiran Hapus Nota',
+  refund_request: 'Bukti Refund'
 };
 
 function formatPhotoTimestampWib(date = new Date()) {

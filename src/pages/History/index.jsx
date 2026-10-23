@@ -113,14 +113,9 @@ export default function History() {
           deleteRequestedAt: t.delete_requested_at ? new Date(t.delete_requested_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : null,
           deleteReason: t.delete_reason || null,
           deleteAttachmentUrl: t.delete_attachment_url || null,
-          // Refund Request Fields
-          isRefundRequested: t.is_refund_requested === 1 || t.is_refund_requested === true,
-          refundApprovalStatus: t.refund_approval_status,
-          refundRequestedAt: t.refund_requested_at
-            ? new Date(t.refund_requested_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
-            : null,
-          refundReason: t.refund_reason || null,
-          refundAmount: parseFloat(t.refund_amount) || 0
+          // Refund (tr_transaction_refund)
+          refundPendingCount: Number(t.refund_pending_count) || 0,
+          refundCount: Number(t.refund_count) || 0
         }));
         setTransactions(mapped);
       }
@@ -133,7 +128,7 @@ export default function History() {
 
   const activeTransactionsCount = transactions.filter(t => !t.isDeleteRequested).length;
   const deleteRequestsCount = transactions.filter(t => t.isDeleteRequested).length;
-  const refundRequestsCount = transactions.filter(t => t.isRefundRequested).length;
+  const refundRequestsCount = transactions.reduce((sum, t) => sum + (t.refundPendingCount || 0), 0);
 
   return (
     <div className="min-h-screen bg-[#f8f8f8] text-[#313030] flex flex-col font-sans">
@@ -233,7 +228,7 @@ export default function History() {
           />
         )}
         {activeTab === 'request_refund' && (
-          <RequestRefundTransaction transactions={transactions} />
+          <RequestRefundTransaction outletId={activeOutletId} />
         )}
         {activeTab === 'request_delete' && (
           <RequestDeleteTransaction

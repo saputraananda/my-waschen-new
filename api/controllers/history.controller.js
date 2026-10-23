@@ -5,7 +5,6 @@ import { emitDashboardRefresh } from '../socket.js';
 import { applyDepositOnPayment } from '../utils/customerDeposit.js';
 import {
   insertPaymentLog,
-  resolvePaymentStatus,
   buildPaymentProofUrl
 } from '../utils/paymentLog.js';
 import { uploadPaymentReceipt, replaceUploadUrl, safeUnlinkAbsPath, safeUnlinkUploadUrl } from '../middleware/upload.js';
@@ -150,31 +149,26 @@ export const deletePaymentProof = async (req, res) => {
 
 /**
  * PATCH /api/history/transactions/:id/payment
+ * Pelunasan nota DP / Outstanding. Nominal dikunci = sisa tagihan (Phase 13):
+ * tidak ada kembalian, deposit, atau refund kelebihan bayar di sini.
+ * `additionalAmount` dari client hanya dicek, harus sama dengan sisa tagihan.
  */
 export const updateTransactionPayment = async (req, res) => {
   const connection = await myWaschenPool.getConnection();
   try {
     const { id } = req.params;
     const {
-      paymentStatus,
       paymentMethod,
-      paidAmount,
       additionalAmount,
-      overpaymentToDeposit,
-      overpaymentToRefund,
-      overpaymentAction,
       paymentProofUrl,
       notes,
       cashierEmployeeId
     } = req.body;
 
-    const wantRefundOverpayment = Boolean(overpaymentToRefund)
-      || String(overpaymentAction || '').toLowerCase() === 'refund';
-
     await connection.beginTransaction();
 
     const [orderRows] = await connection.query(
-      'SELECT * FROM tr_transaction WHERE id = ? OR order_no = ? LIMIT 1',
+      'SELECT * FROM tr_transaction WHERE id = ? OR order_no = ? LIMIT 1 FOR UPDATE',
       [id, id]
     );
     if (!orderRows.length) {
@@ -194,151 +188,64 @@ export const updateTransactionPayment = async (req, res) => {
         message: 'Pelunasan hanya bisa saat shift outlet sedang terbuka'
       });
     }
+
     const grandTotal = parseFloat(order.grand_total) || 0;
     const currentPaid = parseFloat(order.paid_amount) || 0;
-    let targetStatus = paymentStatus || order.payment_status;
-    let newPaid = currentPaid;
-    let changeAmount = parseFloat(order.change_amount) || 0;
-    let depositResult = null;
-    let refundAmountToSave = 0;
-
-    // Prioritas: additionalAmount / paidAmount dulu.
-    // Jangan cek Outstanding dulu — kalau nota masih Outstanding tapi ada
-    // nominal pelunasan, harus diproses (bug: bayar + PIN sukses tapi paid tetap 0).
-    if (additionalAmount !== undefined && additionalAmount !== null) {
-      const add = parseFloat(additionalAmount) || 0;
-      if (add <= 0) {
-        await connection.rollback();
-        return res.status(400).json({ success: false, message: 'Nominal tambahan bayar harus lebih dari 0' });
-      }
-
-      const totalPaidAttempt = currentPaid + add;
-      targetStatus = resolvePaymentStatus(totalPaidAttempt, grandTotal);
-
-      if (targetStatus === 'Lunas' && totalPaidAttempt > grandTotal) {
-        const excess = Math.round((totalPaidAttempt - grandTotal) * 100) / 100;
-        if (wantRefundOverpayment) {
-          newPaid = totalPaidAttempt;
-          changeAmount = 0;
-          refundAmountToSave = excess;
-        } else if (overpaymentToDeposit) {
-          newPaid = grandTotal;
-          changeAmount = 0;
-          if (excess > 0) {
-            depositResult = await applyDepositOnPayment(connection, {
-              customerId: order.customer_id,
-              orderNo: order.order_no,
-              grandTotal: grandTotal + excess,
-              paymentMethod: paymentMethod || order.payment_method,
-              paidAmount: totalPaidAttempt,
-              overpaymentToDeposit: true,
-              outletId: order.outlet_id,
-              cashierEmployeeId: cashierEmployeeId || order.cashier_employee_id
-            });
-          }
-        } else {
-          changeAmount = excess;
-          newPaid = grandTotal;
-        }
-      } else {
-        newPaid = Math.min(totalPaidAttempt, grandTotal);
-      }
-
-      await insertPaymentLog(connection, {
-        transactionId: order.id,
-        logType: currentPaid <= 0 ? (targetStatus === 'Lunas' ? 'Lunas' : 'DP') : 'Pelunasan',
-        amount: add,
-        paymentMethod: paymentMethod || order.payment_method,
-        paymentProofUrl: paymentProofUrl || null,
-        notes: notes || `Pelunasan nota ${order.order_no}`,
-        cashierEmployeeId: cashierEmployeeId || order.cashier_employee_id
-      });
-    } else if (paidAmount !== undefined) {
-      newPaid = parseFloat(paidAmount) || 0;
-      targetStatus = resolvePaymentStatus(newPaid, grandTotal);
-
-      if (targetStatus === 'Lunas') {
-        depositResult = await applyDepositOnPayment(connection, {
-          customerId: order.customer_id,
-          orderNo: order.order_no,
-          grandTotal,
-          paymentMethod: paymentMethod || order.payment_method,
-          paidAmount: newPaid,
-          overpaymentToDeposit: Boolean(overpaymentToDeposit) && !wantRefundOverpayment,
-          overpaymentToRefund: wantRefundOverpayment,
-          outletId: order.outlet_id,
-          cashierEmployeeId: cashierEmployeeId || order.cashier_employee_id
-        });
-        newPaid = depositResult.paidAmount;
-        changeAmount = depositResult.changeAmount;
-        refundAmountToSave = parseFloat(depositResult.refundAmount) || 0;
-      } else if (targetStatus === 'DP') {
-        if (newPaid <= 0 || newPaid >= grandTotal) {
-          await connection.rollback();
-          return res.status(400).json({ success: false, message: 'Nominal DP harus lebih dari 0 dan kurang dari total tagihan' });
-        }
-      }
-
-      await insertPaymentLog(connection, {
-        transactionId: order.id,
-        logType: targetStatus === 'Lunas' ? 'Lunas' : targetStatus === 'DP' ? 'DP' : 'Outstanding',
-        amount: newPaid,
-        paymentMethod: paymentMethod || order.payment_method,
-        paymentProofUrl: paymentProofUrl || null,
-        notes: notes || `Update pembayaran nota ${order.order_no}`,
-        cashierEmployeeId: cashierEmployeeId || order.cashier_employee_id
-      });
-    } else if (String(paymentStatus || '') === 'Outstanding') {
-      // Hanya reset jika client eksplisit set Outstanding (tanpa nominal)
-      targetStatus = 'Outstanding';
-      newPaid = 0;
-      changeAmount = 0;
+    const remaining = Math.round(Math.max(0, grandTotal - currentPaid) * 100) / 100;
+    if (remaining <= 0) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: `Nota ${order.order_no} sudah lunas` });
     }
 
-    const method = targetStatus === 'Outstanding' ? '-' : (paymentMethod || order.payment_method || 'Tunai');
-    const proofUrl = paymentProofUrl || order.payment_proof_url;
+    const requested = additionalAmount === undefined || additionalAmount === null
+      ? remaining
+      : Math.round((parseFloat(additionalAmount) || 0) * 100) / 100;
+    if (Math.abs(requested - remaining) > 0.009) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Nominal pelunasan harus sama dengan sisa tagihan Rp ${remaining.toLocaleString('id-ID')}`
+      });
+    }
+
+    const method = paymentMethod || order.payment_method || 'Tunai';
     const settlerId = cashierEmployeeId || order.cashier_employee_id || null;
-    const shouldStampSettler = targetStatus !== 'Outstanding' && newPaid > 0;
+
+    // Saldo Member: potong sisa tagihan dari saldo; metode lain tidak mengubah saldo.
+    const depositResult = await applyDepositOnPayment(connection, {
+      customerId: order.customer_id,
+      orderNo: order.order_no,
+      grandTotal: remaining,
+      paymentMethod: method,
+      outletId: order.outlet_id,
+      cashierEmployeeId: settlerId
+    });
+
+    await insertPaymentLog(connection, {
+      transactionId: order.id,
+      logType: currentPaid <= 0 ? 'Lunas' : 'Pelunasan',
+      amount: remaining,
+      paymentMethod: method,
+      paymentProofUrl: paymentProofUrl || null,
+      notes: notes || `Pelunasan nota ${order.order_no}`,
+      cashierEmployeeId: settlerId
+    });
+
+    const proofUrl = paymentProofUrl || order.payment_proof_url;
 
     await connection.query(
       `UPDATE tr_transaction SET
-         payment_status = ?,
+         payment_status = 'Lunas',
          payment_method = ?,
          paid_amount = ?,
-         change_amount = ?,
+         change_amount = 0,
          payment_proof_url = ?,
-         paid_at = CASE WHEN ? = 'Lunas' THEN NOW() WHEN paid_at IS NULL AND ? > 0 THEN NOW() ELSE paid_at END,
-         settled_by_employee_id = CASE WHEN ? THEN ? ELSE settled_by_employee_id END,
-         settled_at = CASE WHEN ? THEN NOW() ELSE settled_at END,
-         is_refund_requested = CASE WHEN ? > 0 THEN 1 ELSE is_refund_requested END,
-         refund_approval_status = CASE WHEN ? > 0 THEN 0 ELSE refund_approval_status END,
-         refund_requested_at = CASE WHEN ? > 0 THEN NOW() ELSE refund_requested_at END,
-         refund_reason = CASE WHEN ? > 0 THEN ? ELSE refund_reason END,
-         refund_amount = CASE WHEN ? > 0 THEN ? ELSE refund_amount END,
+         paid_at = NOW(),
+         settled_by_employee_id = ?,
+         settled_at = NOW(),
          updated_at = NOW()
        WHERE id = ?`,
-      [
-        targetStatus,
-        method,
-        newPaid,
-        changeAmount,
-        proofUrl,
-        targetStatus,
-        newPaid,
-        shouldStampSettler ? 1 : 0,
-        settlerId,
-        shouldStampSettler ? 1 : 0,
-        refundAmountToSave,
-        refundAmountToSave,
-        refundAmountToSave,
-        refundAmountToSave,
-        refundAmountToSave > 0
-          ? `Kelebihan bayar nota ${order.order_no} — gap refund Rp ${refundAmountToSave.toLocaleString('id-ID')}`
-          : null,
-        refundAmountToSave,
-        refundAmountToSave,
-        order.id
-      ]
+      [method, grandTotal, proofUrl, settlerId, order.id]
     );
 
     await connection.commit();
@@ -363,15 +270,15 @@ export const updateTransactionPayment = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Pembayaran nota ${order.order_no} diperbarui (${targetStatus})`,
+      message: `Pembayaran nota ${order.order_no} diperbarui (Lunas)`,
       data: {
         transactionId: order.id,
         orderNo: order.order_no,
-        paymentStatus: targetStatus,
+        paymentStatus: 'Lunas',
         paymentMethod: method,
-        paidAmount: newPaid,
-        changeAmount,
-        remaining: Math.max(0, grandTotal - newPaid),
+        paidAmount: grandTotal,
+        changeAmount: 0,
+        remaining: 0,
         paymentProofUrl: proofUrl,
         depositDelta: depositResult?.depositDelta || 0
       }
