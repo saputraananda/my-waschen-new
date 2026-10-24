@@ -4,7 +4,7 @@ import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav';
 import { formatEmployeeName } from '../../utils/FormatName.js';
 import { todayWibISO } from '../../utils/wib.js';
-import { Copy, FileText, Banknote } from 'lucide-react';
+import { Copy, FileText, Banknote, Check, ChevronDown } from 'lucide-react';
 
 export default function DailyReport() {
   const navigate = useNavigate();
@@ -16,6 +16,7 @@ export default function DailyReport() {
   const [shifts, setShifts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState(null);
+  const [openTx, setOpenTx] = useState({});
 
   useEffect(() => {
     document.title = 'Daily Report | Waschen Laundry';
@@ -55,6 +56,23 @@ export default function DailyReport() {
     load();
   }, [activeOutletId, date]);
 
+  const toggleVerify = async (shiftId, t) => {
+    const next = Number(t.is_verified) !== 1;
+    try {
+      await axios.post(`/api/shifts/${shiftId}/verify-txn`, {
+        transactionId: t.id,
+        verifiedBy: parseInt(localStorage.getItem('employeeId'), 10),
+        verified: next
+      });
+      setShifts((prev) => prev.map((s) => (s.id !== shiftId ? s : {
+        ...s,
+        transactions: s.transactions.map((x) => (x.id === t.id ? { ...x, is_verified: next ? 1 : 0 } : x))
+      })));
+    } catch (err) {
+      alert(err.response?.data?.message || err.message);
+    }
+  };
+
   const copyReport = async (shift) => {
     if (!shift.report_text) return;
     try {
@@ -83,7 +101,7 @@ export default function DailyReport() {
             </div>
             <div>
               <h1 className="text-xl font-black tracking-tight">Daily Report Shift</h1>
-              <p className="text-xs text-slate-400 mt-0.5">Riwayat open/close shift — view only</p>
+              <p className="text-xs text-slate-400 mt-0.5">Riwayat open/close shift & ceklis nota</p>
             </div>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -218,36 +236,68 @@ export default function DailyReport() {
                 </div>
               )}
 
-              {s.verifiedTransactions?.length > 0 && (
+              {s.transactions?.length > 0 && (
                 <div>
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-2">
-                    Nota terverifikasi ({s.verifiedTransactions.length})
-                  </span>
-                  <div className="overflow-x-auto border border-[#e0e0e0] rounded-xl">
+                  {(() => {
+                    const done = s.transactions.filter((t) => Number(t.is_verified) === 1).length;
+                    const all = done === s.transactions.length;
+                    return (
+                      <button type="button" onClick={() => setOpenTx((p) => ({ ...p, [s.id]: !p[s.id] }))}
+                        className="w-full flex justify-between items-center gap-2 px-4 py-3 mb-2 rounded-xl border border-[#5f1340]/20 bg-[#5f1340]/5 hover:bg-[#5f1340]/10 cursor-pointer">
+                        <span className="flex items-center gap-2 text-xs font-black text-[#5f1340]">
+                          Nota dibayar di shift ini
+                          <span className="px-2 py-0.5 rounded-full bg-[#5f1340] text-white text-[10px]">{s.transactions.length} nota</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] ${all ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-800'}`}>
+                            {done}/{s.transactions.length} diceklis
+                          </span>
+                        </span>
+                        <ChevronDown className={`h-4 w-4 text-[#5f1340] transition-transform ${openTx[s.id] ? 'rotate-180' : ''}`} />
+                      </button>
+                    );
+                  })()}
+                  {openTx[s.id] && (
+                  <div className="overflow-auto max-h-80 border border-[#e0e0e0] rounded-xl">
                     <table className="w-full text-xs">
-                      <thead>
+                      <thead className="sticky top-0">
                         <tr className="bg-[#f8f8f8] text-[10px] uppercase text-slate-400 font-extrabold">
+                          <th className="py-2 px-3 text-left">Jam</th>
                           <th className="py-2 px-3 text-left">No Nota</th>
                           <th className="py-2 px-3 text-left">Customer</th>
                           <th className="py-2 px-3 text-left">Bayar</th>
                           <th className="py-2 px-3 text-right">Nominal</th>
+                          <th className="py-2 px-3 text-center">Cek</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#e0e0e0]/60 font-semibold">
-                        {s.verifiedTransactions.map((v) => (
-                          <tr key={v.id}>
-                            <td className="py-2 px-3 font-mono text-[#5f1340]">{v.order_no}</td>
-                            <td className="py-2 px-3">{v.customer_name || '-'}</td>
-                            <td className="py-2 px-3">{v.payment_method || '-'}</td>
-                            <td className="py-2 px-3 text-right">Rp {Number(v.grand_total || 0).toLocaleString('id-ID')}</td>
-                          </tr>
-                        ))}
+                        {s.transactions.map((t) => {
+                          const ok = Number(t.is_verified) === 1;
+                          return (
+                            <tr key={t.id} className={ok ? 'bg-emerald-50/40' : ''}>
+                              <td className="py-2 px-3">{new Date(t.last_paid_at || t.order_date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</td>
+                              <td className="py-2 px-3 font-mono text-[#5f1340]">{t.order_no}</td>
+                              <td className="py-2 px-3">{t.customer_name || '-'}{t.customer_address && <span className="block text-[10px] font-medium text-slate-400 max-w-[260px] truncate" title={t.customer_address}>{t.customer_address}</span>}</td>
+                              <td className="py-2 px-3">{t.payment_status === 'DP' ? 'DP ' : ''}{t.payment_method || '-'}</td>
+                              <td className="py-2 px-3 text-right">Rp {Number(t.paid_here || 0).toLocaleString('id-ID')}</td>
+                              <td className="py-2 px-3 text-center">
+                                <button
+                                  type="button"
+                                  disabled={s.status !== 'Open'}
+                                  onClick={() => toggleVerify(s.id, t)}
+                                  title={s.status !== 'Open' ? 'Shift sudah ditutup' : (ok ? 'Batalkan ceklis' : 'Ceklis')}
+                                  className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border ${ok ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-[#e0e0e0] text-slate-400'} ${s.status === 'Open' ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
+                  )}
                 </div>
               )}
-
               {s.report_text && (
                 <pre className="text-[11px] font-mono bg-slate-50 border border-[#e0e0e0] rounded-2xl p-4 whitespace-pre-wrap text-slate-700 max-h-64 overflow-y-auto">
                   {s.report_text}

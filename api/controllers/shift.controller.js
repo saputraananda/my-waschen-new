@@ -398,6 +398,44 @@ export const resumeShift = async (req, res) => {
 };
 
 /**
+ * Daftar Daily Report: nota yang ada pembayaran (DP/Lunas/Pelunasan) di rentang shift,
+ * apa pun tanggal nota dibuat. Nota baru outstanding tidak masuk.
+ * is_paid_here = tunai/non-tunai dihitung dari nominal bayar di shift ini.
+ */
+async function getShiftPaidTxns(shift) {
+  const [rows] = await myWaschenPool.query(
+    `SELECT t.id, t.order_no, t.order_date, t.grand_total, t.payment_status,
+            t.cashier_employee_id, t.shift_id,
+            c.name AS customer_name, COALESCE(NULLIF(c.full_address, ''), c.address) AS customer_address,
+            p.paid_here, p.methods, p.last_paid_at, p.log_cashier_id,
+            CASE WHEN v.id IS NOT NULL THEN 1 ELSE 0 END AS is_verified,
+            v.verified_at, v.verified_by
+     FROM (
+       SELECT transaction_id, SUM(amount) AS paid_here,
+              GROUP_CONCAT(DISTINCT payment_method SEPARATOR ', ') AS methods,
+              MAX(created_at) AS last_paid_at,
+              MAX(cashier_employee_id) AS log_cashier_id
+       FROM tr_payment_log
+       WHERE log_type IN ('DP','Lunas','Pelunasan')
+         AND created_at >= ? AND created_at <= COALESCE(?, NOW())
+       GROUP BY transaction_id
+     ) p
+     JOIN tr_transaction t ON t.id = p.transaction_id
+     LEFT JOIN mst_customer c ON t.customer_id = c.id
+     LEFT JOIN tr_shift_txn_verify v ON v.transaction_id = t.id AND v.shift_id = ?
+     WHERE t.outlet_id = ? AND t.is_delete_requested = 0
+     ORDER BY p.last_paid_at ASC`,
+    [shift.opened_at, shift.closed_at || null, shift.id, shift.outlet_id]
+  );
+  return rows.map((t) => ({
+    ...t,
+    cashier_employee_id: t.log_cashier_id || t.cashier_employee_id,
+    payment_method: t.methods || '',
+    paid_here: parseFloat(t.paid_here) || 0
+  }));
+}
+
+/**
  * GET /api/shifts/:id/transactions
  */
 export const getShiftTransactions = async (req, res) => {
@@ -412,20 +450,7 @@ export const getShiftTransactions = async (req, res) => {
     }
     const shift = shiftRows[0];
 
-    const [txns] = await myWaschenPool.query(
-      `SELECT t.id, t.order_no, t.order_date, t.grand_total, t.payment_method, t.payment_status,
-              t.cashier_employee_id, t.shift_id,
-              c.name AS customer_name,
-              CASE WHEN v.id IS NOT NULL THEN 1 ELSE 0 END AS is_verified,
-              v.verified_at, v.verified_by
-       FROM tr_transaction t
-       LEFT JOIN mst_customer c ON t.customer_id = c.id
-       LEFT JOIN tr_shift_txn_verify v ON v.transaction_id = t.id AND v.shift_id = ?
-       WHERE t.shift_id = ?
-         AND t.is_delete_requested = 0
-       ORDER BY t.order_date ASC`,
-      [shiftId, shiftId]
-    );
+    const txns = await getShiftPaidTxns(shift);
 
     const cashierIds = [...new Set(txns.map((t) => t.cashier_employee_id).filter(Boolean))];
     const nameMap = await getEmployeeNames(cashierIds);
@@ -585,13 +610,9 @@ export const closeShift = async (req, res) => {
       [shiftId]
     );
 
-    const [verified] = await myWaschenPool.query(
-      'SELECT transaction_id FROM tr_shift_txn_verify WHERE shift_id = ?',
-      [shiftId]
-    );
-    const verifiedSet = new Set(verified.map((v) => v.transaction_id));
-    const unverified = txns.filter((t) => !verifiedSet.has(t.id));
-    if (txns.length > 0 && unverified.length > 0) {
+    const paidTxns = await getShiftPaidTxns(shift);
+    const unverified = paidTxns.filter((t) => Number(t.is_verified) !== 1);
+    if (paidTxns.length > 0 && unverified.length > 0) {
       return res.status(400).json({
         success: false,
         message: `Masih ada ${unverified.length} nota yang belum di-ceklis`,
@@ -732,19 +753,11 @@ export const getDailyReport = async (req, res) => {
 
     const result = [];
     for (const s of shifts) {
-      const [verifies] = await myWaschenPool.query(
-        `SELECT v.*, t.order_no, t.grand_total, t.payment_method, c.name AS customer_name
-         FROM tr_shift_txn_verify v
-         JOIN tr_transaction t ON t.id = v.transaction_id
-         LEFT JOIN mst_customer c ON c.id = t.customer_id
-         WHERE v.shift_id = ?
-         ORDER BY v.verified_at ASC`,
-        [s.id]
-      );
+      const transactions = await getShiftPaidTxns(s);
       const enriched = await enrichShiftRow(s);
       result.push({
         ...enriched,
-        verifiedTransactions: verifies
+        transactions
       });
     }
 

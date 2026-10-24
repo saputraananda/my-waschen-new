@@ -19,6 +19,7 @@ export default function CloseShiftModal({
   const [actualPetty, setActualPetty] = useState('');
   const [revenueTunai, setRevenueTunai] = useState('');
   const [revenueNonTunai, setRevenueNonTunai] = useState('');
+  const [tab, setTab] = useState('close');
   const [showPinModal, setShowPinModal] = useState(false);
   const [verifiedCloserId, setVerifiedCloserId] = useState(null);
   // Shift 1: pilih Handover (default) atau Finalisasi. Shift 2: selalu Finalisasi.
@@ -58,18 +59,12 @@ export default function CloseShiftModal({
   }, [txns, cashierFilter, frontliners]);
 
   const renderPaymentCell = (t) => {
-    const status = t.payment_status;
-    if (status === 'Lunas') {
-      return <span className="text-[#313030]">{t.payment_method || 'Lunas'}</span>;
-    }
-    if (status === 'DP') {
-      return (
-        <span className="text-amber-700 font-black">
-          DP{t.payment_method && t.payment_method !== '-' ? ` (${t.payment_method})` : ''}
-        </span>
-      );
-    }
-    return <span className="text-rose-600 font-black">Belum</span>;
+    const dp = t.payment_status === 'DP';
+    return (
+      <span className={dp ? 'text-amber-700 font-black' : 'text-[#313030]'}>
+        {dp ? 'DP ' : ''}{t.payment_method || '-'}
+      </span>
+    );
   };
 
   const loadTxns = async () => {
@@ -82,8 +77,7 @@ export default function CloseShiftModal({
         let tunai = 0;
         let nonTunai = 0;
         for (const t of res.data.data || []) {
-          if (t.payment_status !== 'Lunas') continue;
-          const amt = parseFloat(t.grand_total) || 0;
+          const amt = parseFloat(t.paid_here) || 0;
           if (/tunai|cash/i.test(t.payment_method || '')) tunai += amt;
           else nonTunai += amt;
         }
@@ -210,6 +204,14 @@ export default function CloseShiftModal({
               <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-bold">{error}</div>
             )}
 
+            <div className="flex gap-2">
+              {[['close', 'Closing'], ['report', `Daily Report (${txns.filter((t) => Number(t.is_verified) === 1).length}/${txns.length})`]].map(([k, l]) => (
+                <button key={k} type="button" onClick={() => setTab(k)}
+                  className={`flex-1 py-2 rounded-xl text-xs font-black cursor-pointer ${tab === k ? 'bg-[#5f1340] text-white' : 'bg-white border border-[#e0e0e0] text-slate-600'}`}>{l}</button>
+              ))}
+            </div>
+
+            {tab === 'close' && (<>
             <div className="p-3 bg-slate-50 border border-[#e0e0e0] rounded-xl text-[11px] space-y-1">
               <span className="font-black text-[#313030] block">
                 Riwayat shift: dibuka oleh {openerLabel}
@@ -271,6 +273,9 @@ export default function CloseShiftModal({
               </div>
             )}
 
+            </>)}
+
+            {tab === 'report' && (<>
             {frontliners.length > 0 && (
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-500 uppercase block">Filter Pembuat Nota</label>
@@ -341,22 +346,22 @@ export default function CloseShiftModal({
                   {loading ? (
                     <tr><td colSpan={7} className="py-8 text-center text-slate-400">Memuat transaksi...</td></tr>
                   ) : txns.length === 0 ? (
-                    <tr><td colSpan={7} className="py-8 text-center text-slate-400">Tidak ada transaksi di shift ini</td></tr>
+                    <tr><td colSpan={7} className="py-8 text-center text-slate-400">Belum ada pembayaran di shift ini</td></tr>
                   ) : filteredTxns.length === 0 ? (
                     <tr><td colSpan={7} className="py-8 text-center text-slate-400">Tidak ada transaksi untuk filter ini</td></tr>
                   ) : (
                     filteredTxns.map((t) => {
-                      const d = new Date(t.order_date);
+                      const d = new Date(t.last_paid_at || t.order_date);
                       const verified = Number(t.is_verified) === 1;
                       return (
                         <tr key={t.id} className={verified ? 'bg-emerald-50/40' : ''}>
                           <td className="py-2.5 px-3">{d.toLocaleDateString('id-ID')}</td>
                           <td className="py-2.5 px-3">{d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</td>
                           <td className="py-2.5 px-3 font-mono font-black text-[#5f1340]">{t.order_no}</td>
-                          <td className="py-2.5 px-3">{t.customer_name || '-'}</td>
+                          <td className="py-2.5 px-3">{t.customer_name || '-'}{t.customer_address && <span className="block text-[10px] font-medium text-slate-400 max-w-[260px] truncate" title={t.customer_address}>{t.customer_address}</span>}</td>
                           <td className="py-2.5 px-3">{renderPaymentCell(t)}</td>
                           <td className="py-2.5 px-3 text-right font-black">
-                            Rp {(parseFloat(t.grand_total) || 0).toLocaleString('id-ID')}
+                            Rp {(parseFloat(t.paid_here) || 0).toLocaleString('id-ID')}
                           </td>
                           <td className="py-2.5 px-3 text-center">
                             <button
@@ -379,6 +384,9 @@ export default function CloseShiftModal({
               </table>
             </div>
 
+            </>)}
+
+            {tab === 'close' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Cash Modal (aktual) *</label>
@@ -421,6 +429,7 @@ export default function CloseShiftModal({
                 />
               </div>
             </div>
+            )}
           </div>
 
           <div className="p-4 border-t border-[#e0e0e0] bg-slate-50 flex justify-between items-center gap-3 shrink-0">
