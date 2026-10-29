@@ -1,5 +1,6 @@
 import multer from 'multer';
 import jwt from 'jsonwebtoken';
+import { getSessionSecret } from '../utils/sessionSecret.js';
 import { mainPool, myWaschenPool } from '../db/pool.js';
 import { isEventOutlet } from '../utils/eventOutlet.js';
 
@@ -54,7 +55,7 @@ async function resolveActor(req) {
 
   let claims;
   try {
-    claims = jwt.verify(token, process.env.SESSION_SECRET || 'waschensecret');
+    claims = jwt.verify(token, getSessionSecret());
   } catch {
     return null;
   }
@@ -132,7 +133,7 @@ async function resolveListActor(req) {
 
   let claims;
   try {
-    claims = jwt.verify(token, process.env.SESSION_SECRET || 'waschensecret');
+    claims = jwt.verify(token, getSessionSecret());
   } catch {
     return null;
   }

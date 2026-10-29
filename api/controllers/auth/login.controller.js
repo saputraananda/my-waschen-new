@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { getSessionSecret } from '../../utils/sessionSecret.js';
 import { mainPool, myWaschenPool } from '../../db/pool.js';
 import { listEventOutlets } from '../../utils/eventOutlet.js';
 
@@ -65,9 +66,10 @@ export const loginUser = async (req, res) => {
         username: user.username, 
         email: user.user_email, 
         role: user.user_role,
-        employeeId: user.employee_id || null
+        employeeId: user.employee_id || null,
+        companyId: user.company_id ?? null
       },
-      process.env.SESSION_SECRET || 'waschensecret',
+      getSessionSecret(),
       { expiresIn: '24h' }
     );
 

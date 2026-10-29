@@ -25,9 +25,11 @@ import refundApprovalInternalRoutes from './routes/refundApprovalInternal.routes
 import eventRoutes from './routes/event.routes.js';
 import { getBaseUploadDir, getUploadUrlPrefix, uploadPaymentReceipt, verifyUploadContents, buildUploadPublicUrl, safeUnlinkUploadUrl } from './middleware/upload.js';
 import { requirePosAuth } from './middleware/requireAuth.js';
+import { getSessionSecret } from './utils/sessionSecret.js';
 
 // Load environment variables
 dotenv.config();
+getSessionSecret(); // gagal start bila SESSION_SECRET kosong
 
 const app = express();
 
@@ -58,6 +60,14 @@ app.post('/api/upload', requirePosAuth, uploadPaymentReceipt, verifyUploadConten
 
 // API Routes
 app.use('/api/auth', authRoutes);
+// Upload server-ke-server dari Super App (token sync sendiri, bukan JWT POS)
+app.use('/api/internal/complaint-docs', complaintInternalRoutes);
+app.use('/api/internal/delete-request-docs', deleteRequestInternalRoutes);
+app.use('/api/internal/refund-approval-docs', refundApprovalInternalRoutes);
+
+// Semua route di bawah ini wajib sesi POS (JWT). Login & internal sudah di atas.
+app.use('/api', requirePosAuth);
+
 app.use('/api/customers', customerRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/services', serviceRoutes);
@@ -72,9 +82,6 @@ app.use('/api/printer-settings', printerRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/qc', qcRoutes);
 app.use('/api/complaints', complaintRoutes);
-app.use('/api/internal/complaint-docs', complaintInternalRoutes);
-app.use('/api/internal/delete-request-docs', deleteRequestInternalRoutes);
-app.use('/api/internal/refund-approval-docs', refundApprovalInternalRoutes);
 app.use('/api/event', eventRoutes);
 
 export default app;

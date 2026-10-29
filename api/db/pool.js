@@ -42,8 +42,8 @@ export const myWaschenPool = mysql.createPool({
   timezone: '+07:00',
   waitForConnections: true,
   connectionLimit: 10,
-  maxIdle: 2,                   // harus < connectionLimit agar idleTimeout mereap koneksi nganggur
-  idleTimeout: 60000,
+  maxIdle: 6,                   // harus < connectionLimit; koneksi hangat dipakai ulang (buka baru ke DB remote bisa 4-6 detik)
+  idleTimeout: 300000,
   queueLimit: 0,
   enableKeepAlive: true,
   keepAliveInitialDelay: 10000, // 10 detik keep-alive ping
@@ -58,6 +58,28 @@ function holdPool(pool) {
 }
 holdPool(mainPool);
 holdPool(myWaschenPool);
+
+/**
+ * Jaga koneksi tetap hangat: buka beberapa koneksi sekarang dan ping berkala, supaya request
+ * pertama (atau banyak request paralel saat halaman dibuka) tidak menunggu koneksi baru.
+ * Dipanggil dari server saja, bukan saat import (skrip satu kali tidak ikut).
+ */
+export function startPoolWarmup({ pool = myWaschenPool, size = 4, everyMs = 45000 } = {}) {
+  const warm = async () => {
+    try {
+      await Promise.all(Array.from({ length: size }, async () => {
+        const conn = await pool.getConnection();
+        try { await conn.query('SELECT 1'); } finally { conn.release(); }
+      }));
+    } catch (err) {
+      console.error('pool warmup:', err.code || err.message);
+    }
+  };
+  warm();
+  const timer = setInterval(warm, everyMs);
+  timer.unref?.();
+  return timer;
+}
 
 export default {
   mainPool,

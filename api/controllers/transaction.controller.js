@@ -12,7 +12,10 @@ import { buildCustomerTrackingUrl } from '../utils/customerTrackingUrl.js';
 import { replaceUploadUrl, safeUnlinkAbsPath, buildUploadPublicUrl, isItemPhotoUrl, ITEM_PHOTO_SUBDIR, DELETE_REQUEST_SUBDIR, REFUND_REQUEST_SUBDIR } from '../middleware/upload.js';
 import { REFUND_TYPES, findPendingRefund, insertRefundRequest, REFUND_SUMMARY_COLUMNS } from '../utils/transactionRefund.js';
 import { toWibYmdCompact, formatWibTime } from '../utils/wib.js';
+import { resolveValidCashier } from '../utils/cashierGuard.js';
+import { auditOrderPricing, priceCheckMode } from '../utils/priceAudit.js';
 import path from 'path';
+import crypto from 'crypto';
 
 const resolveCashierName = async (employeeId) => {
   const id = Number(employeeId);
@@ -36,16 +39,18 @@ const resolveCashierName = async (employeeId) => {
 
 /**
  * Helper to generate order number (nota):
- * Format: WL{outlet_code}{YYYYMMDD}{sequence 4 digit} (Tanpa Strip)
- * Example: WLRH202608250001, WLCG202608250001
+ * Format: WL{outlet_code}{YYYYMMDD}{4 digit acak} (Tanpa Strip)
+ * Example: WLRH202610291234, WLCG202610290507
+ * Ekor acak (bukan urut) sebagai penanda mudah dibedakan oleh tim produksi. Keunikan dijamin oleh
+ * pengecekan di bawah + GET_LOCK per outlet di pemanggil + UNIQUE uq_order_no.
  */
-const generateOrderNo = async (outletId = 2) => {
-  const dateStr = toWibYmdCompact();
+const generateOrderNo = async (outletId = 2, db = myWaschenPool) => {
+  const dateStr = toWibYmdCompact(); // YYYYMMDD
 
   // 1. Get outlet_code from DB
   let outletCode = 'CG';
   try {
-    const [outlets] = await myWaschenPool.query(
+    const [outlets] = await db.query(
       'SELECT outlet_code, name FROM mst_outlet WHERE id = ? LIMIT 1',
       [outletId]
     );
@@ -66,20 +71,15 @@ const generateOrderNo = async (outletId = 2) => {
 
   const prefix = `WL${outletCode}${dateStr}`;
 
-  const [rows] = await myWaschenPool.query(
-    'SELECT order_no FROM tr_transaction WHERE order_no LIKE ? ORDER BY id DESC LIMIT 1',
-    [`${prefix}%`]
-  );
-
-  let seq = 1;
-  if (rows.length > 0 && rows[0].order_no) {
-    const lastNo = rows[0].order_no;
-    const lastSeqStr = lastNo.slice(prefix.length);
-    const lastSeq = parseInt(lastSeqStr, 10) || 0;
-    seq = lastSeq + 1;
+  // Cek lewat pool (koneksi lain, snapshot baru): nota yang baru di-commit pemegang kunci sebelumnya
+  // pasti terlihat. Lewat 30 percobaan (hari sangat padat) ekor diperpanjang jadi 5 digit.
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const digits = attempt < 30 ? 4 : 5;
+    const candidate = `${prefix}${String(crypto.randomInt(0, 10 ** digits)).padStart(digits, '0')}`;
+    const [taken] = await myWaschenPool.query('SELECT 1 FROM tr_transaction WHERE order_no = ? LIMIT 1', [candidate]);
+    if (!taken.length) return candidate;
   }
-
-  return `${prefix}${String(seq).padStart(4, '0')}`;
+  throw new Error('Gagal membuat nomor nota unik, coba lagi.');
 };
 
 /**
@@ -88,6 +88,7 @@ const generateOrderNo = async (outletId = 2) => {
  */
 export const createTransaction = async (req, res) => {
   const connection = await myWaschenPool.getConnection();
+  let orderNoLock = null;
   try {
     await connection.beginTransaction();
 
@@ -148,13 +149,17 @@ export const createTransaction = async (req, res) => {
       });
     }
 
-    const resolvedCashierId = Number(cashierEmployeeId);
-    if (!resolvedCashierId || Number.isNaN(resolvedCashierId)) {
+    if (!Number(cashierEmployeeId) || Number.isNaN(Number(cashierEmployeeId))) {
       await connection.rollback();
       return res.status(400).json({
         success: false,
         message: 'cashierEmployeeId wajib diisi dari verifikasi PIN frontliner'
       });
+    }
+    const resolvedCashierId = await resolveValidCashier(connection, req, cashierEmployeeId);
+    if (!resolvedCashierId) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: 'Kasir tidak terdaftar. Verifikasi ulang PIN frontliner.' });
     }
 
     // Gate shift — jangan percaya shiftId dari client, tentukan sendiri di server.
@@ -195,9 +200,31 @@ export const createTransaction = async (req, res) => {
 
     const cashierNameResolved = await resolveCashierName(resolvedCashierId);
 
-    const orderNo = await generateOrderNo(outletId);
+    // Serialkan penomoran per outlet sampai commit: dua nota bersamaan tidak boleh dapat nomor sama.
+    const lockName = `wl_order_no_${resolvedOutletId}`;
+    const [[lockRow]] = await connection.query('SELECT GET_LOCK(?, 15) AS got', [lockName]);
+    if (Number(lockRow?.got) !== 1) {
+      await connection.rollback();
+      return res.status(503).json({ success: false, message: 'Sistem sedang sibuk membuat nota, coba lagi sebentar.' });
+    }
+    orderNoLock = lockName;
+    const orderNo = await generateOrderNo(outletId, connection);
     const accessCode = generateAccessCode();
     const grandTotalNum = parseFloat(grandTotal) || 0;
+
+    // Audit harga di server (total dari klien tidak dipercaya begitu saja).
+    const audit = await auditOrderPricing(connection, { items, subtotal, discountAmount, grandTotal, speedId });
+    if (audit.fatal.length) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: `Nota ditolak: ${audit.fatal.join('; ')}` });
+    }
+    if (audit.issues.length) {
+      console.warn(`[PRICE-CHECK] ${orderNo} outlet=${resolvedOutletId} kasir=${resolvedCashierId}: ${audit.issues.join(' | ')}`);
+      if (priceCheckMode() === 'enforce') {
+        await connection.rollback();
+        return res.status(400).json({ success: false, message: 'Total nota tidak sesuai harga layanan. Muat ulang halaman lalu coba lagi.' });
+      }
+    }
     const isOutstanding = paymentStatus === 'Outstanding';
     const isLunas = paymentStatus === 'Lunas';
     const isDP = paymentStatus === 'DP';
@@ -550,6 +577,9 @@ export const createTransaction = async (req, res) => {
       error: error.message
     });
   } finally {
+    if (orderNoLock) {
+      try { await connection.query('SELECT RELEASE_LOCK(?)', [orderNoLock]); } catch { /* lock ikut lepas saat koneksi ditutup */ }
+    }
     connection.release();
   }
 };
@@ -578,10 +608,7 @@ export const getTransactions = async (req, res) => {
              COALESCE(o.full_name, o.name, c.home_branch, 'Outlet Waschen') as outlet_name,
              sp.name as speed_name,
              p.name as parfume_name,
-             COALESCE(
-               (SELECT NULLIF(TRIM(employee_name), '') FROM mst_role WHERE employee_id = t.cashier_employee_id LIMIT 1),
-               CONCAT('Kasir #', t.cashier_employee_id)
-             ) as cashier_name,
+             COALESCE(NULLIF(TRIM(cr.employee_name), ''), CONCAT('Kasir #', t.cashier_employee_id)) as cashier_name,
              ${REFUND_SUMMARY_COLUMNS}
              ${lite ? '' : `,
              (
@@ -606,9 +633,23 @@ export const getTransactions = async (req, res) => {
       LEFT JOIN mst_outlet o ON o.id = t.outlet_id
       LEFT JOIN mst_service_speed sp ON t.speed_id = sp.id
       LEFT JOIN mst_parfume p ON t.parfume_id = p.id
+      LEFT JOIN mst_role cr ON cr.employee_id = t.cashier_employee_id
       WHERE 1=1
     `;
     const params = [];
+
+    // Jendela tanggal (WIB, YYYY-MM-DD) agar riwayat tidak menarik seluruh nota sepanjang masa.
+    // include_delete_requested=1: nota pengajuan hapus tetap ikut walau di luar jendela.
+    const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+    const dateFrom = dateRe.test(String(req.query.date_from || '')) ? req.query.date_from : null;
+    const dateTo = dateRe.test(String(req.query.date_to || '')) ? req.query.date_to : null;
+    if (dateFrom || dateTo) {
+      const parts = [];
+      if (dateFrom) { parts.push('t.order_date >= ?'); params.push(`${dateFrom} 00:00:00`); }
+      if (dateTo) { parts.push('t.order_date < DATE_ADD(?, INTERVAL 1 DAY)'); params.push(`${dateTo} 00:00:00`); }
+      const keepDel = req.query.include_delete_requested === '1' ? ' OR t.is_delete_requested = 1' : '';
+      sql += ` AND ((${parts.join(' AND ')})${keepDel})`;
+    }
 
     if (outlet_id && outlet_id !== 'Semua') {
       sql += ' AND t.outlet_id = ?';

@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { formatRupiah, parseRupiah } from '../../utils/FormatRupiah.js';
 import { formatEmployeeName } from '../../utils/FormatName.js';
-import { Check, X, ClipboardCheck, Users, User, AlertTriangle } from 'lucide-react';
+import { exportShiftTransactionsToExcel } from '../../utils/exportDailyReport.js';
+import { Check, X, ClipboardCheck, Users, User, AlertTriangle, FileSpreadsheet } from 'lucide-react';
 import PinVerifyModal from './PinVerifyModal.jsx';
 
 export default function CloseShiftModal({
@@ -57,6 +58,24 @@ export default function CloseShiftModal({
     if (!fl) return txns;
     return txns.filter((t) => Number(t.cashier_employee_id) === Number(fl.id));
   }, [txns, cashierFilter, frontliners]);
+
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const fl = cashierFilter === 'Semua' ? null : frontliners[parseInt(cashierFilter.replace('frontliner-', ''), 10)];
+      await exportShiftTransactionsToExcel({
+        shift,
+        txns: filteredTxns,
+        label: fl ? `Pembuat nota: ${formatEmployeeName(fl.name)}` : ''
+      });
+    } catch (err) {
+      setError('Gagal export Excel: ' + (err.message || err));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const renderPaymentCell = (t) => {
     const dp = t.payment_status === 'DP';
@@ -328,6 +347,18 @@ export default function CloseShiftModal({
                 )}
               </div>
             )}
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleExport}
+                disabled={exporting || loading || filteredTxns.length === 0}
+                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-black flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5" />
+                {exporting ? 'Mengekspor...' : 'Export Excel'}
+              </button>
+            </div>
 
             <div className="overflow-x-auto border border-[#e0e0e0] rounded-2xl">
               <table className="w-full text-left text-xs border-collapse min-w-[640px]">

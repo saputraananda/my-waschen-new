@@ -3,6 +3,7 @@ import { emitDashboardRefresh } from '../socket.js';
 import { normalizePhone, composeFullAddress } from '../utils/phone.js';
 import { getWibYearMonth, formatWibDateLong } from '../utils/wib.js';
 import { isEventOutlet } from '../utils/eventOutlet.js';
+import { resolveValidCashier } from '../utils/cashierGuard.js';
 
 /** Pelanggan sebuah event: didaftarkan di event itu atau pernah bertransaksi di sana (2 param: outlet id). */
 const EVENT_CUSTOMER_SQL = `(c.preferred_outlet_id = ?
@@ -796,38 +797,52 @@ export const updateCustomer = async (req, res) => {
  * POST /api/customers/:id/deposit
  */
 export const topupDeposit = async (req, res) => {
+  const connection = await myWaschenPool.getConnection();
   try {
     const { id } = req.params;
     const { amount, paymentMethod, notes, cashierEmployeeId, outletId } = req.body;
 
     const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount <= 0) {
+    if (!Number.isFinite(numAmount) || numAmount <= 0) {
       return res.status(400).json({
         success: false,
         message: 'Nominal top-up harus berupa angka positif'
       });
     }
 
-    const [custRows] = await myWaschenPool.query('SELECT * FROM mst_customer WHERE id = ?', [id]);
+    const resolvedCashierId = await resolveValidCashier(connection, req, cashierEmployeeId);
+    if (!resolvedCashierId) {
+      return res.status(400).json({ success: false, message: 'Kasir tidak valid' });
+    }
+
+    await connection.beginTransaction();
+
+    // Kunci baris pelanggan: top-up/pembayaran bersamaan tidak saling menimpa saldo.
+    const [custRows] = await connection.query(
+      'SELECT id, deposit_balance FROM mst_customer WHERE id = ? LIMIT 1 FOR UPDATE',
+      [id]
+    );
     if (custRows.length === 0) {
+      await connection.rollback();
       return res.status(404).json({ success: false, message: 'Pelanggan tidak ditemukan' });
     }
 
-    const customer = custRows[0];
-    const balanceBefore = parseFloat(customer.deposit_balance || 0);
+    const balanceBefore = parseFloat(custRows[0].deposit_balance || 0);
     const balanceAfter = balanceBefore + numAmount;
 
-    await myWaschenPool.query(
+    await connection.query(
       'UPDATE mst_customer SET deposit_balance = ?, updated_at = NOW() WHERE id = ?',
       [balanceAfter, id]
     );
 
-    await myWaschenPool.query(
+    await connection.query(
       `INSERT INTO tr_customer_deposit
        (customer_id, outlet_id, cashier_employee_id, type, amount, balance_before, balance_after, payment_method, notes)
        VALUES (?, ?, ?, 'Topup', ?, ?, ?, ?, ?)`,
-      [id, outletId || null, cashierEmployeeId || null, numAmount, balanceBefore, balanceAfter, paymentMethod || 'Tunai', notes || 'Top-up saldo deposit kasir']
+      [id, outletId || null, resolvedCashierId, numAmount, balanceBefore, balanceAfter, paymentMethod || 'Tunai', notes || 'Top-up saldo deposit kasir']
     );
+
+    await connection.commit();
 
     emitDashboardRefresh('customer:updated', {
       outletId: outletId || null,
@@ -840,11 +855,14 @@ export const topupDeposit = async (req, res) => {
       data: { customerId: id, balanceBefore, balanceAfter }
     });
   } catch (error) {
+    try { await connection.rollback(); } catch { /* koneksi sudah tertutup */ }
     console.error('Error top-up deposit:', error);
     return res.status(500).json({
       success: false,
       message: 'Gagal melakukan top-up deposit',
       error: error.message
     });
+  } finally {
+    connection.release();
   }
 };

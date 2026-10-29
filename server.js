@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
 import app from './api/index.js';
 import { setIO } from './api/socket.js';
+import { startPoolWarmup } from './api/db/pool.js';
 
 // Resolve directory paths in ES module
 const __filename = fileURLToPath(import.meta.url);
@@ -60,6 +61,7 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
+  startPoolWarmup();
   if (process.env.NODE_ENV !== 'production') {
     console.log(`=========================================`);
     console.log(`  My Waschen Server Status: Running     `);

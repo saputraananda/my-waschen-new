@@ -1,6 +1,7 @@
 import path from 'path';
 import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
+import { isHqApprover } from '../utils/cashierGuard.js';
 import { buildUploadPublicUrl, PETTY_CASH_EVIDENCE_SUBDIR, safeUnlinkAbsPath, safeUnlinkUploadUrl } from '../middleware/upload.js';
 
 const APPROVED_STATUS = 'Disetujui';
@@ -284,10 +285,12 @@ export const reviewPettyCashEntry = async (req, res) => {
   const connection = await myWaschenPool.getConnection();
   try {
     const { id } = req.params;
-    const { action, rejectedReason, reviewerEmployeeId } = req.body;
-    const reviewerId = parseInt(reviewerEmployeeId, 10)
-      || parseInt(req.body.cashierEmployeeId, 10)
-      || null;
+    const { action, rejectedReason } = req.body;
+    // Penyetuju = akun HQ yang login (sama dengan tombol di UI); id diambil dari token, bukan body.
+    if (!(await isHqApprover(req))) {
+      return res.status(403).json({ success: false, message: 'Hanya Management yang boleh menyetujui kas kecil' });
+    }
+    const reviewerId = Number(req.auth?.employeeId) || null;
 
     if (!['approve', 'reject'].includes(action)) {
       return res.status(400).json({ success: false, message: 'action harus approve atau reject' });

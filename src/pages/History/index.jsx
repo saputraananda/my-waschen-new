@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav';
@@ -6,6 +6,7 @@ import HistoryTransaction from './components/HistoryTransaction';
 import RequestDeleteTransaction from './components/RequestDeleteTransaction';
 import RequestRefundTransaction from './components/RequestRefundTransaction';
 import { useShift } from '../../context/ShiftContext.jsx';
+import { getCutoffRange } from '../../utils/dateCutoffFilter.js';
 import {
   History as HistoryIcon,
   Trash2,
@@ -60,12 +61,29 @@ export default function History() {
     fetchTransactions(activeOutletId);
   }, [activeOutletId]);
 
-  const fetchTransactions = async (outletId = localStorage.getItem('activeOutletId')) => {
+  // Jendela tanggal yang diminta ke server (default = cutoff berjalan). Dipakai ulang oleh setiap
+  // refresh agar daftar tidak menarik seluruh nota sepanjang masa. null = tanpa batas tanggal.
+  const dateWindowRef = useRef(getCutoffRange());
+  const lastListKeyRef = useRef('');
+
+  const fetchTransactions = async (outletId = localStorage.getItem('activeOutletId'), dateWindow, search) => {
+    if (dateWindow !== undefined) dateWindowRef.current = dateWindow;
+    const win = dateWindowRef.current;
     const load = () => axios.get('/api/transactions', {
-      params: { lite: 1, outlet_id: outletId || undefined },
+      params: {
+        lite: 1,
+        outlet_id: outletId || undefined,
+        date_from: win?.start || undefined,
+        date_to: win?.end || undefined,
+        include_delete_requested: 1,
+        search: search || undefined
+      },
       timeout: 20000
     });
-    setTransactions([]);
+    // Kosongkan daftar hanya saat outlet/jendela berubah; refresh setelah aksi tidak membuat daftar berkedip.
+    const listKey = `${outletId || ''}|${win?.start || ''}|${win?.end || ''}|${search || ''}`;
+    if (lastListKeyRef.current !== listKey) setTransactions([]);
+    lastListKeyRef.current = listKey;
     setTransactionsLoading(true);
     try {
       let res;
@@ -225,6 +243,7 @@ export default function History() {
             setTransactions={setTransactions}
             outlets={outlets}
             fetchTransactions={fetchTransactions}
+            loadedWindow={dateWindowRef.current}
           />
         )}
         {activeTab === 'request_refund' && (

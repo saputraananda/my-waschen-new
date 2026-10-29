@@ -753,7 +753,13 @@ export const getDailyReport = async (req, res) => {
 
     const result = [];
     for (const s of shifts) {
-      const transactions = await getShiftPaidTxns(s);
+      const rawTxns = await getShiftPaidTxns(s);
+      const cashierIds = [...new Set(rawTxns.map((t) => t.cashier_employee_id).filter(Boolean))];
+      const nameMap = await getEmployeeNames(cashierIds);
+      const transactions = rawTxns.map((t) => ({
+        ...t,
+        cashier_name: formatEmployeeLabel(t.cashier_employee_id, nameMap)
+      }));
       const enriched = await enrichShiftRow(s);
       result.push({
         ...enriched,

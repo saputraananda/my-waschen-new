@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { getSessionSecret } from '../utils/sessionSecret.js';
 
 /** Sesi POS. Token sama dengan login, bukan identitas dari body. */
 export function requirePosAuth(req, res, next) {
@@ -8,7 +9,7 @@ export function requirePosAuth(req, res, next) {
     return res.status(401).json({ success: false, message: 'Sesi tidak valid' });
   }
   try {
-    req.auth = jwt.verify(token, process.env.SESSION_SECRET || 'waschensecret');
+    req.auth = jwt.verify(token, getSessionSecret());
     return next();
   } catch {
     return res.status(401).json({ success: false, message: 'Sesi tidak valid' });

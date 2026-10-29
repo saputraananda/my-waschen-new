@@ -6,6 +6,16 @@ import './index.css';
 import axios from 'axios';
 import { logoutSession } from './utils/authSession.js';
 
+// Server mewajibkan JWT di semua /api (kecuali login): sisipkan otomatis bila belum ada.
+axios.interceptors.request.use((cfg) => {
+    const url = String(cfg.url || '');
+    if (url.startsWith('/api/') && !url.startsWith('/api/auth/')) {
+        const token = localStorage.getItem('token');
+        if (token && !cfg.headers?.Authorization) cfg.headers.Authorization = `Bearer ${token}`;
+    }
+    return cfg;
+});
+
 // Token kadaluarsa/invalid -> bersihkan sesi & langsung ke login, tanpa pesan error.
 axios.interceptors.response.use(
     (r) => r,

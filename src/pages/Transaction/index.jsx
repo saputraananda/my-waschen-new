@@ -57,6 +57,33 @@ const mapPromoFromApi = (p) => ({
   desc: p.description || ''
 });
 
+const mapCustomer = (c) => ({
+  id: c.customer_code || `CUST-${String(c.id).padStart(3, '0')}`,
+  dbId: c.id,
+  name: c.name || '',
+  phone: c.phone || '',
+  address: c.full_address || c.address || '-',
+  street: c.address || '',
+  fullAddress: c.full_address || '',
+  block: c.block || '',
+  houseNumber: c.house_number || '',
+  notes: c.notes || '',
+  city: c.city || 'Bekasi',
+  landmark: c.landmark || '-',
+  homeBranch: c.home_branch || 'Waschen Laundry Citra Gran',
+  branch: c.home_branch || 'Waschen Laundry Citra Gran',
+  tier: c.tier || c.tier_label || 'Reguler',
+  totalSpending: parseFloat(c.total_spent) || 0,
+  periodSpending: parseFloat(c.monthly_spending) || 0,
+  yearSpending: parseFloat(c.spending_value_year) || 0,
+  totalTrx: parseInt(c.total_orders, 10) || 0,
+  memberBalance: parseFloat(c.deposit_balance) || 0,
+  lastOrder: c.updated_at
+    ? new Date(c.updated_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })
+    : 'Hari ini',
+  frequentServices: ['k1', 's1', 's2']
+});
+
 export default function TransactionPage() {
   const navigate = useNavigate();
   const { showAlert } = useAppDialog();
@@ -113,7 +140,19 @@ export default function TransactionPage() {
       const pendingAutoId = localStorage.getItem('autoSelectCustId');
       // Pelanggan pilihan otomatis bisa dari cabang lain / di luar event → tetap disertakan
       if (pendingAutoId) pinnedCustIdsRef.current.add(pendingAutoId);
+      // Halaman pertama (30 terbaru) tampil dulu; daftar penuh (untuk pencarian & filter) menyusul.
+      let fullLoaded = false;
+      axios.get('/api/customers', { params: { ...params, lite: undefined, page: 1, limit: 30 } })
+        .then((quick) => {
+          if (fullLoaded || reqId !== customersReqRef.current) return;
+          if (quick.data?.success && Array.isArray(quick.data.data) && quick.data.data.length) {
+            setCustomers(quick.data.data.map(mapCustomer));
+            setCustomersLoading(false);
+          }
+        })
+        .catch(() => {});
       const res = await axios.get('/api/customers', { params });
+      fullLoaded = true;
       // Abaikan response lama jika ada request lebih baru (hindari race double-fetch)
       if (reqId !== customersReqRef.current) return;
       if (res.data?.success && Array.isArray(res.data.data)) {
@@ -128,32 +167,7 @@ export default function TransactionPage() {
           if (reqId !== customersReqRef.current) return;
           rows.unshift(...extra.filter(Boolean));
         }
-        const mapped = rows.map((c) => ({
-          id: c.customer_code || `CUST-${String(c.id).padStart(3, '0')}`,
-          dbId: c.id,
-          name: c.name || '',
-          phone: c.phone || '',
-          address: c.full_address || c.address || '-',
-          street: c.address || '',
-          fullAddress: c.full_address || '',
-          block: c.block || '',
-          houseNumber: c.house_number || '',
-          notes: c.notes || '',
-          city: c.city || 'Bekasi',
-          landmark: c.landmark || '-',
-          homeBranch: c.home_branch || 'Waschen Laundry Citra Gran',
-          branch: c.home_branch || 'Waschen Laundry Citra Gran',
-          tier: c.tier || c.tier_label || 'Reguler',
-          totalSpending: parseFloat(c.total_spent) || 0,
-          periodSpending: parseFloat(c.monthly_spending) || 0,
-          yearSpending: parseFloat(c.spending_value_year) || 0,
-          totalTrx: parseInt(c.total_orders, 10) || 0,
-          memberBalance: parseFloat(c.deposit_balance) || 0,
-          lastOrder: c.updated_at
-            ? new Date(c.updated_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })
-            : 'Hari ini',
-          frequentServices: ['k1', 's1', 's2']
-        }));
+        const mapped = rows.map(mapCustomer);
         setCustomers(mapped);
         if (mapped.length === 0) {
           setCustomersError('Belum ada data pelanggan aktif.');

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { formatName, formatEmployeeName } from '../../../utils/FormatName';
@@ -28,7 +28,7 @@ import PaymentProofFields from '../../../components/PaymentProofFields.jsx';
 import ModalLacakNota from '../../../components/ModalLacakNota.jsx';
 import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
 import DateModeFilter from '../../../components/DateModeFilter.jsx';
-import { passesDateModeFilter, getCutoffMonthKey, formatDateKeyId, toDateKey } from '../../../utils/dateCutoffFilter.js';
+import { passesDateModeFilter, getCutoffMonthKey, getCutoffRangeForMonth, formatDateKeyId, toDateKey } from '../../../utils/dateCutoffFilter.js';
 import { formatDateId } from '../../../utils/FilterDate.js';
 import {
   sendCustomerNotaWhatsAppFromOrder,
@@ -45,7 +45,8 @@ export default function HistoryTransaction({
   transactionsLoading = false,
   setTransactions,
   outlets,
-  fetchTransactions
+  fetchTransactions,
+  loadedWindow = null
 }) {
   const navigate = useNavigate();
   const { showAlert } = useAppDialog();
@@ -61,6 +62,24 @@ export default function HistoryTransaction({
   const [rangeEnd, setRangeEnd] = useState('');
   const [cutoffMonth, setCutoffMonth] = useState(getCutoffMonthKey());
   const dateFilterState = { mode: dateMode, start: rangeStart, end: rangeEnd, cutoffMonth };
+
+  // Render bertahap: ribuan baris sekaligus membuat halaman berat. Tambah 50 baris per klik.
+  const PAGE_STEP = 50;
+  const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
+  useEffect(() => {
+    setVisibleCount(PAGE_STEP);
+  }, [searchQuery, paymentFilter, activeFilterTab, selectedBranchFilter, dateMode, rangeStart, rangeEnd, cutoffMonth]);
+
+  // Server hanya mengirim nota dalam jendela tanggal yang dipilih: ambil ulang saat filter tanggal berubah.
+  useEffect(() => {
+    const win = dateMode === 'cutoff'
+      ? getCutoffRangeForMonth(cutoffMonth)
+      : { start: rangeStart || undefined, end: rangeEnd || undefined };
+    // Sudah sesuai dengan data yang dimuat halaman (mis. muat awal): tidak perlu ambil ulang.
+    if ((loadedWindow?.start || undefined) === win.start && (loadedWindow?.end || undefined) === win.end) return;
+    fetchTransactions(undefined, win);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateMode, rangeStart, rangeEnd, cutoffMonth]);
 
   // Samakan bentuk order dengan TrackingService agar kategori antrean konsisten
   const toQueueOrder = (order) => ({
@@ -623,7 +642,7 @@ export default function HistoryTransaction({
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e0e0e0]/40 text-xs font-medium">
-              {displayOrders.map((order) => {
+              {displayOrders.slice(0, visibleCount).map((order) => {
                 const workStatus = order.progressStatus || order.workStatus || 'Antrean';
                 const workPct = getWorkPercentage(workStatus);
                 const pctTone = percentageTone(workPct);
@@ -819,7 +838,16 @@ export default function HistoryTransaction({
 
       {/* Table footer */}
       <div className="px-4 py-2.5 border-t border-[#e0e0e0]/70 bg-slate-50/50 flex justify-between items-center text-[10px] text-slate-400 font-bold">
-        <span>Menampilkan {displayOrders.length} dari {activeTransactions.length} transaksi terdaftar</span>
+        <span>Menampilkan {Math.min(visibleCount, displayOrders.length)} dari {displayOrders.length} hasil ({activeTransactions.length} nota dimuat)</span>
+        {displayOrders.length > visibleCount && (
+          <button
+            type="button"
+            onClick={() => setVisibleCount((n) => n + PAGE_STEP)}
+            className="px-3 py-1 rounded-lg bg-[#5f1340]/10 text-[#5f1340] font-extrabold hover:bg-[#5f1340]/20 cursor-pointer"
+          >
+            Tampilkan {Math.min(PAGE_STEP, displayOrders.length - visibleCount)} lagi
+          </button>
+        )}
       </div>
 
       {/* MODAL: AKSI REFUND */}

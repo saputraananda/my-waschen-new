@@ -4,7 +4,8 @@ import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav';
 import { formatEmployeeName } from '../../utils/FormatName.js';
 import { todayWibISO } from '../../utils/wib.js';
-import { Copy, FileText, Banknote, Check, ChevronDown } from 'lucide-react';
+import { exportDailyReportToExcel } from '../../utils/exportDailyReport.js';
+import { Copy, FileText, Banknote, Check, ChevronDown, FileSpreadsheet } from 'lucide-react';
 
 export default function DailyReport() {
   const navigate = useNavigate();
@@ -17,6 +18,7 @@ export default function DailyReport() {
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState(null);
   const [openTx, setOpenTx] = useState({});
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     document.title = 'Daily Report | Waschen Laundry';
@@ -73,6 +75,18 @@ export default function DailyReport() {
     }
   };
 
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await exportDailyReportToExcel({ shifts, date, outletName: activeOutletName });
+    } catch (err) {
+      console.error(err);
+      alert('Gagal export Excel: ' + (err.message || err));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const copyReport = async (shift) => {
     if (!shift.report_text) return;
     try {
@@ -111,6 +125,15 @@ export default function DailyReport() {
               onChange={(e) => setDate(e.target.value)}
               className="px-3 py-2 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340]"
             />
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={exporting || loading || shifts.length === 0}
+              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              {exporting ? 'Mengekspor...' : 'Export Excel'}
+            </button>
             {localStorage.getItem('companyId') === '1' && (
               <select
                 value={activeOutletId}
