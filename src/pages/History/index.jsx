@@ -125,6 +125,7 @@ export default function History() {
           settledAt: t.settled_at || null,
           paidAt: t.paid_at || null,
           notes: t.special_notes || '-',
+          isSmartlink: t.source === 'SMARTLINK',
           // Delete Request Fields
           isDeleteRequested: t.is_delete_requested === 1 || t.is_delete_requested === true,
           deleteApprovalStatus: t.delete_approval_status,

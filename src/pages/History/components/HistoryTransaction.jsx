@@ -63,12 +63,12 @@ export default function HistoryTransaction({
   const [cutoffMonth, setCutoffMonth] = useState(getCutoffMonthKey());
   const dateFilterState = { mode: dateMode, start: rangeStart, end: rangeEnd, cutoffMonth };
 
-  // Render bertahap: ribuan baris sekaligus membuat halaman berat. Tambah 50 baris per klik.
-  const PAGE_STEP = 50;
-  const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
+  // Pagination: ribuan baris sekaligus membuat halaman berat, jadi tabel dibagi per halaman.
+  const [pageSize, setPageSize] = useState(50);
+  const [page, setPage] = useState(1);
   useEffect(() => {
-    setVisibleCount(PAGE_STEP);
-  }, [searchQuery, paymentFilter, activeFilterTab, selectedBranchFilter, dateMode, rangeStart, rangeEnd, cutoffMonth]);
+    setPage(1);
+  }, [searchQuery, paymentFilter, activeFilterTab, selectedBranchFilter, dateMode, rangeStart, rangeEnd, cutoffMonth, pageSize]);
 
   // Server hanya mengirim nota dalam jendela tanggal yang dipilih: ambil ulang saat filter tanggal berubah.
   useEffect(() => {
@@ -453,6 +453,22 @@ export default function HistoryTransaction({
     return true;
   }).slice().sort((a, b) => (new Date(b.rawDate || 0).getTime() || 0) - (new Date(a.rawDate || 0).getTime() || 0));
 
+  const totalPages = Math.max(1, Math.ceil(displayOrders.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * pageSize;
+  const pageEnd = Math.min(pageStart + pageSize, displayOrders.length);
+  // Nomor halaman yang ditampilkan: 1 ... (sekitar halaman aktif) ... terakhir
+  const pageNumbers = (() => {
+    const set = new Set([1, totalPages, currentPage - 1, currentPage, currentPage + 1]);
+    const nums = [...set].filter(n => n >= 1 && n <= totalPages).sort((a, b) => a - b);
+    const out = [];
+    nums.forEach((n, i) => {
+      if (i > 0 && n - nums[i - 1] > 1) out.push('gap-' + n);
+      out.push(n);
+    });
+    return out;
+  })();
+
   // Helper for Status Tab Counts
   const getTabCount = (tabName) => {
     const baseList = activeTransactions.filter(order => {
@@ -642,7 +658,7 @@ export default function HistoryTransaction({
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e0e0e0]/40 text-xs font-medium">
-              {displayOrders.slice(0, visibleCount).map((order) => {
+              {displayOrders.slice(pageStart, pageStart + pageSize).map((order) => {
                 const workStatus = order.progressStatus || order.workStatus || 'Antrean';
                 const workPct = getWorkPercentage(workStatus);
                 const pctTone = percentageTone(workPct);
@@ -661,6 +677,14 @@ export default function HistoryTransaction({
                         {order.isDelivery && (
                           <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[8px] font-extrabold px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
                             <Truck className="h-2.5 w-2.5" /> Delivery
+                          </span>
+                        )}
+                        {order.isSmartlink && (
+                          <span
+                            className="bg-amber-50 text-amber-700 border border-amber-200 text-[8px] font-extrabold px-1.5 py-0.5 rounded-md font-sans"
+                            title="Nota lama yang dipindahkan dari Smartlink"
+                          >
+                            Backdate (Smartlink)
                           </span>
                         )}
                       </div>
@@ -837,17 +861,52 @@ export default function HistoryTransaction({
       )}
 
       {/* Table footer */}
-      <div className="px-4 py-2.5 border-t border-[#e0e0e0]/70 bg-slate-50/50 flex justify-between items-center text-[10px] text-slate-400 font-bold">
-        <span>Menampilkan {Math.min(visibleCount, displayOrders.length)} dari {displayOrders.length} hasil ({activeTransactions.length} nota dimuat)</span>
-        {displayOrders.length > visibleCount && (
+      <div className="px-4 py-2.5 border-t border-[#e0e0e0]/70 bg-slate-50/50 flex flex-col lg:flex-row justify-between lg:items-center gap-2 text-[10px] text-slate-400 font-bold">
+        <span>
+          Menampilkan {displayOrders.length === 0 ? 0 : pageStart + 1}–{pageEnd} dari {displayOrders.length} hasil ({activeTransactions.length} nota dimuat)
+        </span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <label className="flex items-center gap-1.5 mr-2">
+            <span>Baris/halaman</span>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="px-2 py-1 rounded-lg border border-[#e0e0e0] bg-white text-slate-600 font-extrabold cursor-pointer"
+            >
+              {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
           <button
             type="button"
-            onClick={() => setVisibleCount((n) => n + PAGE_STEP)}
-            className="px-3 py-1 rounded-lg bg-[#5f1340]/10 text-[#5f1340] font-extrabold hover:bg-[#5f1340]/20 cursor-pointer"
+            disabled={currentPage <= 1}
+            onClick={() => setPage(currentPage - 1)}
+            className="px-2.5 py-1 rounded-lg bg-[#5f1340]/10 text-[#5f1340] font-extrabold hover:bg-[#5f1340]/20 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Tampilkan {Math.min(PAGE_STEP, displayOrders.length - visibleCount)} lagi
+            ‹ Sebelumnya
           </button>
-        )}
+          {pageNumbers.map((n) => (typeof n === 'string' ? (
+            <span key={n} className="px-1">…</span>
+          ) : (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setPage(n)}
+              className={`min-w-[28px] px-2 py-1 rounded-lg font-extrabold cursor-pointer ${
+                n === currentPage ? 'bg-[#5f1340] text-white' : 'bg-[#5f1340]/10 text-[#5f1340] hover:bg-[#5f1340]/20'
+              }`}
+            >
+              {n}
+            </button>
+          )))}
+          <button
+            type="button"
+            disabled={currentPage >= totalPages}
+            onClick={() => setPage(currentPage + 1)}
+            className="px-2.5 py-1 rounded-lg bg-[#5f1340]/10 text-[#5f1340] font-extrabold hover:bg-[#5f1340]/20 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Berikutnya ›
+          </button>
+        </div>
       </div>
 
       {/* MODAL: AKSI REFUND */}

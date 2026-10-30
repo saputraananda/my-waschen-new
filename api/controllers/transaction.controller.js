@@ -82,6 +82,13 @@ const generateOrderNo = async (outletId = 2, db = myWaschenPool) => {
   throw new Error('Gagal membuat nomor nota unik, coba lagi.');
 };
 
+/** Nota Smartlink: karyawan tak ditemukan di mst_employee -> pakai nama asli pembuat nota. */
+const useLegacyCashierName = (rows) => {
+  for (const r of rows) {
+    if (r?.legacy_cashier_name && /^Kasir #\d+$/.test(String(r.cashier_name || ''))) r.cashier_name = r.legacy_cashier_name;
+  }
+};
+
 /**
  * POST /api/transactions
  * Buat transaksi nota POS baru (Step 4 Checkout)
@@ -608,7 +615,7 @@ export const getTransactions = async (req, res) => {
              COALESCE(o.full_name, o.name, c.home_branch, 'Outlet Waschen') as outlet_name,
              sp.name as speed_name,
              p.name as parfume_name,
-             COALESCE(NULLIF(TRIM(cr.employee_name), ''), CONCAT('Kasir #', t.cashier_employee_id)) as cashier_name,
+             COALESCE(NULLIF(TRIM(cr.employee_name), ''), IF(t.cashier_employee_id > 0, CONCAT('Kasir #', t.cashier_employee_id), NULL), t.legacy_cashier_name, CONCAT('Kasir #', t.cashier_employee_id)) as cashier_name,
              ${REFUND_SUMMARY_COLUMNS}
              ${lite ? '' : `,
              (
@@ -692,6 +699,7 @@ export const getTransactions = async (req, res) => {
 
     const [rows] = await myWaschenPool.query(sql, params);
     await fillFallbackNames(rows, 'cashier_employee_id', 'cashier_name');
+    useLegacyCashierName(rows);
 
     if (lite) {
       return res.status(200).json({
@@ -782,7 +790,7 @@ export const getTransactionDetail = async (req, res) => {
               COALESCE(o.full_name, o.name, c.home_branch, 'Outlet Waschen') as outlet_name,
               sp.name as speed_name,
               p.name as parfume_name,
-              COALESCE(NULLIF(TRIM(r.employee_name), ''), CONCAT('Kasir #', t.cashier_employee_id)) as cashier_name,
+              COALESCE(NULLIF(TRIM(r.employee_name), ''), IF(t.cashier_employee_id > 0, CONCAT('Kasir #', t.cashier_employee_id), NULL), t.legacy_cashier_name, CONCAT('Kasir #', t.cashier_employee_id)) as cashier_name,
               COALESCE(NULLIF(TRIM(rs.employee_name), ''), IF(t.settled_by_employee_id IS NULL, NULL, CONCAT('Karyawan #', t.settled_by_employee_id))) as settled_by_name,
               (
                 SELECT b.batch_no
@@ -827,6 +835,7 @@ export const getTransactionDetail = async (req, res) => {
 
     const order = orderRows[0];
     await fillFallbackNames([order], 'cashier_employee_id', 'cashier_name');
+    useLegacyCashierName([order]);
     await fillFallbackNames([order], 'settled_by_employee_id', 'settled_by_name');
 
     const [items] = await myWaschenPool.query(

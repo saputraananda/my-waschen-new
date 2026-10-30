@@ -125,6 +125,7 @@ export default function DetailTransaction() {
     speed: raw.speed_name || 'Reguler',
     isExpress: Number(raw.speed_surcharge) > 0,
     isDelivery: raw.is_delivery === 1,
+    isSmartlink: raw.source === 'SMARTLINK',
     deliveryAddress: raw.delivery_address || '',
     deliveryNotes: raw.delivery_notes || '',
     settledByEmployeeId: raw.settled_by_employee_id || null,
@@ -653,6 +654,14 @@ export default function DetailTransaction() {
                     >
                       {formatWorkPercentage(order.workStatus)}
                     </span>
+                    {order.isSmartlink && (
+                      <span
+                        className="px-2.5 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700 text-[10px] font-black"
+                        title="Nota lama yang dipindahkan dari Smartlink"
+                      >
+                        Backdate (Smartlink)
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-slate-400 mt-1">{order.createdAt} · {order.branch}</p>
                 </div>
