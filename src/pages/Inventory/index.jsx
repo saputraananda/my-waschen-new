@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav';
@@ -30,6 +30,7 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(false);
   const [usageDate, setUsageDate] = useState(toDateInputValue());
   const isAdmin = isHqUser();
+  const ensuredOutletsRef = useRef(new Set()); // sinkronisasi baris stok cukup sekali per outlet per sesi halaman
 
   useEffect(() => {
     document.title = 'Manajemen Inventory | Waschen Laundry';
@@ -66,7 +67,11 @@ export default function InventoryPage() {
     const silent = opts?.silent === true;
     if (!silent) setLoading(true);
     try {
-      await axios.post('/api/inventory/stock/ensure', { outletId: Number(outletId) }).catch(() => {});
+      if (!ensuredOutletsRef.current.has(String(outletId))) {
+        await axios.post('/api/inventory/stock/ensure', { outletId: Number(outletId) })
+          .then(() => ensuredOutletsRef.current.add(String(outletId)))
+          .catch(() => {});
+      }
       const res = await axios.get('/api/inventory/stock', {
         params: { outlet_id: outletId, usage_date: dateYmd }
       });

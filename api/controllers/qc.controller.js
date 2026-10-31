@@ -235,20 +235,33 @@ export const getQcList = async (req, res) => {
       params.push(like, like, like);
     }
 
-    const [txns] = await myWaschenPool.query(
-      `SELECT DISTINCT t.id, t.order_no, t.order_date, t.payment_status, t.outlet_id,
-              c.name AS customer_name, c.phone AS customer_phone,
-              c.address AS customer_street, c.block AS customer_block, c.house_number AS customer_house_number
+    const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const fromWhere = `
        FROM tr_transaction t
        JOIN tr_transaction_detail d ON d.transaction_id = t.id
        LEFT JOIN mst_customer c ON c.id = t.customer_id
        WHERE ${outletScopeSql}
          AND d.item_work_status IN (${statuses.map(() => '?').join(',')})
          AND COALESCE(d.item_work_status, '') != 'Dibatalkan'
-         ${extra}
-       ORDER BY t.order_date ASC
-       LIMIT 80`,
+         ${extra}`;
+
+    const [[{ total }]] = await myWaschenPool.query(
+      `SELECT COUNT(DISTINCT t.id) AS total ${fromWhere}`,
       params
+    );
+    const totalPages = Math.max(Math.ceil(total / limit), 1);
+    const safePage = Math.min(page, totalPages);
+
+    // Terbaru dulu; t.id sebagai tie-breaker supaya urutan antar halaman stabil
+    const [txns] = await myWaschenPool.query(
+      `SELECT DISTINCT t.id, t.order_no, t.order_date, t.payment_status, t.outlet_id, t.source,
+              c.name AS customer_name, c.phone AS customer_phone,
+              c.address AS customer_street, c.block AS customer_block, c.house_number AS customer_house_number
+       ${fromWhere}
+       ORDER BY t.order_date DESC, t.id DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, (safePage - 1) * limit]
     );
 
     let items = [];
@@ -267,7 +280,7 @@ export const getQcList = async (req, res) => {
     if (tab === 'frontliner') {
       const [holdRows] = await myWaschenPool.query(
         `SELECT d.id AS detail_id, d.service_name, d.qty, d.unit, d.finding_note, d.item_work_status,
-                t.order_no, c.name AS customer_name, c.phone AS customer_phone,
+                t.order_no, t.source, c.name AS customer_name, c.phone AS customer_phone,
                 cat.code AS category_code,
                 p.id AS hold_id, p.notes AS report_notes, p.stage AS reported_stage,
                 p.employee_name AS reported_by, p.created_at AS reported_at
@@ -314,6 +327,7 @@ export const getQcList = async (req, res) => {
       success: true,
       data,
       holds,
+      pagination: { page: safePage, limit, total, totalPages },
       outletId,
       role,
       pickup

@@ -10,6 +10,7 @@ import { burnQcPhoto, buildQcPhotoLines } from '../../../utils/qcPhotoStamp.js';
 import { customerPickLabel } from '../../../utils/customerPickLabel.js';
 
 const MAX_PHOTOS = 5;
+const QC_PAGE_SIZE = 10;
 const QC_PHOTO = { maxEdge: 2560, quality: 0.95 };
 
 const TEMUAN_NOTE = {
@@ -34,6 +35,18 @@ const TEMUAN_NOTE = {
     satuan: 'Contoh : Packing tidak sempurna, plastik robek sedikit'
   }
 };
+
+/** Penanda nota lama yang dipindahkan dari Smartlink (tr_transaction.source = 'SMARTLINK'). */
+function SmartlinkBadge() {
+  return (
+    <span
+      className="shrink-0 bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md"
+      title="Nota lama yang dipindahkan dari Smartlink"
+    >
+      Smartlink
+    </span>
+  );
+}
 
 function qcNotePlaceholder(stage, kiloan, status) {
   if (status !== 'temuan') return 'Boleh Kosong Jika Aman';
@@ -535,8 +548,22 @@ export default function QCFrontDeliv() {
   const keepErrorRef = useRef(false);
   const tabRef = useRef(tab);
   tabRef.current = tab;
+  const reqSeqRef = useRef(0); // hanya respons request terbaru yang boleh mengisi state
+  const skipNextLoadRef = useRef(false); // pickup default dari server tidak perlu fetch ulang
+  const lastSearchRef = useRef(search);
+
+  // Halaman otomatis kembali ke 1 saat tab / pencarian / filter / outlet berubah
+  const filterKey = `${tab}|${search}|${pickup}|${activeOutletId}`;
+  const [pageState, setPageState] = useState({ key: '', page: 1 });
+  const [pagination, setPagination] = useState({ page: 1, limit: QC_PAGE_SIZE, total: 0, totalPages: 1 });
+  const page = pageState.key === filterKey ? pageState.page : 1;
+  const goToPage = (p) => {
+    setPageState({ key: filterKey, page: p });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const load = useCallback(async () => {
+    const seq = ++reqSeqRef.current;
     setLoading(true);
     if (keepErrorRef.current) keepErrorRef.current = false;
     else setError('');
@@ -545,22 +572,31 @@ export default function QCFrontDeliv() {
         params: {
           tab,
           search,
+          page,
+          limit: QC_PAGE_SIZE,
           outlet_id: activeOutletId || localStorage.getItem('activeOutletId') || undefined,
           ...(pickup ? { pickup } : {})
         },
         ...authCfg()
       });
+      if (seq !== reqSeqRef.current) return;
       setRows(res.data?.data || []);
       setHolds(res.data?.holds || []);
-      if (!pickup && res.data?.pickup) setPickup(res.data.pickup);
+      setPagination(res.data?.pagination || { page: 1, limit: QC_PAGE_SIZE, total: (res.data?.data || []).length, totalPages: 1 });
+      if (!pickup && res.data?.pickup) {
+        skipNextLoadRef.current = true;
+        setPickup(res.data.pickup);
+      }
     } catch (err) {
+      if (seq !== reqSeqRef.current) return;
       setRows([]);
       setHolds([]);
+      setPagination({ page: 1, limit: QC_PAGE_SIZE, total: 0, totalPages: 1 });
       setError(err.response?.data?.message || 'Gagal memuat daftar');
     } finally {
-      setLoading(false);
+      if (seq === reqSeqRef.current) setLoading(false);
     }
-  }, [tab, search, pickup, activeOutletId]);
+  }, [tab, search, page, pickup, activeOutletId]);
 
   useEffect(() => {
     document.title = 'QC Frontliner & Delivery | Waschen Laundry';
@@ -579,9 +615,16 @@ export default function QCFrontDeliv() {
   }, [navigate]);
 
   useEffect(() => {
-    const t = setTimeout(load, 300);
+    if (skipNextLoadRef.current) {
+      skipNextLoadRef.current = false;
+      return undefined;
+    }
+    // debounce hanya saat mengetik pencarian; ganti tab/filter/outlet langsung fetch
+    const delay = search !== lastSearchRef.current ? 300 : 0;
+    lastSearchRef.current = search;
+    const t = setTimeout(load, delay);
     return () => clearTimeout(t);
-  }, [load]);
+  }, [load, search]);
 
   const stopScanner = useCallback(async () => {
     const scanner = scannerRef.current;
@@ -817,7 +860,10 @@ export default function QCFrontDeliv() {
                   <div key={h.hold_id || h.detail_id} className="bg-white rounded-3xl border border-amber-200 p-4 shadow-[0_4px_16px_rgba(0,0,0,0.03)] min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-sm font-black text-[#313030] truncate">{h.order_no}</p>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <p className="text-sm font-black text-[#313030] truncate">{h.order_no}</p>
+                          {h.source === 'SMARTLINK' && <SmartlinkBadge />}
+                        </div>
                         <p className="text-[11px] text-slate-400 font-medium truncate mt-0.5">
                           {h.customer_name || 'Customer'} · {h.service_name} · {Number(h.qty)} {h.unit}
                         </p>
@@ -960,7 +1006,10 @@ export default function QCFrontDeliv() {
                 <div key={txn.id} className="bg-white border border-[#e0e0e0] rounded-3xl p-4 sm:p-5 flex flex-col gap-4 min-w-0">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-black text-sm text-[#5f1340] truncate">{txn.order_no}</p>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <p className="font-black text-sm text-[#5f1340] truncate">{txn.order_no}</p>
+                        {txn.source === 'SMARTLINK' && <SmartlinkBadge />}
+                      </div>
                       <p className="font-black text-base leading-tight text-[#313030] truncate mt-1">{txn.customer_name}</p>
                       {place && (
                         <p className="text-sm font-bold text-[#5f1340] leading-snug line-clamp-2 mt-0.5">{place}</p>
@@ -1011,6 +1060,32 @@ export default function QCFrontDeliv() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {!loading && !error && rows.length > 0 && pagination.totalPages > 1 && (
+          <div className="mt-5 flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-xs font-bold text-slate-500">
+              Halaman {pagination.page} dari {pagination.totalPages} · {pagination.total} nota
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={pagination.page <= 1}
+                onClick={() => goToPage(pagination.page - 1)}
+                className="px-4 py-2 rounded-xl border border-[#e0e0e0] bg-white text-xs font-black text-[#5f1340] disabled:opacity-40 disabled:cursor-not-allowed hover:border-[#5f1340] transition"
+              >
+                Sebelumnya
+              </button>
+              <button
+                type="button"
+                disabled={pagination.page >= pagination.totalPages}
+                onClick={() => goToPage(pagination.page + 1)}
+                className="px-4 py-2 rounded-xl bg-[#5f1340] text-xs font-black text-white disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                Berikutnya
+              </button>
+            </div>
           </div>
         )}
       </main>

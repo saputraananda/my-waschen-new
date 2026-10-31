@@ -241,16 +241,7 @@ export const listOutletStock = async (req, res) => {
         u.symbol AS unit_symbol,
         u.name AS unit_name,
         COALESCE(s.period_start, ?) AS period_start_effective,
-        (
-          SELECT COALESCE(SUM(si.qty_per_service * td.qty), 0)
-          FROM tr_transaction t
-          INNER JOIN tr_transaction_detail td ON td.transaction_id = t.id
-          INNER JOIN mst_service_inventory si
-            ON si.service_id = td.service_id AND si.item_id = s.item_id AND si.is_active = 1
-          WHERE t.outlet_id = s.outlet_id
-            AND DATE(t.order_date) >= COALESCE(s.period_start, ?)
-            AND DATE(t.order_date) <= ?
-        ) AS qty_seharusnya,
+        COALESCE(sh.qty_seharusnya, 0) AS qty_seharusnya,
         (
           SELECT COALESCE(SUM(o.qty_used), 0)
           FROM tr_stock_opname o
@@ -279,16 +270,31 @@ export const listOutletStock = async (req, res) => {
       FROM tr_inventory_stock s
       INNER JOIN mst_inventory_item i ON i.id = s.item_id
       LEFT JOIN mst_unit u ON u.id = i.unit_id
+      LEFT JOIN (
+        -- Pemakaian seharusnya (BOM x transaksi) dihitung sekali per outlet, bukan per item.
+        -- Rentang tanggal ditulis sargable (tanpa DATE() pada kolom) agar index order_date terpakai.
+        SELECT s2.id AS stock_id, SUM(si.qty_per_service * td.qty) AS qty_seharusnya
+        FROM tr_inventory_stock s2
+        INNER JOIN mst_service_inventory si ON si.item_id = s2.item_id AND si.is_active = 1
+        INNER JOIN tr_transaction t ON t.outlet_id = s2.outlet_id
+        INNER JOIN tr_transaction_detail td ON td.transaction_id = t.id AND td.service_id = si.service_id
+        WHERE s2.outlet_id = ?
+          AND t.order_date >= COALESCE(s2.period_start, ?)
+          AND t.order_date < DATE_ADD(?, INTERVAL 1 DAY)
+        GROUP BY s2.id
+      ) sh ON sh.stock_id = s.id
       WHERE s.outlet_id = ?
     `;
+    // urutan mengikuti kemunculan placeholder: SELECT (eff, aktual x2, hari, id, notes), FROM sh, WHERE
     const params = [
       monthStart,
       monthStart,
       usageDate,
+      usageDate,
+      usageDate,
+      usageDate,
+      outletId,
       monthStart,
-      usageDate,
-      usageDate,
-      usageDate,
       usageDate,
       outletId
     ];
