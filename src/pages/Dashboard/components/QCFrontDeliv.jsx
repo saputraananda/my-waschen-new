@@ -300,7 +300,7 @@ function QcSheet({ target, onClose, onSaved }) {
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Rincian Plastik — {STAGE_LABEL[stage] || stage}</p>
               <p className="text-[10.5px] text-slate-500 leading-snug mb-2">
-                Rinci jenis pakaian boleh dilewati (dikerjakan Tim Cuci). Jika diisi, total rincian per plastik harus sama dengan jumlah plastik.
+                Rinci jenis pakaian boleh dilewati (dikerjakan Tim Cuci).
               </p>
               <div className="flex flex-col gap-2">
                 {bags.map((b, i) => {
