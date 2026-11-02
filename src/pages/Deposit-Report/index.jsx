@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useNetworkRestored } from '../../hooks/useNetworkRestored.js';
 import HeaderNav from '../../components/HeaderNav';
 import DateModeFilter from '../../components/DateModeFilter.jsx';
 import { ProofLink } from '../../components/ImageLightbox.jsx';
@@ -101,6 +102,8 @@ export default function DepositReport() {
       setLoading(false);
     }
   }, [outletFilter, range.start, range.end, statusTab]);
+
+  useNetworkRestored(load);
 
   useEffect(() => {
     load();

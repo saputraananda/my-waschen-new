@@ -286,7 +286,10 @@ export default function DetailTransaction() {
     setIsCombinedModalOpen(true);
     try {
       const res = await axios.get('/api/transactions', {
-        params: { search: order.customerPhone || order.customerName, lite: 1 },
+        // customer_id, bukan nama/HP: pencarian longgar bisa menarik puluhan ribu nota milik orang lain
+        params: order.customerId
+          ? { customer_id: order.customerId, lite: 1 }
+          : { search: order.id, lite: 1 },
         timeout: 20000
       });
       if (res.data?.data && res.data.data.length > 0) {

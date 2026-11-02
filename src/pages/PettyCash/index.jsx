@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
+import { useNetworkRestored } from '../../hooks/useNetworkRestored.js';
 import HeaderNav from '../../components/HeaderNav';
 import DashboardPettyCash from './components/DashboardPettyCash';
 import AddPettyCash from './components/AddPettyCash';
@@ -74,6 +75,8 @@ export default function PettyCash() {
 
     fetchPettyCash();
   }, [navigate]);
+
+  useNetworkRestored(() => fetchPettyCash());
 
   const fetchPettyCash = async () => {
     try {

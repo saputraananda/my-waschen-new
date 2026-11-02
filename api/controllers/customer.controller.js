@@ -85,6 +85,11 @@ const CUSTOMER_SELECT_PICKER = `
   LEFT JOIN mst_customer_tier st ON c.spending_tier_id = st.id
 `;
 
+/** Prioritas kasir di Order Baru: VIP, Gold, Reguler, One-Time. Tanpa tier dianggap Reguler. */
+const TIER_RANK_SQL = `CASE COALESCE(st.name, 'Reguler')
+  WHEN 'VIP' THEN 1 WHEN 'Gold' THEN 2 WHEN 'Reguler' THEN 3 WHEN 'One-Time' THEN 4 WHEN 'OneTime' THEN 4
+  ELSE 99 END`;
+
 const resolveSpendingTierId = async (tierId, tierName) => {
   if (tierId) {
     const [rows] = await myWaschenPool.query(
@@ -236,9 +241,15 @@ export const getCustomers = async (req, res) => {
     const params = [];
 
     if (search && search.trim()) {
-      sql += ' AND (c.name LIKE ? OR c.phone LIKE ? OR c.customer_code LIKE ? OR c.email LIKE ?)';
       const s = `%${search.trim()}%`;
-      params.push(s, s, s, s);
+      if (lite === '1') {
+        // Pemilih pelanggan Order Baru juga mencari berdasarkan alamat
+        sql += ' AND (c.name LIKE ? OR c.phone LIKE ? OR c.customer_code LIKE ? OR c.address LIKE ? OR c.full_address LIKE ?)';
+        params.push(s, s, s, s, s);
+      } else {
+        sql += ' AND (c.name LIKE ? OR c.phone LIKE ? OR c.customer_code LIKE ? OR c.email LIKE ?)';
+        params.push(s, s, s, s);
+      }
     }
 
     if (tier_id) {
@@ -280,7 +291,9 @@ export const getCustomers = async (req, res) => {
     };
     const sortExpr = sortColumns[req.query.sort] || 'c.id';
     const sortDir = String(req.query.dir || '').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
-    const orderBy = `ORDER BY ${sortExpr} ${sortDir}, c.id DESC`;
+    const orderBy = req.query.sort === 'picker'
+      ? `ORDER BY ${TIER_RANK_SQL}, c.total_spent DESC, c.id DESC`
+      : `ORDER BY ${sortExpr} ${sortDir}, c.id DESC`;
     if (!pageNum) {
       const listSql = lite === '1'
         ? `${CUSTOMER_SELECT_PICKER} ${sql.slice(CUSTOMER_SELECT.length)}`
@@ -293,7 +306,7 @@ export const getCustomers = async (req, res) => {
     const offset = (pageNum - 1) * pageSize;
     const where = sql.slice(CUSTOMER_SELECT.length);
     const [rows] = await myWaschenPool.query(
-      `${CUSTOMER_SELECT_LIGHT} ${where} ${orderBy} LIMIT ? OFFSET ?`,
+      `${lite === '1' ? CUSTOMER_SELECT_PICKER : CUSTOMER_SELECT_LIGHT} ${where} ${orderBy} LIMIT ? OFFSET ?`,
       [...params, pageSize, offset]
     );
     const [[stats]] = await myWaschenPool.query(

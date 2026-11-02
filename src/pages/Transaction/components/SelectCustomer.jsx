@@ -38,7 +38,7 @@ export default function SelectCustomer({
   totalCustPages,
   custCurrentPage,
   setCustCurrentPage,
-  filteredCustomers,
+  customersTotal = 0,
   customersCount = 0,
   customersLoading = false,
   customersError = '',
@@ -69,8 +69,8 @@ export default function SelectCustomer({
   };
 
   const showInitialLoading = customersLoading && customersCount === 0;
-  const showLoadIssue = !customersLoading && customersCount === 0;
-  const showFilterEmpty = !customersLoading && customersCount > 0 && paginatedCustomers.length === 0;
+  const showLoadIssue = !customersLoading && Boolean(customersError) && customersCount === 0;
+  const showFilterEmpty = !customersLoading && !customersError && customersCount === 0;
 
   return (
     <div className="flex flex-col gap-5">
@@ -258,11 +258,11 @@ export default function SelectCustomer({
       </div>
 
       {/* Customer Pagination Controls */}
-      {totalCustPages > 1 && !customersLoading && (
+      {totalCustPages > 1 && (
         <div className="bg-white border border-[#e0e0e0] rounded-2xl px-4 py-3 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
           <span className="text-slate-400 font-medium shrink-0">
             Menampilkan <span className="text-[#313030] font-bold">{paginatedCustomers.length}</span> dari{' '}
-            <span className="text-[#313030] font-bold">{filteredCustomers.length}</span> pelanggan
+            <span className="text-[#313030] font-bold">{customersTotal}</span> pelanggan
             <span className="text-slate-300 mx-1.5">·</span>
             Hal. {custCurrentPage}/{totalCustPages}
           </span>

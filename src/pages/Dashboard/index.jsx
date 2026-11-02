@@ -16,6 +16,7 @@ import BadgeShift from './components/BadgeShift.jsx';
 import { useShift } from '../../context/ShiftContext.jsx';
 import { matchesNotaQueueTab } from '../../utils/notaQueueMeta.js';
 import { getCutoffMonthKey } from '../../utils/dateCutoffFilter.js';
+import { resolveStatDateRange } from '../../utils/dailyTargetCarry.js';
 import ThermalNota from '../../components/ThermalNota.jsx';
 import { mapDbTransactionToReceipt } from '../../utils/printerSettings.js';
 import { toCustomerNotaReceipt } from '../../utils/customerNotaWhatsApp.js';
@@ -42,6 +43,7 @@ export default function Dashboard() {
   const [rangeEnd, setRangeEnd] = useState('');
   const [cutoffMonth, setCutoffMonth] = useState(getCutoffMonthKey());
   const dateFilter = { mode: dateMode, start: rangeStart, end: rangeEnd, cutoffMonth };
+  const { start: rangeFrom, end: rangeTo } = resolveStatDateRange(dateFilter);
 
   // Active role & branch state
   const getInitialOutlet = () => {
@@ -182,8 +184,15 @@ export default function Dashboard() {
     const seq = ++fetchSeqRef.current;
     setOrdersLoading(true);
     const outletId = localStorage.getItem('activeOutletId') || undefined;
+    // Hanya nota periode aktif: seluruh histori outlet (puluhan ribu nota) membekukan browser
     const ordersTask = getJson('/api/transactions', {
-      params: { outlet_id: outletId, _: Date.now() }
+      params: {
+        outlet_id: outletId,
+        date_from: rangeFrom,
+        date_to: rangeTo,
+        lite: SHOW_TRACKING_SERVICE ? undefined : 1,
+        _: Date.now()
+      }
     })
       .then((trxRes) => {
         if (seq !== fetchSeqRef.current) return;
@@ -224,7 +233,7 @@ export default function Dashboard() {
       });
 
     await Promise.allSettled([ordersTask, pettyTask]);
-  }, []);
+  }, [rangeFrom, rangeTo]);
 
   useEffect(() => {
     setOrders([]);
@@ -234,19 +243,29 @@ export default function Dashboard() {
     fetchLiveDashboardData();
   }, [activeOutletId, fetchLiveDashboardData]);
 
+  // Data yang gagal dimuat saat sinyal hilang diambil ulang begitu koneksi kembali
+  useEffect(() => {
+    window.addEventListener('waschen:network-restored', fetchLiveDashboardData);
+    return () => window.removeEventListener('waschen:network-restored', fetchLiveDashboardData);
+  }, [fetchLiveDashboardData]);
+
   // Realtime: refresh dashboard when backend emits changes
   useEffect(() => {
     const socket = getSocket();
     joinOutletRoom(activeOutletId);
 
     const scheduleRefresh = (payload = {}) => {
-      if (payload.outletId != null && String(payload.outletId) !== String(activeOutletId)) {
-        // Still refresh — multi-outlet HQ may want all data; outlet filter is client-side soft
-      }
+      // Dashboard hanya memuat outlet aktif: event outlet lain tidak perlu menarik ulang data
+      if (
+        payload.outletId != null &&
+        activeOutletId &&
+        activeOutletId !== 'Semua' &&
+        String(payload.outletId) !== String(activeOutletId)
+      ) return;
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = setTimeout(() => {
         fetchLiveDashboardData();
-      }, 250);
+      }, 2000);
     };
 
     socket.on('dashboard:refresh', scheduleRefresh);

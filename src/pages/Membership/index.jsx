@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
+import { useNetworkRestored } from '../../hooks/useNetworkRestored.js';
 import HeaderNav from '../../components/HeaderNav';
 import ListMember from './components/ListMember';
 import AddMember from './components/AddMember';
@@ -94,6 +95,8 @@ export default function Membership() {
 
     fetchMembers();
   }, [navigate]);
+
+  useNetworkRestored(() => fetchMembers());
 
   const fetchMembers = async () => {
     try {

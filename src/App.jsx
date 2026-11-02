@@ -1,27 +1,29 @@
-import React, { useEffect } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import ScrollToTop from './components/ScrollToTop.jsx';
+import NetworkStatusModal from './components/NetworkStatusModal.jsx';
+import PageLoadBoundary, { PageLoading } from './components/PageLoadBoundary.jsx';
 import { ShiftProvider } from './context/ShiftContext.jsx';
 import { AppDialogProvider } from './context/AppDialogContext.jsx';
 import { PWAProvider } from './context/PWAContext.jsx';
 import { ThermalPrinterProvider } from './context/ThermalPrinterContext.jsx';
-import Dashboard from './pages/Dashboard/index.jsx';
-import Transaction from './pages/Transaction/index.jsx';
-import TransactionComplete from './pages/Transaction/components/Complete.jsx';
-import Customer from './pages/Customer/index.jsx';
-import Services from './pages/Services/index.jsx';
-import PettyCash from './pages/PettyCash/index.jsx';
-import Membership from './pages/Membership/index.jsx';
-import HistoryPage from './pages/History/index.jsx';
-import DetailTransaction from './pages/History/components/DetailTransaction.jsx';
-import LoginPage from './pages/auth/LoginPage.jsx';
-import DailyReport from './pages/DailyReport/index.jsx';
-import DepositReport from './pages/Deposit-Report/index.jsx';
-import PrinterSettings from './pages/Settings/PrinterSettings.jsx';
-import InventoryPage from './pages/Inventory/index.jsx';
-import QCFrontDeliv from './pages/Dashboard/components/QCFrontDeliv.jsx';
-import EventDistribution from './pages/EventDistribution/index.jsx';
-import ComplaintRequest from './pages/Complaint/index.jsx';
+const Dashboard = lazy(() => import('./pages/Dashboard/index.jsx'));
+const Transaction = lazy(() => import('./pages/Transaction/index.jsx'));
+const TransactionComplete = lazy(() => import('./pages/Transaction/components/Complete.jsx'));
+const Customer = lazy(() => import('./pages/Customer/index.jsx'));
+const Services = lazy(() => import('./pages/Services/index.jsx'));
+const PettyCash = lazy(() => import('./pages/PettyCash/index.jsx'));
+const Membership = lazy(() => import('./pages/Membership/index.jsx'));
+const HistoryPage = lazy(() => import('./pages/History/index.jsx'));
+const DetailTransaction = lazy(() => import('./pages/History/components/DetailTransaction.jsx'));
+const LoginPage = lazy(() => import('./pages/auth/LoginPage.jsx'));
+const DailyReport = lazy(() => import('./pages/DailyReport/index.jsx'));
+const DepositReport = lazy(() => import('./pages/Deposit-Report/index.jsx'));
+const PrinterSettings = lazy(() => import('./pages/Settings/PrinterSettings.jsx'));
+const InventoryPage = lazy(() => import('./pages/Inventory/index.jsx'));
+const QCFrontDeliv = lazy(() => import('./pages/Dashboard/components/QCFrontDeliv.jsx'));
+const EventDistribution = lazy(() => import('./pages/EventDistribution/index.jsx'));
+const ComplaintRequest = lazy(() => import('./pages/Complaint/index.jsx'));
 
 function App() {
   // Global Modal Backdrop Freeze: Prevents background scrolling across all pages whenever any modal is active
@@ -83,10 +85,13 @@ function App() {
   return (
     <Router>
       <ScrollToTop />
+      <NetworkStatusModal />
       <AppDialogProvider>
         <PWAProvider>
           <ThermalPrinterProvider>
             <ShiftProvider>
+              <PageLoadBoundary>
+              <Suspense fallback={<PageLoading />}>
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/dashboard" element={<Dashboard />} />
@@ -109,6 +114,8 @@ function App() {
                 <Route path="/complaint" element={<ComplaintRequest />} />
                 <Route path="/login" element={<LoginPage />} />
               </Routes>
+              </Suspense>
+              </PageLoadBoundary>
             </ShiftProvider>
           </ThermalPrinterProvider>
         </PWAProvider>

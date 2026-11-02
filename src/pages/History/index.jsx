@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useNetworkRestored } from '../../hooks/useNetworkRestored.js';
 import HeaderNav from '../../components/HeaderNav';
 import HistoryTransaction from './components/HistoryTransaction';
 import RequestDeleteTransaction from './components/RequestDeleteTransaction';
@@ -64,6 +65,7 @@ export default function History() {
   // Jendela tanggal yang diminta ke server (default = cutoff berjalan). Dipakai ulang oleh setiap
   // refresh agar daftar tidak menarik seluruh nota sepanjang masa. null = tanpa batas tanggal.
   const dateWindowRef = useRef(getCutoffRange());
+  useNetworkRestored(() => fetchTransactions());
   const lastListKeyRef = useRef('');
 
   const fetchTransactions = async (outletId = localStorage.getItem('activeOutletId'), dateWindow, search) => {

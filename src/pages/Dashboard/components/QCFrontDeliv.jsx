@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
+import { useNetworkRestored } from '../../../hooks/useNetworkRestored.js';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { ClipboardCheck, Camera, Images, QrCode, X, Loader2, Truck, Store, MessageCircle, CheckCircle2, XCircle, PauseCircle, Plus, Trash2, ChevronDown } from 'lucide-react';
 import HeaderNav from '../../../components/HeaderNav';
@@ -549,6 +550,7 @@ export default function QCFrontDeliv() {
   const tabRef = useRef(tab);
   tabRef.current = tab;
   const reqSeqRef = useRef(0); // hanya respons request terbaru yang boleh mengisi state
+  const loadedKeyRef = useRef('');
   const skipNextLoadRef = useRef(false); // pickup default dari server tidak perlu fetch ulang
   const lastSearchRef = useRef(search);
 
@@ -564,6 +566,7 @@ export default function QCFrontDeliv() {
 
   const load = useCallback(async () => {
     const seq = ++reqSeqRef.current;
+    const listKey = `${tab}|${search}|${page}|${pickup}|${activeOutletId}`;
     setLoading(true);
     if (keepErrorRef.current) keepErrorRef.current = false;
     else setError('');
@@ -583,20 +586,26 @@ export default function QCFrontDeliv() {
       setRows(res.data?.data || []);
       setHolds(res.data?.holds || []);
       setPagination(res.data?.pagination || { page: 1, limit: QC_PAGE_SIZE, total: (res.data?.data || []).length, totalPages: 1 });
+      loadedKeyRef.current = listKey;
       if (!pickup && res.data?.pickup) {
         skipNextLoadRef.current = true;
         setPickup(res.data.pickup);
       }
     } catch (err) {
       if (seq !== reqSeqRef.current) return;
-      setRows([]);
-      setHolds([]);
-      setPagination({ page: 1, limit: QC_PAGE_SIZE, total: 0, totalPages: 1 });
+      // Sinyal putus saat refresh: daftar yang sama tetap tampil. Ganti tab/filter tetap dikosongkan.
+      if (err.response || loadedKeyRef.current !== listKey) {
+        setRows([]);
+        setHolds([]);
+        setPagination({ page: 1, limit: QC_PAGE_SIZE, total: 0, totalPages: 1 });
+      }
       setError(err.response?.data?.message || 'Gagal memuat daftar');
     } finally {
       if (seq === reqSeqRef.current) setLoading(false);
     }
   }, [tab, search, page, pickup, activeOutletId]);
+
+  useNetworkRestored(load);
 
   useEffect(() => {
     document.title = 'QC Frontliner & Delivery | Waschen Laundry';

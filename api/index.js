@@ -26,6 +26,7 @@ import eventRoutes from './routes/event.routes.js';
 import { getBaseUploadDir, getUploadUrlPrefix, uploadPaymentReceipt, verifyUploadContents, buildUploadPublicUrl, safeUnlinkUploadUrl } from './middleware/upload.js';
 import { requirePosAuth } from './middleware/requireAuth.js';
 import { getSessionSecret } from './utils/sessionSecret.js';
+import { myWaschenPool } from './db/pool.js';
 
 // Load environment variables
 dotenv.config();
@@ -56,6 +57,19 @@ app.post('/api/upload', requirePosAuth, uploadPaymentReceipt, verifyUploadConten
     await safeUnlinkUploadUrl(oldUrl);
   }
   return res.json({ success: true, url: publicUrl, filename });
+});
+
+// Dipakai POS untuk membedakan sinyal hilang dari request yang lambat. Tanpa data, tanpa sesi.
+app.get('/api/health', async (req, res) => {
+  try {
+    await Promise.race([
+      myWaschenPool.query('SELECT 1'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
+    ]);
+    return res.json({ success: true });
+  } catch {
+    return res.status(503).json({ success: false });
+  }
 });
 
 // API Routes

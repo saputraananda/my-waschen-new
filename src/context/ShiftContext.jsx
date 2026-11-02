@@ -139,8 +139,10 @@ export function ShiftProvider({ children }) {
     }
 
     try {
+      // Selama cek ini belum selesai, klik menu diabaikan: jangan biarkan menggantung
       const res = await axios.get('/api/shifts/current', {
-        params: { outlet_id: oid || 2 }
+        params: { outlet_id: oid || 2 },
+        timeout: 15000
       });
 
       if (res.data?.success && res.data.data) {
@@ -208,8 +210,10 @@ export function ShiftProvider({ children }) {
     window.addEventListener('storage', onStorage);
     window.addEventListener('waschen:auth-changed', onAuthChanged);
     document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('waschen:network-restored', onVisible);
 
     return () => {
+      window.removeEventListener('waschen:network-restored', onVisible);
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('waschen:auth-changed', onAuthChanged);
       document.removeEventListener('visibilitychange', onVisible);

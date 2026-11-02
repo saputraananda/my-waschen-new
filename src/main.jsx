@@ -5,6 +5,11 @@ import App from './App.jsx';
 import './index.css';
 import axios from 'axios';
 import { logoutSession } from './utils/authSession.js';
+import { installNetworkMonitor } from './utils/networkStatus.js';
+import { installApiCache } from './utils/apiCache.js';
+
+installNetworkMonitor();
+installApiCache();
 
 // Server mewajibkan JWT di semua /api (kecuali login): sisipkan otomatis bila belum ada.
 axios.interceptors.request.use((cfg) => {

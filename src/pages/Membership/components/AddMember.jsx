@@ -56,6 +56,9 @@ export default function AddMember({
   const [packages, setPackages] = useState([]);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [customersList, setCustomersList] = useState([]);
+  const [customersTotal, setCustomersTotal] = useState(0);
+  // Daftar hanya berisi satu halaman, jadi pelanggan terpilih disimpan terpisah
+  const [pickedCustomer, setPickedCustomer] = useState(null);
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustId, setSelectedCustId] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -88,10 +91,9 @@ export default function AddMember({
   useEffect(() => {
     Promise.all([
       axios.get('/api/memberships/packages'),
-      axios.get('/api/masters/payment-methods'),
-      axios.get('/api/customers')
+      axios.get('/api/masters/payment-methods')
     ])
-      .then(([pkgRes, payRes, custRes]) => {
+      .then(([pkgRes, payRes]) => {
         if (pkgRes.data?.success && pkgRes.data.data?.length > 0) {
           const list = pkgRes.data.data;
           setPackages(list);
@@ -101,12 +103,37 @@ export default function AddMember({
         if (payRes.data?.success) {
           setPaymentMethods(payRes.data.data || []);
         }
-        if (custRes.data?.success && Array.isArray(custRes.data.data)) {
-          setCustomersList(custRes.data.data);
+      })
+      .catch((err) => console.error('Gagal memuat master membership:', err));
+  }, []);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => {
+      axios.get('/api/customers', {
+        signal: ctrl.signal,
+        params: {
+          page: custPage,
+          limit: PAGE_SIZE,
+          search: customerSearch.trim() || undefined,
+          tier: selectedSpendingTier !== 'Semua' ? selectedSpendingTier : undefined,
+          home_branch: selectedBranchFilter && selectedBranchFilter !== 'Semua' ? selectedBranchFilter : undefined
         }
       })
-      .catch((err) => console.error('Gagal memuat master membership/customer:', err));
-  }, []);
+        .then((res) => {
+          if (!res.data?.success || !Array.isArray(res.data.data)) return;
+          setCustomersList(res.data.data);
+          setCustomersTotal(Number(res.data.meta?.total) || 0);
+        })
+        .catch((err) => {
+          if (!axios.isCancel(err)) console.error('Gagal memuat pelanggan:', err);
+        });
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [custPage, customerSearch, selectedSpendingTier, selectedBranchFilter]);
 
   useEffect(() => {
     if (activeOutletName) {
@@ -119,8 +146,9 @@ export default function AddMember({
   }, [customerSearch, selectedSpendingTier, selectedBranchFilter]);
 
   const selectedCustomer = useMemo(() => {
-    return customersList.find((c) => String(c.id) === String(selectedCustId));
-  }, [customersList, selectedCustId]);
+    if (!selectedCustId || !pickedCustomer) return undefined;
+    return String(pickedCustomer.id) === String(selectedCustId) ? pickedCustomer : undefined;
+  }, [pickedCustomer, selectedCustId]);
 
   const selectedPackage = useMemo(() => {
     return packages.find((p) => String(p.id) === String(packageId)) || packages[0];
@@ -138,52 +166,10 @@ export default function AddMember({
     }
   }, [selectedPackage?.id, selectedPackage?.top_up_amount]);
 
-  const filteredCustomers = useMemo(() => {
-    return customersList.filter((c) => {
-      const q = customerSearch.toLowerCase();
-      const matchesSearch =
-        !q ||
-        (c.name || '').toLowerCase().includes(q) ||
-        (c.phone || '').includes(q) ||
-        (c.customer_code || '').toLowerCase().includes(q);
-
-      const customerTier = String(c.tier || c.spending_tier || 'One-Time');
-      const matchesTier =
-        selectedSpendingTier === 'Semua' ||
-        customerTier.toLowerCase() === selectedSpendingTier.toLowerCase() ||
-        (c.spending_tier_code || '').toLowerCase().includes(selectedSpendingTier.toLowerCase());
-
-      let matchesBranch = true;
-      if (selectedBranchFilter && selectedBranchFilter !== 'Semua') {
-        const custBranch = c.home_branch || c.homeBranch || '';
-        const filterClean = selectedBranchFilter
-          .toLowerCase()
-          .replace('waschen laundry ', '')
-          .replace('outlet ', '')
-          .trim();
-        const custBranchClean = custBranch
-          .toLowerCase()
-          .replace('waschen laundry ', '')
-          .replace('outlet ', '')
-          .trim();
-        matchesBranch =
-          !custBranch ||
-          custBranch === selectedBranchFilter ||
-          (custBranchClean.length > 0 &&
-            filterClean.length > 0 &&
-            (custBranchClean.includes(filterClean) || filterClean.includes(custBranchClean)));
-      }
-
-      return matchesSearch && matchesTier && matchesBranch;
-    });
-  }, [customersList, customerSearch, selectedSpendingTier, selectedBranchFilter]);
-
-  const totalCustPages = Math.max(1, Math.ceil(filteredCustomers.length / PAGE_SIZE));
+  // Pencarian, filter, dan paging dikerjakan server
+  const totalCustPages = Math.max(1, Math.ceil(customersTotal / PAGE_SIZE));
   const safeCustPage = Math.min(custPage, totalCustPages);
-  const displayedCustomers = useMemo(() => {
-    const start = (safeCustPage - 1) * PAGE_SIZE;
-    return filteredCustomers.slice(start, start + PAGE_SIZE);
-  }, [filteredCustomers, safeCustPage]);
+  const displayedCustomers = customersList;
 
   const renderSpendingTierBadge = (spendingTier) => {
     const clean = String(spendingTier || 'One-Time').trim();
@@ -400,7 +386,10 @@ export default function AddMember({
                     return (
                     <div
                       key={c.id}
-                      onClick={() => setSelectedCustId(c.id)}
+                      onClick={() => {
+                        setPickedCustomer(c);
+                        setSelectedCustId(c.id);
+                      }}
                       className="group relative bg-white border border-[#e0e0e0] hover:border-[#5f1340] rounded-2xl p-3.5 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between shrink-0 min-h-[108px]"
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -450,11 +439,11 @@ export default function AddMember({
               </div>
 
               {/* Customer Pagination */}
-              {filteredCustomers.length > PAGE_SIZE && (
+              {customersTotal > PAGE_SIZE && (
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 text-xs">
                   <span className="text-slate-400 font-medium">
                     Menampilkan <span className="text-[#313030] font-bold">{displayedCustomers.length}</span> dari{' '}
-                    <span className="text-[#313030] font-bold">{filteredCustomers.length}</span>
+                    <span className="text-[#313030] font-bold">{customersTotal}</span>
                     <span className="text-slate-300 mx-1.5">·</span>
                     Hal. {safeCustPage}/{totalCustPages}
                   </span>

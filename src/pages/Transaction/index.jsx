@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { isEventOutletActive } from '../../utils/authSession.js';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useNetworkRestored } from '../../hooks/useNetworkRestored.js';
 import HeaderNav from '../../components/HeaderNav';
 import { formatName, formatEmployeeName } from '../../utils/FormatName.js';
 import { getBankAccountForOutlet, OUTLET_BANK_ACCOUNTS } from '../../utils/bankAccounts.js';
@@ -78,9 +79,6 @@ const mapCustomer = (c) => ({
   yearSpending: parseFloat(c.spending_value_year) || 0,
   totalTrx: parseInt(c.total_orders, 10) || 0,
   memberBalance: parseFloat(c.deposit_balance) || 0,
-  lastOrder: c.updated_at
-    ? new Date(c.updated_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })
-    : 'Hari ini',
   frequentServices: ['k1', 's1', 's2']
 });
 
@@ -115,69 +113,61 @@ export default function TransactionPage() {
   const [customers, setCustomers] = useState([]);
   const [customersLoading, setCustomersLoading] = useState(true);
   const [customersError, setCustomersError] = useState('');
+  const [customersTotal, setCustomersTotal] = useState(0);
   const [selectedCustId, setSelectedCustId] = useState('');
+  // Daftar hanya berisi satu halaman, jadi pelanggan terpilih disimpan terpisah
+  const [pickedCustomer, setPickedCustomer] = useState(null);
   const [addressModalCustomer, setAddressModalCustomer] = useState(null);
   const [customerSearch, setCustomerSearch] = useState('');
+  const [debouncedCustSearch, setDebouncedCustSearch] = useState('');
   const [selectedTierFilter, setSelectedTierFilter] = useState('Semua');
   const [selectedBranchFilter, setSelectedBranchFilter] = useState(getInitialOutlet);
   const [custCurrentPage, setCustCurrentPage] = useState(1);
   const custItemsPerPage = 9;
   const customersReqRef = useRef(0);
-  // Outlet event: pelanggan cabang yang dipilih dari modal nomor ganda (belum punya nota di event)
-  const pinnedCustIdsRef = useRef(new Set());
+  const customersAbortRef = useRef(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedCustSearch(customerSearch.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [customerSearch]);
 
   const loadCustomers = useCallback(async () => {
     const reqId = ++customersReqRef.current;
+    customersAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    customersAbortRef.current = ctrl;
     setCustomersLoading(true);
     setCustomersError('');
     try {
       // Outlet Event: hanya pelanggan event tersebut, bukan seluruh pelanggan cabang
       const isEvent = isEventOutletActive();
-      const params = isEvent ? { outlet_id: activeOutletId, lite: 1 } : { lite: 1 };
-      // Cabang biasa: muat pelanggan cabang yang dipilih saja; "Semua Cabang Outlet" = semua
+      const params = {
+        lite: 1,
+        page: custCurrentPage,
+        limit: custItemsPerPage,
+        sort: 'picker',
+        search: debouncedCustSearch || undefined,
+        tier: selectedTierFilter !== 'Semua' ? selectedTierFilter : undefined
+      };
+      if (isEvent) params.outlet_id = activeOutletId;
+      // Event: pelanggannya bisa dari cabang mana pun, jadi filter = outlet event tidak menyaring cabang asal
       const branch = String(selectedBranchFilter || '').trim();
-      if (!isEvent && branch && branch.toLowerCase() !== 'semua') params.home_branch = branch;
-      const pendingAutoId = localStorage.getItem('autoSelectCustId');
-      // Pelanggan pilihan otomatis bisa dari cabang lain / di luar event → tetap disertakan
-      if (pendingAutoId) pinnedCustIdsRef.current.add(pendingAutoId);
-      // Halaman pertama (30 terbaru) tampil dulu; daftar penuh (untuk pencarian & filter) menyusul.
-      let fullLoaded = false;
-      axios.get('/api/customers', { params: { ...params, lite: undefined, page: 1, limit: 30 } })
-        .then((quick) => {
-          if (fullLoaded || reqId !== customersReqRef.current) return;
-          if (quick.data?.success && Array.isArray(quick.data.data) && quick.data.data.length) {
-            setCustomers(quick.data.data.map(mapCustomer));
-            setCustomersLoading(false);
-          }
-        })
-        .catch(() => {});
-      const res = await axios.get('/api/customers', { params });
-      fullLoaded = true;
+      const isEventBranch = isEvent && branch === activeOutletName;
+      if (branch && branch.toLowerCase() !== 'semua' && !isEventBranch) params.home_branch = branch;
+      const res = await axios.get('/api/customers', { params, signal: ctrl.signal });
       // Abaikan response lama jika ada request lebih baru (hindari race double-fetch)
       if (reqId !== customersReqRef.current) return;
       if (res.data?.success && Array.isArray(res.data.data)) {
-        const rows = [...res.data.data];
-        if (pinnedCustIdsRef.current.size) {
-          const missing = [...pinnedCustIdsRef.current].filter(
-            (pid) => !rows.some((c) => c.customer_code === pid || String(c.id) === pid)
-          );
-          const extra = await Promise.all(missing.map((pid) => axios.get(`/api/customers/${encodeURIComponent(pid)}`)
-            .then((r) => (r.data?.success ? r.data.data : null))
-            .catch(() => null)));
-          if (reqId !== customersReqRef.current) return;
-          rows.unshift(...extra.filter(Boolean));
-        }
-        const mapped = rows.map(mapCustomer);
-        setCustomers(mapped);
-        if (mapped.length === 0) {
-          setCustomersError('Belum ada data pelanggan aktif.');
-        }
+        setCustomers(res.data.data.map(mapCustomer));
+        setCustomersTotal(Number(res.data.meta?.total) || 0);
       } else {
         setCustomers([]);
+        setCustomersTotal(0);
         setCustomersError(res.data?.message || 'Respons pelanggan tidak valid');
       }
     } catch (err) {
-      if (reqId !== customersReqRef.current) return;
+      if (reqId !== customersReqRef.current || axios.isCancel(err)) return;
       console.error('Gagal mengambil data pelanggan dari API:', err);
       setCustomersError(err.response?.data?.message || err.message || 'Gagal memuat pelanggan');
     } finally {
@@ -185,7 +175,11 @@ export default function TransactionPage() {
         setCustomersLoading(false);
       }
     }
-  }, [activeOutletId, selectedBranchFilter]);
+  }, [activeOutletId, activeOutletName, selectedBranchFilter, selectedTierFilter, debouncedCustSearch, custCurrentPage]);
+
+  useNetworkRestored(() => {
+    if (currentStep === 1) loadCustomers();
+  });
 
   // Fetch pelanggan hanya saat Step 1 (hindari double-call di mount + auth effect)
   useEffect(() => {
@@ -361,10 +355,22 @@ export default function TransactionPage() {
 
   // Selected Customer details
   const selectedCustomer = useMemo(() => {
+    if (pickedCustomer?.id === selectedCustId) return pickedCustomer;
     return customers.find(c => c.id === selectedCustId);
-  }, [customers, selectedCustId]);
+  }, [customers, pickedCustomer, selectedCustId]);
+
+  // Pelanggan pilihan otomatis (dari menu Pelanggan / modal nomor ganda) bisa di luar halaman daftar
+  useEffect(() => {
+    if (!selectedCustId || selectedCustomer) return undefined;
+    let cancelled = false;
+    axios.get(`/api/customers/${encodeURIComponent(selectedCustId)}`)
+      .then((r) => { if (!cancelled && r.data?.success && r.data.data) setPickedCustomer(mapCustomer(r.data.data)); })
+      .catch((err) => console.error('Gagal memuat pelanggan terpilih:', err));
+    return () => { cancelled = true; };
+  }, [selectedCustId, selectedCustomer]);
 
   const handlePickCustomer = (customer) => {
+    setPickedCustomer(customer);
     setSelectedCustId(customer.id);
     if (!hasCustomerAddress(customer)) {
       setAddressModalCustomer(customer);
@@ -378,61 +384,8 @@ export default function TransactionPage() {
     if (activeOutletName) setSelectedBranchFilter(activeOutletName);
   }, [activeOutletName]);
 
-  // Filtered and Tier-Prioritized Customer List
-  const tierRank = { VIP: 1, Gold: 2, Reguler: 3, 'One-Time': 4, OneTime: 4 };
-  const filteredCustomers = useMemo(() => {
-    if (!customers || !Array.isArray(customers)) return [];
-    const searchLower = (customerSearch || '').toLowerCase().trim();
-    const tierFilter = (selectedTierFilter || 'Semua').trim();
-    const branchFilter = (selectedBranchFilter || 'Semua').trim();
-    const isAllTier = !tierFilter || tierFilter.toLowerCase() === 'semua';
-    // Event: daftar sudah difilter per event di server; pelanggannya bisa berasal dari cabang mana pun,
-    // jadi filter cabang = outlet event tidak menyaring berdasarkan cabang asal
-    const isEventBranch = isEventOutletActive() && branchFilter === activeOutletName;
-    const isAllBranches = !branchFilter || branchFilter.toLowerCase() === 'semua' || isEventBranch;
-
-    return customers
-      .filter((c) => {
-        const cName = (c.name || '').toLowerCase();
-        const cPhone = String(c.phone || '');
-        const cAddress = (c.address || '').toLowerCase();
-        const matchesSearch = !searchLower
-          || cName.includes(searchLower)
-          || cPhone.includes(searchLower)
-          || cAddress.includes(searchLower);
-
-        const custTier = String(c.tier || 'Reguler').trim();
-        const matchesTier = isAllTier
-          || custTier.toLowerCase() === tierFilter.toLowerCase()
-          || custTier.replace(/\s+/g, '-').toLowerCase() === tierFilter.replace(/\s+/g, '-').toLowerCase();
-
-        let matchesBranch = true;
-        if (!isAllBranches) {
-          const filterClean = branchFilter.toLowerCase().replace('waschen laundry ', '').replace('outlet ', '').trim();
-          const custBranchClean = (c.homeBranch || c.branch || '')
-            .toLowerCase()
-            .replace('waschen laundry ', '')
-            .replace('outlet ', '')
-            .trim();
-          matchesBranch = !c.homeBranch
-            || c.homeBranch === branchFilter
-            || (custBranchClean.length > 0 && filterClean.length > 0 && (
-              custBranchClean.includes(filterClean) || filterClean.includes(custBranchClean)
-            ));
-        }
-
-        return matchesSearch && matchesTier && matchesBranch;
-      })
-      .sort((a, b) => {
-        const rankA = tierRank[a.tier] || 99;
-        const rankB = tierRank[b.tier] || 99;
-        if (rankA !== rankB) return rankA - rankB;
-        return (b.totalSpending || 0) - (a.totalSpending || 0);
-      });
-  }, [customers, customerSearch, selectedTierFilter, selectedBranchFilter, activeOutletName]);
-
-  // Customer Pagination calculation & Auto Page Clamp
-  const totalCustPages = Math.ceil(filteredCustomers.length / custItemsPerPage) || 1;
+  // Pencarian, filter, urutan tier, dan paging dikerjakan server
+  const totalCustPages = Math.ceil(customersTotal / custItemsPerPage) || 1;
 
   useEffect(() => {
     if (custCurrentPage > totalCustPages) {
@@ -440,14 +393,9 @@ export default function TransactionPage() {
     }
   }, [custCurrentPage, totalCustPages]);
 
-  const paginatedCustomers = useMemo(() => {
-    const start = (custCurrentPage - 1) * custItemsPerPage;
-    return filteredCustomers.slice(start, start + custItemsPerPage);
-  }, [filteredCustomers, custCurrentPage]);
-
   useEffect(() => {
     setCustCurrentPage(1);
-  }, [customerSearch, selectedTierFilter, selectedBranchFilter]);
+  }, [debouncedCustSearch, selectedTierFilter, selectedBranchFilter]);
 
   // Top 5 Recommendations for Selected Customer
   const topRecommendedServices = useMemo(() => {
@@ -915,6 +863,7 @@ export default function TransactionPage() {
             ? { ...c, memberBalance: newMemberBalance }
             : c
         )));
+        setPickedCustomer((prev) => (prev?.id === selectedCustId ? { ...prev, memberBalance: newMemberBalance } : prev));
       }
 
       // Nama kasir dari user login / response API
@@ -1112,7 +1061,7 @@ export default function TransactionPage() {
             customerTiers={customerTiers}
             selectedTierFilter={selectedTierFilter}
             setSelectedTierFilter={setSelectedTierFilter}
-            paginatedCustomers={paginatedCustomers}
+            paginatedCustomers={customers}
             activeOutletName={activeOutletName}
             setSelectedCustId={setSelectedCustId}
             onPickCustomer={handlePickCustomer}
@@ -1122,7 +1071,7 @@ export default function TransactionPage() {
             totalCustPages={totalCustPages}
             custCurrentPage={custCurrentPage}
             setCustCurrentPage={setCustCurrentPage}
-            filteredCustomers={filteredCustomers}
+            customersTotal={customersTotal}
             customersCount={customers.length}
             customersLoading={customersLoading}
             customersError={customersError}
@@ -1241,7 +1190,7 @@ export default function TransactionPage() {
           onClose={() => setAddressModalCustomer(null)}
           onSaved={(updated) => {
             const nextAddress = updated.full_address || updated.address || '-';
-            setCustomers((prev) => prev.map((c) => (
+            const applyAddress = (c) => (
               c.dbId === updated.id
                 ? {
                   ...c,
@@ -1253,7 +1202,9 @@ export default function TransactionPage() {
                   notes: updated.notes || ''
                 }
                 : c
-            )));
+            );
+            setCustomers((prev) => prev.map(applyAddress));
+            setPickedCustomer((prev) => (prev ? applyAddress(prev) : prev));
             setAddressModalCustomer(null);
             setCurrentStep(2);
           }}
