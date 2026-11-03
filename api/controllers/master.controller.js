@@ -1,5 +1,6 @@
 import { myWaschenPool, mainPool } from '../db/pool.js';
 import { getWibYearMonth } from '../utils/wib.js';
+import { isBackdatePaymentEnabled } from '../utils/backdatePayment.js';
 
 const activeOrder = 'ORDER BY id ASC';
 
@@ -189,6 +190,17 @@ export const getPaymentMethods = async (req, res) => {
   } catch (error) {
     console.error('Error fetching payment methods:', error);
     return res.status(500).json({ success: false, message: 'Gagal mengambil metode pembayaran', error: error.message });
+  }
+};
+
+/** GET /api/masters/payment-settings — setelan pembayaran POS dari Super App */
+export const getPaymentSettings = async (req, res) => {
+  try {
+    const allowBackdatePayment = await isBackdatePaymentEnabled();
+    return res.status(200).json({ success: true, data: { allowBackdatePayment } });
+  } catch (error) {
+    console.error('Error fetching payment settings:', error);
+    return res.status(500).json({ success: false, message: 'Gagal mengambil setelan pembayaran', error: error.message });
   }
 };
 

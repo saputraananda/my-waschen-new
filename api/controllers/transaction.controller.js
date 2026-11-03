@@ -3,6 +3,7 @@ import { emitDashboardRefresh } from '../socket.js';
 import { applyTransactionSpendingUpdate } from '../utils/spendingTier.js';
 import { applyDepositOnPayment } from '../utils/customerDeposit.js';
 import { insertPaymentLog, resolvePaymentStatus, buildPaymentProofUrl } from '../utils/paymentLog.js';
+import { resolvePaidAt, backdateNote } from '../utils/backdatePayment.js';
 import { computeAccumulatedWorkPercentage, refreshHeaderWorkPercentage, nextLifecycleStatus, workStatusTabSql } from '../utils/workStatus.js';
 import { consumeServiceBom } from '../utils/inventoryStock.js';
 import { generateAccessCode } from '../utils/accessCode.js';
@@ -1617,7 +1618,8 @@ export const settlePaymentBatch = async (req, res) => {
       paymentMethod,
       paymentProofUrl,
       items = [],
-      notes
+      notes,
+      paidDate
     } = req.body;
 
     if (!items || items.length === 0) {
@@ -1688,6 +1690,15 @@ export const settlePaymentBatch = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Semua nota yang dipilih sudah lunas.' });
     }
 
+    const paid = await resolvePaidAt(connection, {
+      paidDate,
+      transactionIds: lockedOrders.map(({ order }) => order.id)
+    });
+    if (paid.error) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: paid.error });
+    }
+
     const totalAmount = lockedOrders.reduce((sum, o) => sum + o.remaining, 0);
     const paidAmount = totalAmount;
     const depositAdded = 0;
@@ -1730,12 +1741,12 @@ export const settlePaymentBatch = async (req, res) => {
              payment_status = ?,
              payment_method = ?,
              payment_proof_url = COALESCE(?, payment_proof_url),
-             paid_at = NOW(),
+             paid_at = ${paid.sql},
              settled_by_employee_id = ?,
-             settled_at = NOW(),
+             settled_at = ${paid.sql},
              updated_at = NOW()
          WHERE id = ?`,
-        [newPaidAmount, newStatus, paymentMethod, paymentProofUrl, cashierEmployeeId || null, order.id]
+        [newPaidAmount, newStatus, paymentMethod, paymentProofUrl, ...paid.params, cashierEmployeeId || null, ...paid.params, order.id]
       );
 
       await connection.query(
@@ -1749,7 +1760,7 @@ export const settlePaymentBatch = async (req, res) => {
           amountToPay,
           paymentMethod,
           paymentProofUrl,
-          `Pelunasan gabungan #${batchNo}`,
+          `Pelunasan gabungan #${batchNo}${backdateNote(paid)}`,
           cashierEmployeeId
         ]
       );

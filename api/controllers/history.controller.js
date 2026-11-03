@@ -3,6 +3,7 @@ import { getEmployeeNames, fillFallbackNames } from '../utils/employeeName.js';
 import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 import { applyDepositOnPayment } from '../utils/customerDeposit.js';
+import { resolvePaidAt, backdateNote } from '../utils/backdatePayment.js';
 import {
   insertPaymentLog,
   buildPaymentProofUrl
@@ -162,7 +163,8 @@ export const updateTransactionPayment = async (req, res) => {
       additionalAmount,
       paymentProofUrl,
       notes,
-      cashierEmployeeId
+      cashierEmployeeId,
+      paidDate
     } = req.body;
 
     await connection.beginTransaction();
@@ -208,6 +210,12 @@ export const updateTransactionPayment = async (req, res) => {
       });
     }
 
+    const paid = await resolvePaidAt(connection, { paidDate, transactionIds: [order.id] });
+    if (paid.error) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: paid.error });
+    }
+
     const method = paymentMethod || order.payment_method || 'Tunai';
     const settlerId = cashierEmployeeId || order.cashier_employee_id || null;
 
@@ -227,7 +235,7 @@ export const updateTransactionPayment = async (req, res) => {
       amount: remaining,
       paymentMethod: method,
       paymentProofUrl: paymentProofUrl || null,
-      notes: notes || `Pelunasan nota ${order.order_no}`,
+      notes: (notes || `Pelunasan nota ${order.order_no}`) + backdateNote(paid),
       cashierEmployeeId: settlerId
     });
 
@@ -240,12 +248,12 @@ export const updateTransactionPayment = async (req, res) => {
          paid_amount = ?,
          change_amount = 0,
          payment_proof_url = ?,
-         paid_at = NOW(),
+         paid_at = ${paid.sql},
          settled_by_employee_id = ?,
-         settled_at = NOW(),
+         settled_at = ${paid.sql},
          updated_at = NOW()
        WHERE id = ?`,
-      [method, grandTotal, proofUrl, settlerId, order.id]
+      [method, grandTotal, proofUrl, ...paid.params, settlerId, ...paid.params, order.id]
     );
 
     await connection.commit();

@@ -14,6 +14,7 @@ import { useShiftOptional } from '../../../context/ShiftContext.jsx';
 import { getBankAccountForOutlet, getAllBankAccounts, OUTLET_BANK_ACCOUNTS } from '../../../utils/bankAccounts.js';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import PaymentProofFields from '../../../components/PaymentProofFields.jsx';
+import BackdatePaymentField, { paidDatePayload } from '../../../components/BackdatePaymentField.jsx';
 import TransactionBarcodeCard from '../../../components/TransactionBarcodeCard.jsx';
 import ItemPhotoField from '../../../components/ItemPhotoField.jsx';
 import ChangeFulfillmentModal from '../../../components/ChangeFulfillmentModal.jsx';
@@ -93,6 +94,7 @@ export default function DetailTransaction() {
     paymentMethod: 'Tunai',
     notes: ''
   });
+  const [paidDate, setPaidDate] = useState('');
   const [proofFile, setProofFile] = useState(null);
   const [proofBusy, setProofBusy] = useState(false);
   const [proofOpen, setProofOpen] = useState(false);
@@ -343,6 +345,7 @@ export default function DetailTransaction() {
       paymentMethod: order.paymentMethod && order.paymentMethod !== '-' ? order.paymentMethod : 'Tunai Kasir',
       notes: ''
     });
+    setPaidDate('');
     setProofFile(null);
     setIsLoadingPayment(true);
     try {
@@ -472,7 +475,8 @@ export default function DetailTransaction() {
         paymentMethod: resolvedPaymentMethod,
         paymentProofUrl: proofUrl,
         notes: paymentForm.notes || `Pelunasan nota ${order.id}`,
-        cashierEmployeeId: resolvedCashierId
+        cashierEmployeeId: resolvedCashierId,
+        paidDate: paidDatePayload(paidDate)
       });
 
       const updated = res.data?.data;
@@ -1175,6 +1179,7 @@ export default function DetailTransaction() {
                         selectedCustomer={order}
                         grandTotal={paymentDetail?.remaining || remaining || order.grandTotal}
                       />
+                      <BackdatePaymentField value={paidDate} onChange={setPaidDate} minDate={order.rawDate} />
                       <div>
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Nominal Pelunasan (Rp)</label>
                         <div className="w-full px-4 py-2.5 bg-slate-50 border border-[#e0e0e0] rounded-xl text-sm font-black text-[#313030]">

@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import PaymentProofFields from '../../../components/PaymentProofFields.jsx';
+import BackdatePaymentField, { paidDatePayload } from '../../../components/BackdatePaymentField.jsx';
 import ModalLacakNota from '../../../components/ModalLacakNota.jsx';
 import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
 import DateModeFilter from '../../../components/DateModeFilter.jsx';
@@ -106,6 +107,7 @@ export default function HistoryTransaction({
   const [isCrossTransfer, setIsCrossTransfer] = useState(false);
   const [crossBankOutletId, setCrossBankOutletId] = useState(1);
   const [paymentForm, setPaymentForm] = useState({ notes: '' });
+  const [paidDate, setPaidDate] = useState('');
   const [proofFile, setProofFile] = useState(null);
   const [cashProof, setCashProof] = useState(null);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
@@ -200,6 +202,7 @@ export default function HistoryTransaction({
     setIsCrossTransfer(false);
     setCrossBankOutletId(1);
     setPaymentForm({ notes: '' });
+    setPaidDate('');
     setProofFile(null);
     setIsLoadingPayment(true);
     try {
@@ -333,7 +336,8 @@ export default function HistoryTransaction({
         paymentMethod: resolvedMethod,
         paymentProofUrl: proofUrl,
         notes: paymentForm.notes || `Pelunasan nota ${paymentModalOrder.id}`,
-        cashierEmployeeId: resolvedCashierId
+        cashierEmployeeId: resolvedCashierId,
+        paidDate: paidDatePayload(paidDate)
       });
 
       const updated = res.data?.data;
@@ -1218,6 +1222,7 @@ export default function HistoryTransaction({
                         selectedCustomer={paymentModalOrder}
                         grandTotal={paymentDetail?.remaining || Math.max(0, (paymentModalOrder.grandTotal || 0) - (paymentModalOrder.paidAmount || 0))}
                       />
+                      <BackdatePaymentField value={paidDate} onChange={setPaidDate} minDate={paymentModalOrder.rawDate} />
 
                       <div>
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">

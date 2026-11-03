@@ -28,6 +28,7 @@ import { STATUS_STEPS, DEFAULT_WORK_STATUSES, getWorkPercentage, percentageTone,
 import { NOTA_QUEUE_TABS, matchesNotaQueueTab, getNotaQueueLabel } from '../../../utils/notaQueueMeta.js';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import PaymentProofFields from '../../../components/PaymentProofFields.jsx';
+import BackdatePaymentField, { paidDatePayload } from '../../../components/BackdatePaymentField.jsx';
 import TransactionBarcodeCard from '../../../components/TransactionBarcodeCard.jsx';
 import ModalLacakNota from '../../../components/ModalLacakNota.jsx';
 import ChangeFulfillmentModal from '../../../components/ChangeFulfillmentModal.jsx';
@@ -83,6 +84,7 @@ export default function TrackingService({
   const [isCrossTransfer, setIsCrossTransfer] = useState(false);
   const [crossBankOutletId, setCrossBankOutletId] = useState(1);
   const [paymentForm, setPaymentForm] = useState({ notes: '' });
+  const [paidDate, setPaidDate] = useState('');
   const [proofFile, setProofFile] = useState(null);
   const [cashProof, setCashProof] = useState(null);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
@@ -198,6 +200,7 @@ export default function TrackingService({
     setIsCrossTransfer(false);
     setCrossBankOutletId(1);
     setPaymentForm({ notes: '' });
+    setPaidDate('');
     setProofFile(null);
     setIsLoadingPayment(true);
     try {
@@ -344,7 +347,8 @@ export default function TrackingService({
         paymentMethod: resolvedMethod,
         paymentProofUrl: proofUrl,
         notes: paymentForm.notes || `Pelunasan nota ${paymentModalOrder.id}`,
-        cashierEmployeeId: resolvedCashierId
+        cashierEmployeeId: resolvedCashierId,
+        paidDate: paidDatePayload(paidDate)
       });
 
       const updated = res.data?.data;
@@ -1064,6 +1068,7 @@ export default function TrackingService({
                         selectedCustomer={paymentModalOrder}
                         grandTotal={paymentDetail?.remaining || Math.max(0, (paymentModalOrder.grandTotal || 0) - (paymentModalOrder.paidAmount || 0))}
                       />
+                      <BackdatePaymentField value={paidDate} onChange={setPaidDate} minDate={paymentModalOrder.rawDate} />
 
                       <div>
                         <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">

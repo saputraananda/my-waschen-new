@@ -4,6 +4,7 @@ import {
   getOutlets,
   getTargetRevenue,
   getPaymentMethods,
+  getPaymentSettings,
   getCustomerSources,
   getPettyCashCategories,
   getPromos,
@@ -20,6 +21,7 @@ router.get('/', getAllMasters);
 router.get('/outlets', getOutlets);
 router.get('/target', getTargetRevenue);
 router.get('/payment-methods', getPaymentMethods);
+router.get('/payment-settings', getPaymentSettings);
 router.get('/customer-sources', getCustomerSources);
 router.get('/petty-cash-categories', getPettyCashCategories);
 router.get('/promos', getPromos);

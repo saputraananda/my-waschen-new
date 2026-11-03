@@ -12,6 +12,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from './CascadingPaymentSelector.jsx';
+import BackdatePaymentField, { paidDatePayload, toWibYmd } from './BackdatePaymentField.jsx';
 import PaymentProofFields from './PaymentProofFields.jsx';
 import PinVerifyModal from '../pages/Shift/PinVerifyModal.jsx';
 
@@ -36,6 +37,7 @@ export default function CombinedReceiptModal({
   const [proofFile, setProofFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [notes, setNotes] = useState('');
+  const [paidDate, setPaidDate] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [showPayPinModal, setShowPayPinModal] = useState(false);
@@ -62,6 +64,7 @@ export default function CombinedReceiptModal({
       setErrorMessage('');
       setPaymentProofUrl('');
       setNotes('');
+      setPaidDate('');
     }
   }, [isOpen, unpaidOrders]);
 
@@ -75,6 +78,13 @@ export default function CombinedReceiptModal({
     const unpaid = Math.max(0, total - paid);
     return sum + unpaid;
   }, 0);
+
+  // Tanggal bayar backdate tidak boleh sebelum nota terbaru yang dipilih
+  const latestOrderDate = selectedOrders
+    .map((o) => toWibYmd(o.rawDate || o.order_date || o.createdAtRaw))
+    .filter(Boolean)
+    .sort()
+    .pop();
 
 
   if (!isOpen) return null;
@@ -197,6 +207,7 @@ export default function CombinedReceiptModal({
         paymentMethod: resolvedPaymentMethod,
         paymentProofUrl: proofUrl,
         notes,
+        paidDate: paidDatePayload(paidDate),
         items: selectedOrders.map((o) => {
           const total = parseFloat(o.amount || o.grand_total || o.grandTotal) || 0;
           const paid = parseFloat(o.paidAmount || o.paid_amount) || 0;
@@ -377,6 +388,10 @@ export default function CombinedReceiptModal({
                 selectedCustomer={customer}
                 grandTotal={totalSelectedAmount}
               />
+            </div>
+
+            <div className="sm:col-span-2">
+              <BackdatePaymentField value={paidDate} onChange={setPaidDate} minDate={latestOrderDate} />
             </div>
 
             <div className="space-y-1.5">
