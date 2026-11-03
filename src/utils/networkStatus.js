@@ -10,6 +10,10 @@ const OFFLINE_RETRY_MS = 5000;
 const OFFLINE_AFTER_FAILS = 2;
 const RESTORED_SHOW_MS = 3000;
 const STALE_REQUEST_MS = 120000;
+/** Server sibuk/lambat bisa terbaca "putus": jangan probe berulang & jangan picu muat ulang data massal. */
+const SLOW_PROBE_MIN_GAP_MS = 15000;
+const REFETCH_MIN_DOWNTIME_MS = 1000;
+const REFETCH_MIN_GAP_MS = 30000;
 
 const WEAK_LINK_TYPES = ['slow-2g', '2g'];
 
@@ -25,6 +29,9 @@ let verifying = false;
 let fails = 0;
 let retryTimer = null;
 let restoredTimer = null;
+let offlineSince = 0;
+let lastRefetchEventAt = 0;
+let lastSlowProbeAt = 0;
 
 const buildSnapshot = () => ({
   status: offline ? 'offline' : (slowRequest || weakLink) ? 'slow' : 'online',
@@ -64,7 +71,10 @@ async function probe() {
 }
 
 function markRestored() {
+  const now = Date.now();
+  const downtime = offlineSince ? now - offlineSince : 0;
   offline = false;
+  offlineSince = 0;
   unsureWrite = false;
   restored = true;
   clearTimeout(restoredTimer);
@@ -72,7 +82,12 @@ function markRestored() {
     restored = false;
     publish();
   }, RESTORED_SHOW_MS);
-  window.dispatchEvent(new Event('waschen:network-restored'));
+  // Halaman memuat ulang datanya saat event ini terterima. Hanya untuk putus yang nyata & tidak beruntun,
+  // supaya server yang sedang lambat tidak dibanjiri muat-ulang dari semua halaman.
+  if (downtime >= REFETCH_MIN_DOWNTIME_MS && now - lastRefetchEventAt >= REFETCH_MIN_GAP_MS) {
+    lastRefetchEventAt = now;
+    window.dispatchEvent(new Event('waschen:network-restored'));
+  }
 }
 
 export async function verifyConnection() {
@@ -87,7 +102,10 @@ export async function verifyConnection() {
     if (offline) markRestored();
   } else {
     fails += 1;
-    if (fails >= OFFLINE_AFTER_FAILS || navigator.onLine === false) offline = true;
+    if (fails >= OFFLINE_AFTER_FAILS || navigator.onLine === false) {
+      if (!offline) offlineSince = Date.now();
+      offline = true;
+    }
     retryTimer = setTimeout(verifyConnection, offline ? OFFLINE_RETRY_MS : PROBE_RETRY_MS);
   }
   publish();
@@ -106,7 +124,10 @@ function checkPendingRequests() {
     if (age > STALE_REQUEST_MS) pending.delete(cfg);
     else if (age > SLOW_MS) hasSlow = true;
   });
-  if (hasSlow && !slowRequest) verifyConnection();
+  if (hasSlow && !slowRequest && now - lastSlowProbeAt >= SLOW_PROBE_MIN_GAP_MS) {
+    lastSlowProbeAt = now;
+    verifyConnection();
+  }
   slowRequest = hasSlow;
   publish();
 }
@@ -146,6 +167,7 @@ export function installNetworkMonitor() {
   );
 
   window.addEventListener('offline', () => {
+    if (!offline) offlineSince = Date.now();
     offline = true;
     publish();
     verifyConnection();

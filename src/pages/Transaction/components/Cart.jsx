@@ -60,8 +60,9 @@ export default function Cart({
                   onKeyDown={(e) => e.key === 'Enter' && handleEditCartItem(item)}
                   className="p-4 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl shadow-2xs hover:border-[#5f1340]/50 hover:shadow-sm transition-all flex flex-col gap-2.5 cursor-pointer"
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
+                  {/* HP: info item satu baris penuh, kontrol (DC/Cleanox/harga/hapus) di bawahnya; sm+: sejajar */}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0 sm:flex-1">
                       <span className="w-6 h-6 rounded-lg bg-[#5f1340]/10 text-[#5f1340] font-black text-xs flex items-center justify-center shrink-0">
                         {idx + 1}
                       </span>
@@ -85,8 +86,8 @@ export default function Cart({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 shrink-0">
-                      {item.category !== 'Biaya' && (<>
+                    <div className="flex items-center justify-between sm:justify-end gap-x-3 gap-y-2 flex-wrap sm:flex-nowrap sm:shrink-0">
+                      {item.category !== 'Biaya' && (<div className="flex items-center gap-3 flex-wrap">
                       <label
                         className="flex items-center gap-1.5 cursor-pointer shrink-0"
                         title="Metode Dry Clean (DC) per item"
@@ -118,8 +119,9 @@ export default function Cart({
                           Cleanox
                         </span>
                       </label>
-                      </>)}
-                      <span className="font-black text-sm text-[#5f1340]">
+                      </div>)}
+                      <div className="flex items-center gap-2 shrink-0 ml-auto">
+                      <span className="font-black text-sm text-[#5f1340] whitespace-nowrap">
                         Rp {item.effectiveSubtotal.toLocaleString('id-ID')}
                       </span>
                       <button
@@ -133,6 +135,7 @@ export default function Cart({
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
+                      </div>
                     </div>
                   </div>
 

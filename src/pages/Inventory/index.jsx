@@ -31,6 +31,7 @@ export default function InventoryPage() {
   const [usageDate, setUsageDate] = useState(toDateInputValue());
   const isAdmin = isHqUser();
   const ensuredOutletsRef = useRef(new Set()); // sinkronisasi baris stok cukup sekali per outlet per sesi halaman
+  const stockSeqRef = useRef(0); // hanya respons stok terbaru yang boleh mengisi tabel
 
   useEffect(() => {
     document.title = 'Manajemen Inventory | Waschen Laundry';
@@ -65,6 +66,7 @@ export default function InventoryPage() {
       return;
     }
     const silent = opts?.silent === true;
+    const seq = ++stockSeqRef.current;
     if (!silent) setLoading(true);
     try {
       if (!ensuredOutletsRef.current.has(String(outletId))) {
@@ -75,11 +77,14 @@ export default function InventoryPage() {
       const res = await axios.get('/api/inventory/stock', {
         params: { outlet_id: outletId, usage_date: dateYmd }
       });
+      // Respons lama (outlet/tanggal sudah diganti) tidak boleh menimpa data yang lebih baru
+      if (seq !== stockSeqRef.current) return;
       if (res.data?.success) {
         setStockRows(res.data.data || []);
         setStockMeta(res.data.meta || { total: 0, lowStockCount: 0 });
       }
     } catch (err) {
+      if (seq !== stockSeqRef.current) return;
       console.error(err);
       if (!silent) {
         await showAlert({
@@ -89,7 +94,7 @@ export default function InventoryPage() {
         });
       }
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent && seq === stockSeqRef.current) setLoading(false);
     }
   }, [activeOutletId, usageDate, showAlert]);
 

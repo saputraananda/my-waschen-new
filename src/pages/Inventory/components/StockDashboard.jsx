@@ -292,6 +292,7 @@ export default function StockDashboard({
     );
   }
 
+  const initialLoading = loading && stockRows.length === 0;
   const periodLabel = stockMeta.periodStartEffective
     ? String(stockMeta.periodStartEffective).slice(0, 10)
     : '-';
@@ -308,14 +309,14 @@ export default function StockDashboard({
         </div>
         <div className="bg-white border border-[#e0e0e0] rounded-2xl p-5 shadow-xs">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Item</span>
-          <span className="text-2xl font-black text-[#313030] mt-1 block">{stockMeta.total || 0}</span>
+          <span className="text-2xl font-black text-[#313030] mt-1 block">{initialLoading ? '…' : (stockMeta.total || 0)}</span>
         </div>
         <div className="bg-white border border-[#e0e0e0] rounded-2xl p-5 shadow-xs">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block flex items-center gap-1">
             <AlertTriangle className="h-3.5 w-3.5 text-amber-500" /> Di Bawah Min Stock
           </span>
           <span className={`text-2xl font-black mt-1 block ${(stockMeta.lowStockCount || 0) > 0 ? 'text-amber-600' : 'text-emerald-700'}`}>
-            {stockMeta.lowStockCount || 0}
+            {initialLoading ? '…' : (stockMeta.lowStockCount || 0)}
           </span>
         </div>
       </div>
@@ -345,13 +346,14 @@ export default function StockDashboard({
               <option value="Packing Staff">Tim Packing</option>
               <option value="Delivery Staff">Tim Delivery</option>
             </select>
-            <div className="relative w-full sm:w-auto">
+            <div className="relative w-full sm:w-auto min-w-0">
               <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+              {/* appearance-none + min-w-0: input date iOS Safari punya lebar bawaan yang melebihi layar */}
               <input
                 type="date"
                 value={usageDate}
                 onChange={(e) => onUsageDateChange(e.target.value)}
-                className="w-full sm:w-auto pl-10 pr-3 py-2 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340]"
+                className="block w-full sm:w-auto min-w-0 max-w-full appearance-none bg-white min-h-[2.25rem] pl-10 pr-3 py-2 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340]"
               />
             </div>
           </div>
@@ -375,7 +377,72 @@ export default function StockDashboard({
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* HP / tablet kecil: daftar kartu (tabel 960px memaksa geser samping) */}
+        <div className="md:hidden flex flex-col gap-3">
+          {initialLoading ? (
+            <div className="py-10 text-center text-slate-400 text-xs font-semibold">Memuat stok…</div>
+          ) : filtered.length === 0 ? (
+            <div className="py-10 text-center text-slate-400 text-xs font-semibold">Tidak ada item</div>
+          ) : filtered.map((r) => {
+            const low = Number(r.is_low_stock) === 1;
+            const selisih = parseFloat(r.qty_selisih) || 0;
+            const selisihClass = selisih > 0 ? 'text-rose-600' : selisih < 0 ? 'text-emerald-700' : 'text-slate-500';
+            return (
+              <div key={r.stock_id} className={`border rounded-2xl p-3.5 ${low ? 'border-amber-300 bg-amber-50/40' : 'border-[#e0e0e0] bg-white'}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="font-black text-[#313030] text-xs block break-words">{r.item_name}</span>
+                    <span className="text-[10px] text-slate-400 font-bold">{r.item_code}{r.unit_symbol ? ` · ${r.unit_symbol}` : ''}</span>
+                    {r.owner_role ? (
+                      <span className="text-[10px] text-slate-400 font-semibold block">{ownerLabel(r.owner_role)}</span>
+                    ) : null}
+                    {low && (
+                      <span className="inline-flex items-center gap-1 mt-1 text-[9px] font-black text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-md">
+                        <AlertTriangle className="h-3 w-3" /> Di bawah min
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    title="Pengaturan stok"
+                    onClick={() => setThRow(r)}
+                    className="shrink-0 inline-flex p-2 rounded-lg bg-slate-100 text-slate-600 cursor-pointer"
+                  >
+                    <SlidersHorizontal className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+                  <div className="bg-[#f8f8f8] rounded-xl py-2">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase block">SO Mgmt</span>
+                    <span className="text-xs font-black text-[#313030]">{fmtQty(r.qty_opening)}</span>
+                  </div>
+                  <div className="bg-[#f8f8f8] rounded-xl py-2">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase block">Min</span>
+                    <span className="text-xs font-bold">{fmtQty(r.min_stock)}</span>
+                  </div>
+                  <div className="bg-[#f8f8f8] rounded-xl py-2">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase block">Seharusnya</span>
+                    <span className="text-xs font-bold text-slate-700">{fmtQty(r.qty_seharusnya)}</span>
+                  </div>
+                  <div className="bg-[#f8f8f8] rounded-xl py-2">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase block">SO Outlet</span>
+                    <AktualCell row={r} usageDate={usageDate} onOpen={setAktualRow} />
+                  </div>
+                  <div className="bg-[#f8f8f8] rounded-xl py-2">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase block">Sisa</span>
+                    <span className={`text-xs font-black ${low ? 'text-amber-700' : 'text-[#5f1340]'}`}>{fmtQty(r.qty_sisa)}</span>
+                  </div>
+                  <div className="bg-[#f8f8f8] rounded-xl py-2">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase block">Selisih</span>
+                    <span className={`text-xs font-black ${selisihClass}`}>{selisih > 0 ? '+' : ''}{fmtQty(selisih)}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse min-w-[960px]">
             <thead>
               <tr className="bg-[#f8f8f8] text-slate-400 font-extrabold uppercase text-[10px] border-b">
