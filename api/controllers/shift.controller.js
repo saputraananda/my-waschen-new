@@ -64,7 +64,7 @@ const buildReportText = async ({ outletId, shift, transactions, pettyExpenses, s
     total = tunai + nonTunai;
   }
 
-  const methodLines = [
+  const METHOD_LABELS = [
     'QR EDC BRI',
     'QRIS STATIS',
     'QRIS BCA',
@@ -72,11 +72,17 @@ const buildReportText = async ({ outletId, shift, transactions, pettyExpenses, s
     'DEBIT BCA',
     'DEBIT BRI',
     'TRANSFER BANK'
-  ].map((label) => {
-    const found = Object.entries(byMethod).find(([k]) => k.includes(label.replace(/\s+/g, ' ')) || label.includes(k));
-    const val = found ? found[1] : (byMethod[label] || 0);
-    return `${label.padEnd(14)}: ${formatRp(val)}`;
-  }).join('\n');
+  ];
+  // Satu metode bayar hanya masuk ke SATU baris (label pertama yang cocok). Sebelumnya tiap baris
+  // mencari sendiri, jadi metode seperti "QRIS" ikut tercatat dobel di QRIS STATIS dan QRIS BCA.
+  const labelTotals = Object.fromEntries(METHOD_LABELS.map((l) => [l, 0]));
+  for (const [key, amount] of Object.entries(byMethod)) {
+    const label = METHOD_LABELS.find((l) => key === l || key.includes(l) || l.includes(key));
+    if (label) labelTotals[label] += amount;
+  }
+  const methodLines = METHOD_LABELS
+    .map((label) => `${label.padEnd(14)}: ${formatRp(labelTotals[label])}`)
+    .join('\n');
 
   const pettyOut = pettyExpenses || 0;
   const salesCashOut = salesCashExpenses || 0;
@@ -128,11 +134,17 @@ const adoptOrphanTransactions = async (outletId, shiftId) => {
     [outletId]
   );
 
+  // Nota hasil migrasi Smartlink (source = 'SMARTLINK', backdate) TIDAK PERNAH diklaim: nota itu
+  // bukan tanggung jawab petugas yang open shift. Tanpa pengecualian ini, outlet yang belum punya
+  // closing Final menyedot seluruh nota lama ke shift baru sehingga revenue sistem & report membengkak.
+  // Kalau nota Smartlink dilunasi di POS baru, pembayarannya tetap masuk Daily Report lewat
+  // tr_payment_log (getShiftPaidTxns), tanpa perlu shift_id.
   const since = lastFinal[0]?.closed_at || null;
   const [result] = await myWaschenPool.query(
     `UPDATE tr_transaction
      SET shift_id = ?
-     WHERE outlet_id = ? AND shift_id IS NULL${since ? ' AND order_date > ?' : ''}`,
+     WHERE outlet_id = ? AND shift_id IS NULL
+       AND (source IS NULL OR source <> 'SMARTLINK')${since ? ' AND order_date > ?' : ''}`,
     since ? [shiftId, outletId, since] : [shiftId, outletId]
   );
 
