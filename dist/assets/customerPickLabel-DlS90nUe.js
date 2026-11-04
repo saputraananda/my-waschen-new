@@ -1,0 +1,1 @@
+function i(r){const t=String(r.street||"").trim(),o=String(r.block||"").trim(),e=String(r.houseNumber||"").trim(),s=[];return t&&t!=="-"&&s.push(t),o&&!t.toLowerCase().includes(o.toLowerCase())&&s.push(/^blok\b/i.test(o)?o:`Blok ${o}`),e&&!t.toLowerCase().includes(e.toLowerCase())&&s.push(/^no\.?\b/i.test(e)?e:`No. ${e}`),s.join(", ")}export{i as c};

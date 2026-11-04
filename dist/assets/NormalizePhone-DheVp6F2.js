@@ -1,0 +1,6 @@
+import{c as e}from"./index-C1v0FLsR.js";/**
+ * @license lucide-react v0.378.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */const g=e("Receipt",[["path",{d:"M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z",key:"q3az6g"}],["path",{d:"M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8",key:"1h4pet"}],["path",{d:"M12 17.5v-11",key:"1jc1ny"}]]);function p(t){if(t==null)return"";let i=String(t).replace(/\D/g,"");return i?String(t).trim().startsWith("+")&&!i.startsWith("62")?`+${i}`:(i.startsWith("62")&&(i=`0${i.slice(2)}`),i.startsWith("8")&&(i=`0${i}`),!i.startsWith("0")&&i.length>=9&&(i=`0${i}`),i):""}function d({address:t="",block:i="",houseNumber:n="",district:f="",subDistrict:a="",city:s="",postalCode:h=""}={}){const r=[];return t&&r.push(String(t).trim()),i&&r.push(`Blok ${String(i).trim()}`),n&&r.push(`No. ${String(n).trim()}`),a&&r.push(String(a).trim()),f&&r.push(String(f).trim()),s&&r.push(String(s).trim()),h&&r.push(String(h).trim()),r.filter(Boolean).join(", ")}function S(t){const i=String((t==null?void 0:t.fullAddress)||(t==null?void 0:t.full_address)||"").trim(),n=String((t==null?void 0:t.address)||"").trim();return!!(i&&i!=="-"||n&&n!=="-")}export{g as R,d as c,S as h,p as n};
