@@ -86,7 +86,9 @@ const buildReportText = async ({ outletId, shift, transactions, pettyExpenses, s
 
   const pettyOut = pettyExpenses || 0;
   const salesCashOut = salesCashExpenses || 0;
-  const sisaTunai = parseFloat(shift.actual_cash) || 0;
+  // Sisa aktual tunai = total pembayaran Tunai pada closing ini (sama dengan baris TUNAI).
+  // Cash Modal (actual_cash) hanyalah uang kembalian di outlet, tidak ikut dilaporkan di sini.
+  const sisaTunai = tunai;
   const sisaPetty = parseFloat(shift.actual_petty_cash) || 0;
 
   return `REPORT PENJUALAN OUTLET : ${outletName}
