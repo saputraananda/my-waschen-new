@@ -904,7 +904,8 @@ export default function TransactionPage() {
         createdAtRaw: new Date().toISOString(),
         estimatedCompletion: isExpress ? '1x24 Jam (Besok Selesai)' : '2-3 Hari Kerja',
         outletAddress: orderResult?.outlet_name || activeOutletName,
-        outletPhone: localStorage.getItem('activeOutletPhone') || ''
+        outletPhone: localStorage.getItem('activeOutletPhone') || '',
+        queueNo: orderResult?.queue_no ?? null
       };
 
       setPendingOrderPayload(null);

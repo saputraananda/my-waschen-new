@@ -128,6 +128,7 @@ export default function History() {
           paidAt: t.paid_at || null,
           notes: t.special_notes || '-',
           isSmartlink: t.source === 'SMARTLINK',
+          queueNo: t.queue_no ?? null,
           // Delete Request Fields
           isDeleteRequested: t.is_delete_requested === 1 || t.is_delete_requested === true,
           deleteApprovalStatus: t.delete_approval_status,

@@ -174,9 +174,8 @@ export function getCashierStamp(receipt) {
   return `${when} ${name}`.trim();
 }
 
+/** Nomor urut nota di outlet pada hari itu: "#1", "#2", dst. */
 export function getRackOrMeta(receipt) {
-  if (receipt?.rackNo != null && receipt.rackNo !== '') return String(receipt.rackNo);
-  if (receipt?.queueNo != null && receipt.queueNo !== '') return String(receipt.queueNo);
-  const total = Math.round(countTotalBarang(receipt?.items || []));
-  return total > 0 ? String(total) : '';
+  const n = Number(receipt?.queueNo);
+  return Number.isFinite(n) && n > 0 ? `#${Math.round(n)}` : '';
 }

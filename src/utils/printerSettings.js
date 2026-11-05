@@ -134,7 +134,7 @@ export function mapDbTransactionToReceipt(raw, fallbackOutletName = '') {
     paymentBatchNo: raw.payment_batch_no || null,
     customerBalance: parseFloat(raw.member_balance || raw.customer_deposit_balance || 0),
     generalNotes: raw.special_notes || '',
-    rackNo: raw.rack_no || raw.queue_no || null,
+    queueNo: raw.queue_no || null,
     estimatedAt: raw.estimated_finished_at || null,
     estimatedCompletion: raw.estimated_finished_at || null,
     items

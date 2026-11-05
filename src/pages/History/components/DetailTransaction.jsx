@@ -568,7 +568,7 @@ export default function DetailTransaction() {
       estimatedAt: order.estimatedAt,
       outletPhone: order.outletPhone,
       outletAddress: order.outletAddress || order.branch,
-      rackNo: order.rackNo,
+      queueNo: order.queueNo,
       items: items.map((it) => ({
         name: it.serviceName,
         qty: it.qty,

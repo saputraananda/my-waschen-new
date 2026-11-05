@@ -10,6 +10,7 @@ import { generateAccessCode } from '../utils/accessCode.js';
 import { isEventOutlet, isEventOutletOpen } from '../utils/eventOutlet.js';
 import { getEmployeeNames, fillFallbackNames } from '../utils/employeeName.js';
 import { buildCustomerTrackingUrl } from '../utils/customerTrackingUrl.js';
+import { attachQueueNo } from '../utils/queueNo.js';
 import { replaceUploadUrl, safeUnlinkAbsPath, buildUploadPublicUrl, isItemPhotoUrl, ITEM_PHOTO_SUBDIR, DELETE_REQUEST_SUBDIR, REFUND_REQUEST_SUBDIR } from '../middleware/upload.js';
 import { REFUND_TYPES, findPendingRefund, insertRefundRequest, REFUND_SUMMARY_COLUMNS } from '../utils/transactionRefund.js';
 import { toWibYmdCompact, formatWibTime } from '../utils/wib.js';
@@ -552,6 +553,7 @@ export const createTransaction = async (req, res) => {
       [transactionId]
     );
 
+    await attachQueueNo(myWaschenPool, fullOrder);
     const resultData = fullOrder[0];
     resultData.items = orderItems;
     resultData.cashier_employee_id = resolvedCashierId;
@@ -699,6 +701,7 @@ export const getTransactions = async (req, res) => {
     }
 
     const [rows] = await myWaschenPool.query(sql, params);
+    await attachQueueNo(myWaschenPool, rows);
     await fillFallbackNames(rows, 'cashier_employee_id', 'cashier_name');
     useLegacyCashierName(rows);
 
@@ -835,6 +838,7 @@ export const getTransactionDetail = async (req, res) => {
     }
 
     const order = orderRows[0];
+    await attachQueueNo(myWaschenPool, [order]);
     await fillFallbackNames([order], 'cashier_employee_id', 'cashier_name');
     useLegacyCashierName([order]);
     await fillFallbackNames([order], 'settled_by_employee_id', 'settled_by_name');
