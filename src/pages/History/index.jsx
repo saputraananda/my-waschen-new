@@ -132,6 +132,7 @@ export default function History() {
           isDeleteRequested: t.is_delete_requested === 1 || t.is_delete_requested === true,
           deleteApprovalStatus: t.delete_approval_status,
           deleteRequestedAt: t.delete_requested_at ? new Date(t.delete_requested_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : null,
+          deleteRequestedRaw: t.delete_requested_at || null,
           deleteReason: t.delete_reason || null,
           deleteAttachmentUrl: t.delete_attachment_url || null,
           // Refund (tr_transaction_refund)
@@ -148,7 +149,10 @@ export default function History() {
   };
 
   const activeTransactionsCount = transactions.filter(t => !t.isDeleteRequested).length;
-  const deleteRequestsCount = transactions.filter(t => t.isDeleteRequested).length;
+  // Badge hanya menghitung yang masih menunggu approve; hilang setelah semua disetujui.
+  const deleteRequestsCount = transactions.filter(
+    t => t.isDeleteRequested && !(t.deleteApprovalStatus === 1 || t.deleteApprovalStatus === '1')
+  ).length;
   const refundRequestsCount = transactions.reduce((sum, t) => sum + (t.refundPendingCount || 0), 0);
 
   return (

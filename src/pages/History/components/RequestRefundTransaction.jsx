@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { ProofLink } from '../../../components/ImageLightbox.jsx';
 import { formatName, formatEmployeeName } from '../../../utils/FormatName';
+import TablePagination, { usePagination } from './TablePagination.jsx';
 import {
   RefreshCcw,
   Search,
@@ -43,15 +44,27 @@ export default function RequestRefundTransaction({ outletId }) {
 
   const countBy = (status) => rows.filter((r) => r.status === status).length;
 
-  const q = searchQuery.toLowerCase();
-  const filtered = rows.filter((r) => {
-    const matchesSearch = !q
-      || String(r.order_no || '').toLowerCase().includes(q)
-      || String(r.customer_name || '').toLowerCase().includes(q)
-      || String(r.customer_phone || '').includes(q)
-      || String(r.reason || '').toLowerCase().includes(q);
-    return matchesSearch && (statusFilter === 'Semua' || r.status === statusFilter);
-  });
+  // Pending dulu (perlu perhatian), lalu pengajuan terbaru.
+  const filtered = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return rows
+      .filter((r) => {
+        const matchesSearch = !q
+          || String(r.order_no || '').toLowerCase().includes(q)
+          || String(r.customer_name || '').toLowerCase().includes(q)
+          || String(r.customer_phone || '').includes(q)
+          || String(r.reason || '').toLowerCase().includes(q);
+        return matchesSearch && (statusFilter === 'Semua' || r.status === statusFilter);
+      })
+      .sort((a, b) => {
+        const pa = a.status === 'Pending' ? 0 : 1;
+        const pb = b.status === 'Pending' ? 0 : 1;
+        if (pa !== pb) return pa - pb;
+        return new Date(b.requested_at || 0) - new Date(a.requested_at || 0);
+      });
+  }, [rows, searchQuery, statusFilter]);
+
+  const pagination = usePagination(filtered, `${searchQuery}|${statusFilter}|${rows.length}`);
 
   const cards = [
     { label: 'Total Pengajuan', value: rows.length, note: 'Refund / Deposit / Tips', Icon: RefreshCcw, box: 'border-[#e0e0e0]', icon: 'bg-sky-50 text-sky-700', text: 'text-[#313030]' },
@@ -113,14 +126,16 @@ export default function RequestRefundTransaction({ outletId }) {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-2xl border border-[#e0e0e0]/80">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="bg-[#f8f8f8] text-slate-400 font-extrabold uppercase text-[10px] border-b border-[#e0e0e0]">
+              <tr className="bg-[#f8f8f8] text-slate-500 font-extrabold uppercase text-[10px] tracking-wider border-b border-[#e0e0e0]">
+                <th className="py-3.5 px-4 w-12 text-center">No</th>
                 <th className="py-3.5 px-4">No. Nota & Waktu Request</th>
                 <th className="py-3.5 px-4">Pelanggan</th>
                 <th className="py-3.5 px-4">Jenis</th>
-                <th className="py-3.5 px-4">Alasan / Bukti</th>
+                <th className="py-3.5 px-4">Alasan</th>
+                <th className="py-3.5 px-4 text-center">Bukti</th>
                 <th className="py-3.5 px-4 text-right">Tagihan</th>
                 <th className="py-3.5 px-4 text-right">Nominal</th>
                 <th className="py-3.5 px-4 text-center">Status</th>
@@ -129,11 +144,12 @@ export default function RequestRefundTransaction({ outletId }) {
             <tbody className="divide-y divide-[#e0e0e0]/70 font-semibold">
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="py-12 text-center text-slate-400 font-bold">Memuat pengajuan refund...</td>
+                  <td colSpan="9" className="py-12 text-center text-slate-400 font-bold">Memuat pengajuan refund...</td>
                 </tr>
               ) : filtered.length > 0 ? (
-                filtered.map((r) => (
+                pagination.pageItems.map((r, idx) => (
                   <tr key={r.id} className="hover:bg-slate-50 transition-colors align-top">
+                    <td className="py-3.5 px-4 text-center text-slate-400 font-bold">{pagination.start + idx + 1}</td>
                     <td className="py-3.5 px-4">
                       <span className="font-mono font-black text-sky-700 block text-xs">{r.order_no}</span>
                       <span className="text-[10px] text-slate-400 block mt-0.5">Req: {formatWhen(r.requested_at)}</span>
@@ -157,18 +173,6 @@ export default function RequestRefundTransaction({ outletId }) {
                       <div className="p-2.5 bg-sky-50/60 border border-sky-100 rounded-xl text-[#313030] text-xs leading-relaxed">
                         &quot;{r.reason}&quot;
                       </div>
-                      <div className="flex flex-wrap gap-2 mt-1.5">
-                        {r.payment_proof_url && (
-                          <ProofLink url={r.payment_proof_url} title={`Bukti Bayar — ${r.order_no || ''}`} className="text-[10px] font-bold text-sky-700 hover:underline inline-flex items-center gap-1 cursor-pointer">
-                            <Paperclip className="h-3 w-3" /> Bukti bayar
-                          </ProofLink>
-                        )}
-                        {r.attachment_url && (
-                          <ProofLink url={r.attachment_url} title={`Bukti Tambahan — ${r.order_no || ''}`} className="text-[10px] font-bold text-sky-700 hover:underline inline-flex items-center gap-1 cursor-pointer">
-                            <Paperclip className="h-3 w-3" /> Bukti tambahan
-                          </ProofLink>
-                        )}
-                      </div>
                       {r.status === 'Approved' && (r.approve_path || r.approve_notes) && (
                         <div className="mt-1.5 rounded-lg border border-emerald-100 bg-emerald-50/60 px-2 py-1.5">
                           <p className="text-[10px] font-black text-emerald-700">Disetujui admin</p>
@@ -183,6 +187,21 @@ export default function RequestRefundTransaction({ outletId }) {
                       {r.status === 'Rejected' && r.decline_notes && (
                         <p className="text-[10px] text-rose-700 font-bold mt-1.5">Alasan penolakan: {r.decline_notes}</p>
                       )}
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      <div className="inline-flex items-center gap-1.5">
+                        {r.payment_proof_url && (
+                          <ProofLink url={r.payment_proof_url} title={`Bukti Bayar — ${r.order_no || ''}`} className="w-8 h-8 rounded-lg border border-[#e0e0e0] bg-sky-50 text-sky-700 hover:border-sky-400 inline-flex items-center justify-center cursor-pointer">
+                            <Paperclip className="h-4 w-4" />
+                          </ProofLink>
+                        )}
+                        {r.attachment_url && (
+                          <ProofLink url={r.attachment_url} title={`Bukti Tambahan — ${r.order_no || ''}`} className="w-8 h-8 rounded-lg border border-[#e0e0e0] bg-sky-50 text-sky-700 hover:border-sky-400 inline-flex items-center justify-center cursor-pointer">
+                            <Paperclip className="h-4 w-4" />
+                          </ProofLink>
+                        )}
+                        {!r.payment_proof_url && !r.attachment_url && <span className="text-slate-300">-</span>}
+                      </div>
                     </td>
                     <td className="py-3.5 px-4 text-right font-black text-[#313030] text-sm whitespace-nowrap">
                       Rp {(parseFloat(r.grand_total) || 0).toLocaleString('id-ID')}
@@ -212,7 +231,7 @@ export default function RequestRefundTransaction({ outletId }) {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="7" className="py-12 text-center text-slate-400">
+                  <td colSpan="9" className="py-14 text-center text-slate-400">
                     <ShieldAlert className="h-10 w-10 mx-auto text-slate-300 mb-2" />
                     <p className="font-bold text-xs text-[#313030]">Tidak ada pengajuan refund yang ditemukan</p>
                     <p className="text-[11px] mt-0.5">Ajukan lewat tombol Refund di kolom aksi tab Riwayat Transaksi</p>
@@ -222,6 +241,12 @@ export default function RequestRefundTransaction({ outletId }) {
             </tbody>
           </table>
         </div>
+
+        <TablePagination
+          pagination={pagination}
+          accent="bg-sky-600"
+          accentSoft="bg-sky-50 text-sky-700 hover:bg-sky-100"
+        />
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import { myWaschenPool, mainPool } from '../db/pool.js';
-import { getWibYearMonth } from '../utils/wib.js';
+import { getWibYearMonth, todayWibISO } from '../utils/wib.js';
 
 /**
  * GET /api/dashboard/stats
@@ -9,19 +9,22 @@ export const getDashboardStats = async (req, res) => {
   try {
     const { outlet_id } = req.query;
 
-    let outletFilter = '';
+    // Nota yang diajukan hapus tidak dihitung di semua statistik.
+    let outletFilter = ' AND is_delete_requested = 0';
     const params = [];
     if (outlet_id && outlet_id !== 'Semua') {
-      outletFilter = ' AND outlet_id = ?';
+      outletFilter += ' AND outlet_id = ?';
       params.push(outlet_id);
     }
 
-    // 1. Today Revenue (Paid orders)
+    // 1. Today Revenue: nota Lunas yang dibayar hari ini (kalender WIB, sesuai paid_at)
+    const today = todayWibISO();
     const [revRows] = await myWaschenPool.query(
-      `SELECT COALESCE(SUM(grand_total), 0) as todayRevenue 
-       FROM tr_transaction 
-       WHERE payment_status = 'Lunas' ${outletFilter}`,
-      params
+      `SELECT COALESCE(SUM(grand_total), 0) as todayRevenue
+       FROM tr_transaction
+       WHERE payment_status = 'Lunas'
+         AND paid_at >= ? AND paid_at <= ? ${outletFilter}`,
+      [`${today} 00:00:00`, `${today} 23:59:59`, ...params]
     );
     const todayRevenue = parseFloat(revRows[0]?.todayRevenue || 0);
 
