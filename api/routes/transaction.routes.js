@@ -15,7 +15,8 @@ import {
   uploadPaymentProof,
   uploadItemPhotoDraft,
   uploadItemPhoto,
-  ensureDigitalNotaAccess
+  ensureDigitalNotaAccess,
+  decideCleanoxHold
 } from '../controllers/transaction.controller.js';
 import { uploadPaymentReceipt, uploadItemPhotoFile,uploadDeleteRequestAttachment, uploadRefundRequestAttachment, verifyUploadContents } from '../middleware/upload.js';
 import { requirePosAuth } from '../middleware/requireAuth.js';
@@ -34,6 +35,7 @@ router.post('/:id/items/:itemId/photo', requirePosAuth, uploadItemPhotoFile, ver
 router.get('/:orderNo', getTransactionDetail);
 router.patch('/:id/items/:itemId/status', updateItemWorkStatus);
 router.put('/:id/items/:itemId/status', updateItemWorkStatus);
+router.patch('/:id/cleanox-items/:cleanoxId/decision', requirePosAuth, decideCleanoxHold);
 router.patch('/:id/fulfillment', updateFulfillment);
 router.put('/:id/fulfillment', updateFulfillment);
 router.patch('/:id/status', updateWorkStatus);

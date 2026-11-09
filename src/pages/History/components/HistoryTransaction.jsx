@@ -691,6 +691,14 @@ export default function HistoryTransaction({
                             Backdate (Smartlink)
                           </span>
                         )}
+                        {order.cleanoxHoldCount > 0 && (
+                          <span
+                            className="bg-rose-50 text-rose-700 border border-rose-200 text-[8px] font-extrabold px-1.5 py-0.5 rounded-md font-sans"
+                            title="Item Cleanox ditahan, menunggu keputusan frontliner di rincian nota"
+                          >
+                            Cleanox Hold ({order.cleanoxHoldCount})
+                          </span>
+                        )}
                       </div>
                       <span className="text-[9.5px] font-mono text-slate-400 font-normal block mt-0.5 flex items-center gap-1">
                         <QrCode className="h-3 w-3 text-slate-400 shrink-0" />

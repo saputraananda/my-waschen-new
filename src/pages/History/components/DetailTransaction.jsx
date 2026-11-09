@@ -19,6 +19,7 @@ import TransactionBarcodeCard from '../../../components/TransactionBarcodeCard.j
 import ItemPhotoField from '../../../components/ItemPhotoField.jsx';
 import ChangeFulfillmentModal from '../../../components/ChangeFulfillmentModal.jsx';
 import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
+import CleanoxItemsPanel from './CleanoxItemsPanel.jsx';
 import {
   CheckCircle2,
   ChevronDown,
@@ -69,6 +70,7 @@ export default function DetailTransaction() {
   const [order, setOrder] = useState(null);
   const [items, setItems] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [cleanoxItems, setCleanoxItems] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedItemId, setExpandedItemId] = useState(null);
   const [workStatusOptions, setWorkStatusOptions] = useState(DEFAULT_WORK_STATUSES);
@@ -191,6 +193,7 @@ export default function DetailTransaction() {
       setOrder(mapped);
       setItems(mapItems(raw.items, mapped.isDelivery));
       setLogs(raw.logs || []);
+      setCleanoxItems(raw.cleanoxItems || []);
       document.title = `Detail ${mapped.id} | Waschen Laundry`;
 
       // Fetch outstanding notes for the same customer (by customer_id, bukan nama/HP longgar)
@@ -1022,6 +1025,14 @@ export default function DetailTransaction() {
                 )}
               </div>
             </div>
+
+            <CleanoxItemsPanel
+              cleanoxItems={cleanoxItems}
+              orderDbId={order.dbId}
+              outletId={activeOutletId || order?.outletId}
+              onChanged={setCleanoxItems}
+              showToast={showToast}
+            />
 
             {/* Status logs */}
             {logs.length > 0 && (

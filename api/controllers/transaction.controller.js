@@ -16,6 +16,7 @@ import { REFUND_TYPES, findPendingRefund, insertRefundRequest, REFUND_SUMMARY_CO
 import { toWibYmdCompact, formatWibTime } from '../utils/wib.js';
 import { resolveValidCashier } from '../utils/cashierGuard.js';
 import { auditOrderPricing, priceCheckMode } from '../utils/priceAudit.js';
+import { insertCleanoxItemsForDetail, getCleanoxItemsByTransaction, attachCleanoxHoldCount } from '../utils/cleanoxItems.js';
 import path from 'path';
 import crypto from 'crypto';
 
@@ -147,7 +148,7 @@ export const createTransaction = async (req, res) => {
     }
 
     const [custCheck] = await connection.query(
-      'SELECT id, name, phone FROM mst_customer WHERE id = ? AND is_active = 1 LIMIT 1',
+      'SELECT id, name, phone, COALESCE(full_address, address) AS address FROM mst_customer WHERE id = ? AND is_active = 1 LIMIT 1',
       [resolvedCustomerId]
     );
     if (!custCheck.length) {
@@ -421,6 +422,7 @@ export const createTransaction = async (req, res) => {
     }
 
     const inventoryUsages = [];
+    let cleanoxOutletName;
     for (const item of items) {
       const serviceId = item.serviceId || item.serviceDbId || item.id || 1;
       const mustDc = dcRequiredOf.get(parseInt(serviceId, 10)) === true;
@@ -457,6 +459,26 @@ export const createTransaction = async (req, res) => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         detailParams
       );
+      // Phase 17: item Cleanox By Waschen -> antrean produksi Cleanox (1 baris per barang fisik)
+      if (item.isCleanox && isProduction) {
+        if (cleanoxOutletName === undefined) {
+          const [[o]] = await connection.query('SELECT name FROM mst_outlet WHERE id = ?', [resolvedOutletId]);
+          cleanoxOutletName = o?.name || null;
+        }
+        await insertCleanoxItemsForDetail(connection, {
+          transactionId,
+          detailId: detailResult.insertId,
+          orderNo,
+          outletId: resolvedOutletId,
+          outletName: cleanoxOutletName,
+          customer: custCheck[0],
+          serviceName: item.serviceName || item.name || 'Layanan Laundry',
+          unit: item.unit || 'Kg',
+          qty: lineQty,
+          subtotal: detailParams[7],
+          receivedAt: new Date()
+        });
+      }
       if (isEvent) {
         await connection.query('UPDATE tr_transaction_detail SET is_event = 1 WHERE id = ?', [detailResult.insertId]);
         // Stok (BOM) dipotong saat item dibagi ke cabang, memakai production_outlet_id.
@@ -704,6 +726,7 @@ export const getTransactions = async (req, res) => {
     await attachQueueNo(myWaschenPool, rows);
     await fillFallbackNames(rows, 'cashier_employee_id', 'cashier_name');
     useLegacyCashierName(rows);
+    await attachCleanoxHoldCount(myWaschenPool, rows);
 
     if (lite) {
       return res.status(200).json({
@@ -863,6 +886,9 @@ export const getTransactionDetail = async (req, res) => {
 
     order.items = items;
     order.logs = logs;
+    order.cleanoxItems = items.some((it) => Number(it.is_cleanox) === 1)
+      ? await getCleanoxItemsByTransaction(myWaschenPool, order.id)
+      : [];
 
     return res.status(200).json({
       success: true,
@@ -2074,3 +2100,74 @@ export const uploadPaymentProof = async (req, res) => {
   }
 };
 
+
+/**
+ * PATCH /api/transactions/:id/cleanox-items/:cleanoxId/decision
+ * Phase 17: keputusan frontliner atas item Cleanox By Waschen yang di-hold tim Cleanox.
+ * Body: { decision: 'lanjut' | 'batal', note?, cashierEmployeeId? (PIN perangkat bersama) }
+ */
+export const decideCleanoxHold = async (req, res) => {
+  const connection = await myWaschenPool.getConnection();
+  try {
+    const { id, cleanoxId } = req.params;
+    const { decision, note, cashierEmployeeId } = req.body || {};
+    const choice = String(decision || '').toLowerCase();
+    if (!['lanjut', 'batal'].includes(choice)) {
+      return res.status(400).json({ success: false, message: 'Keputusan harus Lanjut atau Batal' });
+    }
+    const noteText = String(note || '').trim().slice(0, 1000) || null;
+
+    await connection.beginTransaction();
+    const actorId = await resolveValidCashier(connection, req, cashierEmployeeId);
+    if (!actorId) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: 'Karyawan tidak terdaftar. Verifikasi ulang PIN frontliner.' });
+    }
+    const [rows] = await connection.query(
+      `SELECT c.id, c.on_hold, c.order_no, t.id AS transaction_id, t.outlet_id
+       FROM tr_cleanox_by_waschen c
+       JOIN tr_transaction t ON t.id = c.transaction_id
+       WHERE c.id = ? AND (t.id = ? OR t.order_no = ?)
+       LIMIT 1 FOR UPDATE`,
+      [cleanoxId, id, id]
+    );
+    if (!rows.length) {
+      await connection.rollback();
+      return res.status(404).json({ success: false, message: 'Item Cleanox tidak ditemukan di nota ini' });
+    }
+    const row = rows[0];
+    if (Number(row.on_hold) !== 1) {
+      await connection.rollback();
+      return res.status(409).json({ success: false, message: 'Item ini tidak sedang di-hold' });
+    }
+
+    const actorName = (await resolveCashierName(actorId)) || `#${actorId}`;
+    // Sama dengan decideCuciJemur di Cleanox app: keputusan mengembalikan item ke tahap Cuci Jemur.
+    await connection.query(
+      `UPDATE tr_cleanox_by_waschen
+       SET on_hold = 0, is_continue = ?, continue_by = ?, continue_at = NOW(), continue_note = ?,
+           status = 'Cuci Jemur', updated_by = ?, updated_at = NOW()
+       WHERE id = ?`,
+      [choice === 'lanjut' ? 1 : 0, actorName, noteText, actorName, row.id]
+    );
+    await connection.commit();
+
+    emitDashboardRefresh('transaction:updated', {
+      outletId: row.outlet_id,
+      orderNo: row.order_no,
+      transactionId: row.transaction_id
+    });
+    const items = await getCleanoxItemsByTransaction(myWaschenPool, row.transaction_id);
+    return res.status(200).json({
+      success: true,
+      message: choice === 'lanjut' ? 'Item Cleanox dilanjutkan' : 'Item Cleanox dibatalkan',
+      data: { cleanoxItems: items }
+    });
+  } catch (error) {
+    try { await connection.rollback(); } catch { /* sudah selesai */ }
+    console.error('Error decideCleanoxHold:', error);
+    return res.status(500).json({ success: false, message: 'Gagal menyimpan keputusan Cleanox', error: error.message });
+  } finally {
+    connection.release();
+  }
+};

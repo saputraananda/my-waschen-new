@@ -128,6 +128,7 @@ export default function History() {
           paidAt: t.paid_at || null,
           notes: t.special_notes || '-',
           isSmartlink: t.source === 'SMARTLINK',
+          cleanoxHoldCount: Number(t.cleanox_hold_count) || 0,
           queueNo: t.queue_no ?? null,
           // Delete Request Fields
           isDeleteRequested: t.is_delete_requested === 1 || t.is_delete_requested === true,
