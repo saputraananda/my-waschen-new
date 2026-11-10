@@ -872,6 +872,13 @@ export default function TransactionPage() {
         cashierFullName ||
         null;
 
+      let estimatedIso = orderResult?.estimated_finished_at || null;
+      if (!estimatedIso) {
+        const maxDays = Math.max(0, ...cartItems.map((it) => parseFloat(String(it.duration || '').match(/[\d.]+/)?.[0]) || 0));
+        const hours = maxDays > 0 ? Math.max(24, Math.round(maxDays * 24 * (isExpress ? 0.5 : 1))) : (isExpress ? 24 : 48);
+        estimatedIso = new Date(Date.now() + hours * 3600 * 1000).toISOString();
+      }
+
       const receiptData = {
         id: orderId,
         customerId: orderResult?.customer_id || selectedCustomer.dbId,
@@ -902,7 +909,10 @@ export default function TransactionPage() {
         depositAdded: 0,
         createdAt: new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
         createdAtRaw: new Date().toISOString(),
-        estimatedCompletion: isExpress ? '1x24 Jam (Besok Selesai)' : '2-3 Hari Kerja',
+        // Estimasi dari server (durasi layanan terlama); fallback hitung lokal dari durasi item di keranjang
+        estimatedCompletion: estimatedIso,
+        estimatedAt: estimatedIso,
+        estimatedFinishedAt: estimatedIso,
         outletAddress: orderResult?.outlet_name || activeOutletName,
         outletPhone: localStorage.getItem('activeOutletPhone') || '',
         queueNo: orderResult?.queue_no ?? null

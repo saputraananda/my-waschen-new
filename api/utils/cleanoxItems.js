@@ -6,6 +6,11 @@
 /** Satuan ukuran (berat/luas/panjang): qty = ukuran satu barang, bukan jumlah barang. */
 const MEASURE_UNITS = new Set(['kg', 'm²', 'm2', 'cm²', 'cm2', 'cm', 'm', 'meter']);
 
+/** Satuan ukuran? (qty = ukuran satu barang). Selain itu satu baris Cleanox = 1 barang, qty-nya 1. */
+export function isMeasureUnit(unit) {
+  return MEASURE_UNITS.has(String(unit || '').trim().toLowerCase());
+}
+
 /** Pengaman salah ketik qty (mis. 1000 Pcs) agar tidak membuat ribuan baris. */
 export const MAX_CLEANOX_ITEMS_PER_LINE = 200;
 
@@ -66,12 +71,17 @@ export async function attachCleanoxHoldCount(db, rows) {
  */
 export async function insertCleanoxItemsForDetail(connection, { transactionId, detailId, orderNo, outletId, outletName, customer, serviceName, unit, qty, subtotal, receivedAt }) {
   const count = cleanoxItemCount(unit, qty);
+  // Satu baris = satu barang fisik: qty = ukuran satu barang (1 untuk satuan), subtotal = total layanan / jumlah barang.
+  const itemQty = isMeasureUnit(unit) ? (Number(qty) || 1) : 1;
+  const total = Number(subtotal) || 0;
+  const perItem = Math.round((total / count) * 100) / 100;
   const rows = [];
   for (let i = 1; i <= count; i += 1) {
+    const itemSubtotal = i === count ? Math.round((total - perItem * (count - 1)) * 100) / 100 : perItem;
     rows.push([
       transactionId, detailId, i, orderNo, outletId || null, outletName || null,
       customer?.id || null, customer?.name || null, customer?.phone || null, customer?.address || null,
-      serviceName, unit || null, Number(qty) || 1, Number(subtotal) || 0, receivedAt, 'POS'
+      serviceName, unit || null, itemQty, itemSubtotal, receivedAt, 'POS'
     ]);
   }
   try {

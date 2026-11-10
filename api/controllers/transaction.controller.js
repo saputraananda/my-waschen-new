@@ -421,6 +421,37 @@ export const createTransaction = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Nota wajib berisi minimal 1 layanan cucian (bukan hanya biaya tambahan)' });
     }
 
+    // Estimasi selesai = durasi TERLAMA (regular_duration_days) dari layanan produksi di nota,
+    // dikali pengali kecepatan (Express 0.5, min 24 jam). Disimpan ke estimated_finished_at.
+    try {
+      const prodIds = serviceIds.filter((id) => productionOf.get(id) !== 0);
+      let maxDays = 0;
+      if (prodIds.length) {
+        const [durRows] = await connection.query(
+          'SELECT MAX(regular_duration_days) AS d FROM mst_service WHERE id IN (?)',
+          [prodIds]
+        );
+        maxDays = Number(durRows[0]?.d) || 0;
+      }
+      let mult = 1;
+      let speedHours = 48;
+      if (speedId) {
+        const [spRows] = await connection.query(
+          'SELECT duration_multiplier, duration_hours FROM mst_service_speed WHERE id = ? LIMIT 1',
+          [speedId]
+        );
+        mult = Number(spRows[0]?.duration_multiplier) || 1;
+        speedHours = Number(spRows[0]?.duration_hours) || 48;
+      }
+      const hours = maxDays > 0 ? Math.max(24, Math.round(maxDays * 24 * mult)) : speedHours;
+      await connection.query(
+        'UPDATE tr_transaction SET estimated_finished_at = DATE_ADD(NOW(), INTERVAL ? HOUR) WHERE id = ?',
+        [hours, orderResult.insertId]
+      );
+    } catch (estErr) {
+      console.error('Gagal menghitung estimasi selesai:', estErr.message);
+    }
+
     const inventoryUsages = [];
     let cleanoxOutletName;
     for (const item of items) {

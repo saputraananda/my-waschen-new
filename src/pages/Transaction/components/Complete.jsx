@@ -213,7 +213,14 @@ export default function Complete() {
               <div className="p-3 bg-[#5f1340]/5 border border-[#5f1340]/15 rounded-xl flex items-center gap-2 text-xs">
                 <Clock className="h-4 w-4 text-[#5f1340] shrink-0" />
                 <span className="text-slate-600 font-medium">
-                  Estimasi selesai: <b className="text-[#313030]">{receipt.estimatedCompletion || '2-3 Hari Kerja'}</b>
+                  Estimasi selesai: <b className="text-[#313030]">{(() => {
+                    const raw = receipt.estimatedCompletion;
+                    if (!raw) return '-';
+                    const d = new Date(raw);
+                    return Number.isNaN(d.getTime())
+                      ? raw
+                      : d.toLocaleString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                  })()}</b>
                 </span>
               </div>
 
@@ -239,6 +246,11 @@ export default function Complete() {
                 <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-2">
                   Bukti Pembayaran Tunai {proofDone ? '' : '(Wajib)'}
                 </p>
+                {!proofDone && (
+                  <p className="mb-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold leading-snug text-amber-800">
+                    Yang difoto adalah <b>nota yang sudah ditandatangani oleh customer</b> sebagai bukti pembayaran tunai.
+                  </p>
+                )}
                 {proofDone ? (
                   <p className="text-xs font-bold text-emerald-700 flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4" /> Bukti pembayaran tersimpan.
