@@ -57,6 +57,8 @@ export function ShiftProvider({ children }) {
     return Boolean(readOptimisticShift());
   });
   const [sessionReady, setSessionReady] = useState(() => Boolean(readOptimisticShift()));
+  /** Shift terbuka di outlet aktif (hanya tampilan) untuk user tanpa gerbang shift, mis. Management/HQ. */
+  const [outletShift, setOutletShift] = useState(null);
   const [isOpenShiftModalOpen, setIsOpenShiftModalOpen] = useState(false);
   const [isResumeModalOpen, setIsResumeModalOpen] = useState(false);
   const [isCloseShiftOpen, setIsCloseShiftOpen] = useState(false);
@@ -130,8 +132,13 @@ export function ShiftProvider({ children }) {
       setActiveShift(null);
       setShiftChecked(true);
       setSessionReady(true);
+      // Tetap tampilkan status shift outlet (dibuka tim lain) di header; tidak memengaruhi gerbang/sesi.
+      axios.get('/api/shifts/current', { params: { outlet_id: oid || 2 }, timeout: 15000 })
+        .then((r) => setOutletShift(r.data?.success ? (r.data.data || null) : null))
+        .catch(() => {});
       return;
     }
+    setOutletShift(null);
 
     // Soft refresh: tetap tampilkan shift lama / optimistic — jangan flash "Belum Open"
     if (!soft) {
@@ -351,6 +358,7 @@ export function ShiftProvider({ children }) {
 
   const value = useMemo(() => ({
     activeShift,
+    outletShift,
     shiftChecked,
     sessionReady,
     isCloseShiftOpen,
@@ -369,6 +377,7 @@ export function ShiftProvider({ children }) {
     isShiftReady: !mustGateShift || (Boolean(activeShift) && sessionReady)
   }), [
     activeShift,
+    outletShift,
     applyOpenShift,
     cancelShiftGate,
     ensureShiftForOrder,

@@ -30,7 +30,7 @@ export default function HeaderNav({
   const location = useLocation();
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const shiftCtx = useShiftOptional();
-  const activeShift = activeShiftProp ?? shiftCtx?.activeShift;
+  const activeShift = activeShiftProp ?? shiftCtx?.activeShift ?? shiftCtx?.outletShift;
   const onRequestCloseShift = onCloseProp ?? shiftCtx?.openCloseModal;
   const { promptInstall, isInstalled } = usePWA();
 
