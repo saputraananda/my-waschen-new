@@ -55,6 +55,8 @@ const mapPromoFromApi = (p) => ({
   name: p.name,
   type: p.discount_type === 'none' ? 'nominal' : p.discount_type,
   value: Number(p.discount_value) || 0,
+  // Batas maksimal potongan (Rp); null = tanpa batas
+  maxDiscount: Number(p.max_discount) > 0 ? Number(p.max_discount) : null,
   desc: p.description || ''
 });
 
@@ -328,9 +330,10 @@ export default function TransactionPage() {
         if (!res.data?.success || !res.data.data) return;
         const { promos, paymentMethods: methods, customerTiers: tiers } = res.data.data;
         if (promos?.length) {
-          const mapped = promos.map(mapPromoFromApi);
+          // "Tanpa Promo" selalu ada di urutan pertama & jadi pilihan awal: promo harus dipilih kasir secara sadar
+          const mapped = [PROMO_FALLBACK[0], ...promos.map(mapPromoFromApi).filter((p) => p.code !== 'NONE')];
           setPromoList(mapped);
-          setSelectedPromoCode(mapped[0]?.code || 'NONE');
+          setSelectedPromoCode((prev) => (mapped.some((p) => p.code === prev) ? prev : 'NONE'));
         }
         if (methods?.length) {
           setPaymentMethods(methods);
@@ -657,6 +660,7 @@ export default function TransactionPage() {
     let discountAmount = 0;
     if (activePromo.type === 'percentage') {
       discountAmount = Math.round((subtotalAfterExpress * activePromo.value) / 100);
+      if (activePromo.maxDiscount) discountAmount = Math.min(discountAmount, activePromo.maxDiscount);
     } else if (activePromo.type === 'nominal') {
       discountAmount = Math.min(subtotalAfterExpress, activePromo.value);
     }

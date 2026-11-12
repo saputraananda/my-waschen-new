@@ -252,7 +252,7 @@ export default function Cart({
               >
                 {PROMO_LIST.map(p => (
                   <option key={p.code} value={p.code}>
-                    {p.name} {p.value > 0 ? `(${p.type === 'percentage' ? `${p.value}%` : `Rp ${p.value.toLocaleString('id-ID')}`})` : ''}
+                    {p.name} {p.value > 0 ? `(${p.type === 'percentage' ? `${p.value}%${p.maxDiscount ? `, maks Rp ${p.maxDiscount.toLocaleString('id-ID')}` : ''}` : `Rp ${p.value.toLocaleString('id-ID')}`})` : ''}
                   </option>
                 ))}
               </select>
