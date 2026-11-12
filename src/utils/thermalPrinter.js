@@ -32,6 +32,41 @@ export function isRawBtMode() {
   return isAndroidDevice();
 }
 
+/** iPhone / iPad (termasuk iPadOS yang menyamar sebagai Mac). Safari iOS tidak punya Web Serial/Bluetooth. */
+export function isIosDevice() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  return navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1;
+}
+
+/**
+ * Mode iOS: ESC/POS dibungkus base64 dalam file .txt lalu dibagikan lewat Share Sheet ke
+ * aplikasi BR RawPrinter (aplikasi itu membaca file .txt/.base64 berisi ESC/POS base64).
+ */
+export function makeIosPrintFile(bytes, baseName = 'nota-thermal') {
+  const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const safe = String(baseName).replace(/[^\w.-]+/g, '_').slice(0, 60) || 'nota-thermal';
+  return new File([bytesToBase64(data)], `${safe}.txt`, { type: 'text/plain' });
+}
+
+/** Buka Share Sheet (harus dipanggil dari tap user). Fallback: unduh file jika Share tidak didukung. */
+export async function shareIosPrintFile(file, title = 'Cetak Nota') {
+  if (typeof navigator !== 'undefined' && navigator.canShare?.({ files: [file] })) {
+    await navigator.share({ files: [file], title });
+    return 'shared';
+  }
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = file.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return 'downloaded';
+}
+
 export function getPrinterMode() {
   return isRawBtMode() ? 'rawbt' : 'serial';
 }

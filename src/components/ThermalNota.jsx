@@ -2,7 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Printer, X, Bluetooth, BluetoothOff, Cable, Receipt, Layers } from 'lucide-react';
+import { Printer, X, Bluetooth, BluetoothOff, Cable, Receipt, Layers, Smartphone } from 'lucide-react';
+import { isIosDevice, makeIosPrintFile, shareIosPrintFile } from '../utils/thermalPrinter.js';
+import { buildEscPosNota, buildEscPosMergeNota } from '../utils/escpos.js';
 import { useAppDialog } from '../context/AppDialogContext.jsx';
 import { useThermalPrinter } from '../context/ThermalPrinterContext.jsx';
 import {
@@ -40,6 +42,9 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
   const [batchData, setBatchData] = useState(null);
   const [loadingBatch, setLoadingBatch] = useState(false);
   const [batchError, setBatchError] = useState('');
+  // Mode khusus iOS: kirim ke aplikasi BR RawPrinter lewat Share Sheet
+  const ios = useMemo(() => isIosDevice(), []);
+  const [iosPending, setIosPending] = useState(null); // { file, label } jika Share Sheet butuh tap ulang
 
   const batchNo =
     createdOrderReceipt?.paymentBatchNo ||
@@ -211,6 +216,64 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
     }
   };
 
+  /** iOS: bangun ESC/POS lalu buka Share Sheet → pilih BR RawPrinter. */
+  const handlePrintIos = async (kind) => {
+    setPrinting(kind);
+    setIosPending(null);
+    try {
+      let bytes;
+      if (kind === 'merge') {
+        if (!batchData) throw new Error(batchError || 'Data nota gabungan belum tersedia.');
+        bytes = await buildEscPosMergeNota(batchData, {
+          outletName: batchData.outletName || createdOrderReceipt.branch,
+          customerName: batchData.customerName || createdOrderReceipt.customerName,
+          customerPhone: batchData.customerPhone || createdOrderReceipt.customerPhone
+        });
+      } else {
+        const variantSettings = kind === 'internal' ? settings.internal : settings.customer;
+        bytes = await buildEscPosNota(createdOrderReceipt, variantSettings, kind);
+      }
+      const file = makeIosPrintFile(bytes, `${createdOrderReceipt.id || 'nota'}-${kind}`);
+      const label = kind === 'merge' ? 'Nota Gabungan' : kind === 'internal' ? 'Nota Internal' : 'Nota Customer';
+      try {
+        await shareIosPrintFile(file, `Cetak ${label}`);
+      } catch (err) {
+        if (err?.name === 'AbortError') return; // user menutup Share Sheet
+        if (err?.name === 'NotAllowedError') {
+          // Safari menolak karena tap sudah kedaluwarsa saat nota diproses: minta tap sekali lagi
+          setIosPending({ file, label });
+          return;
+        }
+        throw err;
+      }
+    } catch (err) {
+      await showAlert({
+        title: 'Gagal Menyiapkan Cetak iOS',
+        message: err?.message || 'Gagal membuat data cetak untuk iOS',
+        type: 'error',
+        confirmLabel: 'OK'
+      });
+    } finally {
+      setPrinting(null);
+    }
+  };
+
+  const confirmIosShare = async () => {
+    if (!iosPending) return;
+    try {
+      await shareIosPrintFile(iosPending.file, `Cetak ${iosPending.label}`);
+      setIosPending(null);
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      await showAlert({
+        title: 'Gagal Membuka Share Sheet',
+        message: err?.message || 'Tidak bisa membagikan file cetak',
+        type: 'error',
+        confirmLabel: 'OK'
+      });
+    }
+  };
+
   const printDisabled = loadingSettings || !connected || Boolean(printing);
   const showGabungan = printMode === 'gabungan' && hasMergedBatch;
   const batchLabel = batchData?.batchNo || batchData?.batch_no || batchNo;
@@ -281,7 +344,17 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
             </div>
           )}
 
-          <div className={`shrink-0 px-4 py-2.5 border-b flex flex-wrap items-center justify-between gap-2 ${
+          {ios && (
+            <div className="shrink-0 px-4 py-2.5 border-b bg-sky-50 border-sky-100 flex items-start gap-2">
+              <Smartphone className="h-4 w-4 text-sky-700 shrink-0 mt-0.5" />
+              <p className="text-[11px] font-bold text-sky-900 leading-snug">
+                Mode iPhone/iPad: tekan tombol <b>Cetak (iOS)</b>, lalu pilih aplikasi <b>BR RawPrinter</b> di menu Bagikan.
+                Pastikan printer sudah tersambung di dalam aplikasi BR RawPrinter.
+              </p>
+            </div>
+          )}
+
+          <div className={`${ios ? 'hidden ' : ''}shrink-0 px-4 py-2.5 border-b flex flex-wrap items-center justify-between gap-2 ${
             connected ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-100'
           }`}>
             <div className="flex items-center gap-2 text-xs font-bold">
@@ -362,7 +435,52 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
           </div>
 
           <div className="shrink-0 p-4 bg-[#f8f8f8] border-t border-[#e0e0e0] rounded-b-3xl space-y-2">
-            {!connected ? (
+            {ios ? (
+              <>
+                {iosPending && (
+                  <button
+                    type="button"
+                    onClick={confirmIosShare}
+                    className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-black text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs animate-pulse"
+                  >
+                    <Smartphone className="h-4 w-4 shrink-0" />
+                    <span>Siap. Tap untuk bagikan {iosPending.label} ke BR RawPrinter</span>
+                  </button>
+                )}
+                {showGabungan ? (
+                  <button
+                    type="button"
+                    onClick={() => handlePrintIos('merge')}
+                    disabled={loadingSettings || loadingBatch || !batchData || Boolean(printing)}
+                    className="w-full py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-black text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                  >
+                    <Smartphone className="h-4 w-4 shrink-0" />
+                    <span>{printing === 'merge' ? 'Menyiapkan…' : 'Cetak Nota Gabungan (iOS)'}</span>
+                  </button>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handlePrintIos('internal')}
+                      disabled={loadingSettings || Boolean(printing)}
+                      className="w-full py-2.5 bg-white border-2 border-[#5f1340] text-[#5f1340] hover:bg-[#5f1340]/5 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-black text-xs flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Smartphone className="h-4 w-4 shrink-0" />
+                      <span>{printing === 'internal' ? 'Menyiapkan…' : 'Cetak Internal (iOS)'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handlePrintIos('customer')}
+                      disabled={loadingSettings || Boolean(printing)}
+                      className="w-full py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-black text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                    >
+                      <Smartphone className="h-4 w-4 shrink-0" />
+                      <span>{printing === 'customer' ? 'Menyiapkan…' : 'Cetak Customer (iOS)'}</span>
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : !connected ? (
               <button
                 type="button"
                 disabled
