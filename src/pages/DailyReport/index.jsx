@@ -167,7 +167,7 @@ export default function DailyReport() {
               <div className="flex flex-wrap justify-between gap-3 items-start border-b border-[#e0e0e0] pb-3">
                 <div>
                   <h2 className="text-sm font-black text-[#5f1340]">
-                    Shift {Number(s.shift_number) === 2 ? 'Siang' : 'Pagi'} · #{s.id}
+                    Shift {Number(s.shift_number) === 2 ? 'Siang' : 'Pagi'}
                   </h2>
                   <p className="text-[11px] text-slate-500 mt-0.5">
                     Status: <strong>{s.status}</strong>
