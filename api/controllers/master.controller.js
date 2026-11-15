@@ -104,7 +104,7 @@ export const getOutlets = async (req, res) => {
     console.error('Error fetching outlets from mst_outlet:', error);
     return res.status(500).json({
       success: false,
-      message: 'Gagal mengambil data outlet dari database'
+      message: 'Gagal mengambil data outlet'
     });
   }
 };

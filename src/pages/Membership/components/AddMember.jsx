@@ -204,7 +204,7 @@ export default function AddMember({
   const handleRegisterMember = async (e) => {
     e.preventDefault();
     if (!selectedCustId || !selectedCustomer) {
-      showToast('Pilih Pelanggan', 'Silakan pilih pelanggan terdaftar dari mst_customer terlebih dahulu!', 'error');
+      showToast('Pilih Pelanggan', 'Silakan pilih pelanggan terdaftar terlebih dahulu!', 'error');
       return;
     }
 

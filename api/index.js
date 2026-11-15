@@ -25,6 +25,7 @@ import refundApprovalInternalRoutes from './routes/refundApprovalInternal.routes
 import dropPointRoutes from './routes/dropPoint.routes.js';
 import { getBaseUploadDir, getUploadUrlPrefix, uploadPaymentReceipt, verifyUploadContents, buildUploadPublicUrl, safeUnlinkUploadUrl } from './middleware/upload.js';
 import { requirePosAuth } from './middleware/requireAuth.js';
+import { safeErrorMessage } from './middleware/safeErrorMessage.js';
 import { getSessionSecret } from './utils/sessionSecret.js';
 import { myWaschenPool } from './db/pool.js';
 
@@ -39,6 +40,8 @@ app.use(cors());
 // gzip respons JSON (daftar pelanggan bisa beberapa MB); file gambar/PDF dilewati otomatis
 app.use(compression());
 app.use(express.json());
+// Pesan error ke layar tidak boleh menyebut nama tabel/kolom/SQL
+app.use(safeErrorMessage);
 
 // Serve static uploaded files — prefix URL = nama folder UPLOAD_BASE_DIR
 app.use(getUploadUrlPrefix(), express.static(getBaseUploadDir()));

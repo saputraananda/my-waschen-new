@@ -156,7 +156,7 @@ export async function ensureDigitalNotaAccess(orderNo) {
     const err = new Error(
       data?.message
       || (axiosErr?.response?.status === 503
-        ? 'Layanan nota digital belum siap (cek migrasi DB / CUSTOMER_APP_URL).'
+        ? 'Layanan nota digital sedang dalam perbaikan. Silakan coba lagi nanti.'
         : (axiosErr?.message || 'Gagal menyiapkan kode akses nota digital'))
     );
     err.code = data?.code || 'ACCESS_FAILED';

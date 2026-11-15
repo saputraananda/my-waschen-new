@@ -156,7 +156,7 @@ export const createTransaction = async (req, res) => {
       await connection.rollback();
       return res.status(404).json({
         success: false,
-        message: 'Pelanggan tidak ditemukan di database'
+        message: 'Pelanggan tidak ditemukan'
       });
     }
 
@@ -1104,7 +1104,7 @@ export const updateFulfillment = async (req, res) => {
     if (/Unknown column.*fulfillment_type/i.test(error.message || '')) {
       return res.status(500).json({
         success: false,
-        message: 'Kolom fulfillment_type belum ada di database. Jalankan migrasi schema terlebih dahulu.'
+        message: 'Fitur pengambilan/antar sedang dalam perbaikan. Silakan coba lagi nanti atau hubungi admin.'
       });
     }
     return res.status(500).json({
@@ -1977,7 +1977,7 @@ export const ensureDigitalNotaAccess = async (req, res) => {
         return res.status(503).json({
           success: false,
           code: 'ACCESS_CODE_COLUMN_MISSING',
-          message: 'Kolom access_code belum ada di database. Jalankan migrasi dulu.'
+          message: 'Fitur nota digital sedang dalam perbaikan. Silakan coba lagi nanti atau hubungi admin.'
         });
       }
       throw err;

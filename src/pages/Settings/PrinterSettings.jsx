@@ -102,7 +102,7 @@ export default function PrinterSettings() {
       setPreviewReceipt(null);
       await showAlert({
         title: 'Gagal Memuat',
-        message: err?.message || 'Gagal mengambil transaksi dari database',
+        message: err?.message || 'Gagal mengambil data transaksi',
         type: 'error',
         confirmLabel: 'OK'
       });
@@ -204,7 +204,7 @@ export default function PrinterSettings() {
     if (!previewReceipt) {
       await showAlert({
         title: 'Tidak Ada Data',
-        message: 'Belum ada transaksi di database untuk di-test print. Buat transaksi dulu.',
+        message: 'Belum ada transaksi untuk di-test print. Buat transaksi dulu.',
         type: 'warning',
         confirmLabel: 'OK'
       });

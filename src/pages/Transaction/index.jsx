@@ -927,7 +927,7 @@ export default function TransactionPage() {
       console.error('Gagal menyimpan transaksi ke database:', err);
       showAlert({
         title: 'Transaksi Gagal',
-        message: err.response?.data?.message || err.message || 'Gagal memproses transaksi ke database.',
+        message: err.response?.data?.message || err.message || 'Gagal memproses transaksi. Silakan coba lagi.',
         type: 'error'
       });
     } finally {

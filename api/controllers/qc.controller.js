@@ -77,7 +77,7 @@ function rejectActor(req, res) {
   }
   return res.status(403).json({
     success: false,
-    message: 'QC hanya bisa dilakukan akun staf outlet (punya role & outlet di mst_role). Akun Manajemen hanya bisa melihat.'
+    message: 'QC hanya bisa dilakukan akun staf outlet (punya role & outlet). Akun Manajemen hanya bisa melihat.'
   });
 }
 
@@ -237,7 +237,7 @@ export const getQcList = async (req, res) => {
       }
       return res.status(403).json({
         success: false,
-        message: 'Outlet belum ditetapkan. Pastikan akun punya role & outlet di mst_role, atau pilih outlet di header.'
+        message: 'Outlet belum ditetapkan. Pastikan akun sudah punya role & outlet, atau pilih outlet di header.'
       });
     }
     const { outletId, role } = actor;
