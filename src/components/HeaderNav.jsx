@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import waschenLogo from '../assets/images/waschen.webp';
 import { formatEmployeeName } from '../utils/FormatName.js';
-import { logoutSession, getActiveEventOutlets } from '../utils/authSession.js';
+import { logoutSession, getActiveDropPointOutlets } from '../utils/authSession.js';
 import { useShiftOptional } from '../context/ShiftContext.jsx';
 import { usePWA } from '../context/PWAContext.jsx';
 import {
@@ -24,7 +24,8 @@ export default function HeaderNav({
   outlets,
   userProfile,
   activeShift: activeShiftProp,
-  onRequestCloseShift: onCloseProp
+  onRequestCloseShift: onCloseProp,
+  onBack
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -68,6 +69,8 @@ export default function HeaderNav({
   };
 
   const handleBack = () => {
+    // Halaman bertahap (mis. buat nota) mundur satu langkah dulu; return true = sudah ditangani
+    if (typeof onBack === 'function' && onBack() === true) return;
     const backPath = resolveBackPath();
     if (backPath) {
       navigate(backPath);
@@ -116,14 +119,14 @@ export default function HeaderNav({
     }
   }
 
-  // Staf outlet (bukan Management) boleh berpindah antara outlet sendiri dan event yang sedang berjalan.
-  const activeEvents = getActiveEventOutlets();
+  // Staf outlet (bukan Management) boleh berpindah antara outlet sendiri dan drop point yang sedang aktif.
+  const activeDropPoints = getActiveDropPointOutlets();
   const homeOutletId = localStorage.getItem('homeOutletId');
-  const isStaffSwitchable = !isManagement && activeEvents.length > 0 && Boolean(homeOutletId);
+  const isStaffSwitchable = !isManagement && activeDropPoints.length > 0 && Boolean(homeOutletId);
   if (isStaffSwitchable) {
     outletOptions = [
       { id: homeOutletId, name: localStorage.getItem('homeOutletName') || 'Outlet Saya', full_name: localStorage.getItem('homeOutletName') || 'Outlet Saya' },
-      ...activeEvents
+      ...activeDropPoints
     ];
   }
 
@@ -191,7 +194,7 @@ export default function HeaderNav({
                   if (shiftCtx?.setOutletId) shiftCtx.setOutletId(selectedId);
                   if (shiftCtx?.refreshShift) shiftCtx.refreshShift();
                   window.dispatchEvent(new Event('waschen:outlet-changed'));
-                  // Hitung ulang gate shift (outlet Event tanpa shift)
+                  // Hitung ulang gate shift (flag requires_shift outlet baru, dari localStorage 'outletFlags')
                   window.dispatchEvent(new Event('waschen:auth-changed'));
                 }}
                 className="w-full bg-[#f8f8f8] hover:bg-white border border-[#e0e0e0] hover:border-[#5f1340]/40 rounded-xl pl-2.5 pr-7 py-1.5 text-xs md:text-sm font-extrabold text-[#313030] outline-none cursor-pointer appearance-none transition-colors truncate"

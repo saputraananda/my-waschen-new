@@ -3,6 +3,7 @@ import { getEmployeeNames, fillFallbackNames } from '../utils/employeeName.js';
 import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 import { applyDepositOnPayment } from '../utils/customerDeposit.js';
+import { getOutletFlags } from '../utils/dropPointOutlet.js';
 import { resolvePaidAt, backdateNote } from '../utils/backdatePayment.js';
 import {
   insertPaymentLog,
@@ -179,11 +180,13 @@ export const updateTransactionPayment = async (req, res) => {
     }
 
     const order = orderRows[0];
+    // Shift dicek di outlet nota; outlet tanpa shift (requires_shift = 0) boleh melunasi tanpa shift.
+    const orderOutletFlags = await getOutletFlags(order.outlet_id, connection);
     const [openShiftRows] = await connection.query(
       `SELECT id FROM tr_cashier_shift WHERE outlet_id = ? AND status = 'Open' ORDER BY id DESC LIMIT 1`,
       [order.outlet_id]
     );
-    if (!openShiftRows.length && !Number(order.is_event)) {
+    if (!openShiftRows.length && orderOutletFlags.requires_shift === 1) {
       await connection.rollback();
       return res.status(409).json({
         success: false,

@@ -7,7 +7,7 @@ import { resolvePaidAt, backdateNote } from '../utils/backdatePayment.js';
 import { computeAccumulatedWorkPercentage, refreshHeaderWorkPercentage, nextLifecycleStatus, workStatusTabSql } from '../utils/workStatus.js';
 import { consumeServiceBom } from '../utils/inventoryStock.js';
 import { generateAccessCode } from '../utils/accessCode.js';
-import { isEventOutlet, isEventOutletOpen } from '../utils/eventOutlet.js';
+import { getOutletFlags } from '../utils/dropPointOutlet.js';
 import { getEmployeeNames, fillFallbackNames } from '../utils/employeeName.js';
 import { buildCustomerTrackingUrl } from '../utils/customerTrackingUrl.js';
 import { attachQueueNo } from '../utils/queueNo.js';
@@ -16,6 +16,7 @@ import { REFUND_TYPES, findPendingRefund, insertRefundRequest, REFUND_SUMMARY_CO
 import { toWibYmdCompact, formatWibTime } from '../utils/wib.js';
 import { resolveValidCashier } from '../utils/cashierGuard.js';
 import { auditOrderPricing, priceCheckMode } from '../utils/priceAudit.js';
+import { AVAILABLE_SQL, EFFECTIVE_CATEGORY_ID_SQL } from '../utils/serviceOutlet.js';
 import { insertCleanoxItemsForDetail, getCleanoxItemsByTransaction, attachCleanoxHoldCount } from '../utils/cleanoxItems.js';
 import path from 'path';
 import crypto from 'crypto';
@@ -181,18 +182,19 @@ export const createTransaction = async (req, res) => {
       [resolvedCashierId]
     );
     const isDeliveryStaff = roleRows[0]?.role === 'Delivery Staff';
-    // Outlet event (Haji): tanpa shift, tanpa delivery, layanan khusus event.
-    const isEvent = await isEventOutlet(resolvedOutletId, connection);
-    if (isEvent && !(await isEventOutletOpen(resolvedOutletId, connection))) {
+    // Semua outlet (biasa maupun Drop Point) harus aktif untuk membuat nota baru.
+    const outletFlags = await getOutletFlags(resolvedOutletId, connection);
+    if (outletFlags.is_active !== 1) {
       await connection.rollback();
       return res.status(409).json({
         success: false,
-        message: 'Event ini sudah ditutup. Nota baru tidak bisa dibuat di outlet event ini.'
+        message: 'Outlet ini sedang tidak aktif, tidak bisa membuat nota.'
       });
     }
 
+    // Shift wajib hanya bila outlet diset requires_shift = 1 (diatur admin di SuperApp).
     let resolvedShiftId = null;
-    if (!isDeliveryStaff && !isEvent) {
+    if (!isDeliveryStaff && outletFlags.requires_shift === 1) {
       const [openShiftRows] = await connection.query(
         `SELECT id FROM tr_cashier_shift WHERE outlet_id = ? AND status = 'Open' ORDER BY id DESC LIMIT 1`,
         [resolvedOutletId]
@@ -223,7 +225,7 @@ export const createTransaction = async (req, res) => {
     const grandTotalNum = parseFloat(grandTotal) || 0;
 
     // Audit harga di server (total dari klien tidak dipercaya begitu saja).
-    const audit = await auditOrderPricing(connection, { items, subtotal, discountAmount, grandTotal, speedId });
+    const audit = await auditOrderPricing(connection, { items, subtotal, discountAmount, grandTotal, speedId, outletId: resolvedOutletId });
     if (audit.fatal.length) {
       await connection.rollback();
       return res.status(400).json({ success: false, message: `Nota ditolak: ${audit.fatal.join('; ')}` });
@@ -319,7 +321,7 @@ export const createTransaction = async (req, res) => {
           resolvedChangeAmount,
           paymentProofUrl || null,
           isOutstanding ? null : new Date(),
-          isDelivery && !isEvent ? 1 : 0,
+          isDelivery ? 1 : 0,
           deliveryAddress || null,
           deliveryNotes || null,
           specialNotes || null,
@@ -356,7 +358,7 @@ export const createTransaction = async (req, res) => {
           resolvedChangeAmount,
           paymentProofUrl || null,
           isOutstanding ? null : new Date(),
-          isDelivery && !isEvent ? 1 : 0,
+          isDelivery ? 1 : 0,
           deliveryAddress || null,
           deliveryNotes || null,
           specialNotes || null
@@ -365,54 +367,46 @@ export const createTransaction = async (req, res) => {
     }
 
     const transactionId = orderResult.insertId;
-    if (isEvent) {
-      await connection.query('UPDATE tr_transaction SET is_event = 1 WHERE id = ?', [transactionId]);
-    }
 
     // 2. Insert tr_transaction_detail + potong stok BOM layanan (jika ada)
     // is_production dari master kategori (bukan dari client): 0 = biaya tambahan, langsung Selesai, tidak masuk QC/produksi
-    const serviceIds = [...new Set(items.map((it) => parseInt(it.serviceId || it.serviceDbId || it.id, 10)).filter(Boolean))];
+    const itemServiceIds = items.map((it) => parseInt(it.serviceId || it.serviceDbId || it.id, 10));
+    if (itemServiceIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: 'Ada item tanpa id layanan yang valid. Muat ulang halaman lalu pilih ulang layanan.' });
+    }
+    const serviceIds = [...new Set(itemServiceIds)];
+    // Kategori efektif per outlet (override di mst_service_outlet, jika kosong ikut master).
     const [prodRows] = serviceIds.length
       ? await connection.query(
-        `SELECT s.id, COALESCE(c.is_production, 1) AS is_production, COALESCE(s.is_dc_required, 0) AS is_dc_required
-         FROM mst_service s LEFT JOIN mst_service_category c ON c.id = s.category_id
+        `SELECT s.id, COALESCE(so.name, s.name) AS name,
+                COALESCE(c.is_production, 1) AS is_production, COALESCE(s.is_dc_required, 0) AS is_dc_required,
+                ${AVAILABLE_SQL} AS available
+         FROM mst_service s
+         LEFT JOIN mst_service_outlet so ON so.service_id = s.id AND so.outlet_id = ?
+         LEFT JOIN mst_service_category c ON c.id = ${EFFECTIVE_CATEGORY_ID_SQL}
          WHERE s.id IN (?)`,
-        [serviceIds]
+        [resolvedOutletId, serviceIds]
       )
       : [[]];
-    // Layanan khusus event (is_event_only) hanya boleh di outlet event pemiliknya (event_outlet_id,
-    // NULL = semua event); outlet event hanya boleh memproses layanan event (biaya tambahan
-    // non-produksi tetap boleh).
-    if (serviceIds.length) {
-      let evRows = [];
-      try {
-        [evRows] = await connection.query(
-          `SELECT s.id, COALESCE(c.is_event_only, 0) AS is_event_only, COALESCE(c.is_production, 1) AS is_production,
-                  c.event_outlet_id
-           FROM mst_service s LEFT JOIN mst_service_category c ON c.id = s.category_id
-           WHERE s.id IN (?)`,
-          [serviceIds]
-        );
-      } catch (evErr) {
-        if (!/Unknown column/i.test(evErr.message || '')) throw evErr;
-      }
-      const belongsToThisEvent = (r) =>
-        Number(r.is_event_only) === 1 &&
-        (r.event_outlet_id == null || Number(r.event_outlet_id) === resolvedOutletId);
-      const badService = evRows.find((r) =>
-        isEvent
-          ? Number(r.is_production) !== 0 && !belongsToThisEvent(r)
-          : Number(r.is_event_only) === 1
-      );
-      if (badService) {
-        await connection.rollback();
-        return res.status(400).json({
-          success: false,
-          message: isEvent
-            ? 'Outlet Event hanya boleh memakai layanan khusus event.'
-            : 'Layanan khusus event tidak bisa dipakai di outlet biasa.'
-        });
-      }
+    // Semua id layanan wajib ada di master.
+    const foundIds = new Set(prodRows.map((r) => Number(r.id)));
+    const unknownIds = serviceIds.filter((id) => !foundIds.has(id));
+    if (unknownIds.length) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Layanan tidak ditemukan: #${unknownIds.join(', #')}. Muat ulang halaman lalu pilih ulang layanan.`
+      });
+    }
+    // Layanan hanya boleh dipakai di outlet tempat layanan itu tersedia (mst_service_outlet).
+    const unavailable = prodRows.filter((r) => Number(r.available) !== 1);
+    if (unavailable.length) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Layanan tidak tersedia di outlet ini: ${unavailable.map((r) => r.name).join(', ')}. Muat ulang halaman lalu pilih ulang layanan.`
+      });
     }
     const productionOf = new Map(prodRows.map((r) => [r.id, Number(r.is_production)]));
     const dcRequiredOf = new Map(prodRows.map((r) => [r.id, Number(r.is_dc_required) === 1]));
@@ -428,8 +422,11 @@ export const createTransaction = async (req, res) => {
       let maxDays = 0;
       if (prodIds.length) {
         const [durRows] = await connection.query(
-          'SELECT MAX(regular_duration_days) AS d FROM mst_service WHERE id IN (?)',
-          [prodIds]
+          `SELECT MAX(COALESCE(so.regular_duration_days, s.regular_duration_days)) AS d
+           FROM mst_service s
+           LEFT JOIN mst_service_outlet so ON so.service_id = s.id AND so.outlet_id = ?
+           WHERE s.id IN (?)`,
+          [resolvedOutletId, prodIds]
         );
         maxDays = Number(durRows[0]?.d) || 0;
       }
@@ -455,7 +452,7 @@ export const createTransaction = async (req, res) => {
     const inventoryUsages = [];
     let cleanoxOutletName;
     for (const item of items) {
-      const serviceId = item.serviceId || item.serviceDbId || item.id || 1;
+      const serviceId = parseInt(item.serviceId || item.serviceDbId || item.id, 10);
       const mustDc = dcRequiredOf.get(parseInt(serviceId, 10)) === true;
       const isDryClean = mustDc || (item.isDryClean || item.is_dry_clean || item.laundryMethodId === 2 || item.laundry_method_id === 2) ? true : false;
       const laundryMethodId = isDryClean ? 2 : (parseInt(item.laundryMethodId || item.laundry_method_id, 10) || 1);
@@ -510,20 +507,17 @@ export const createTransaction = async (req, res) => {
           receivedAt: new Date()
         });
       }
-      if (isEvent) {
-        await connection.query('UPDATE tr_transaction_detail SET is_event = 1 WHERE id = ?', [detailResult.insertId]);
-        // Stok (BOM) dipotong saat item dibagi ke cabang, memakai production_outlet_id.
-        continue;
-      }
-
+      // Pemakaian BOM dicatat di outlet nota (termasuk Drop Point). Bila item Drop Point nanti
+      // didistribusikan, log dipindah ke outlet produksi (dropPointDistribution.controller.js).
       try {
         const used = await consumeServiceBom(connection, {
-          outletId: outletId || 2,
+          outletId: resolvedOutletId,
           serviceId,
           lineQty,
           employeeId: resolvedCashierId,
           transactionId,
-          orderNo
+          orderNo,
+          detailId: detailResult.insertId
         });
         if (used.length) inventoryUsages.push(...used);
       } catch (invErr) {
@@ -1311,11 +1305,13 @@ export const markTransactionAsPaid = async (req, res) => {
     }
 
     const order = orderRows[0];
+    // Shift dicek di outlet nota; outlet tanpa shift (requires_shift = 0) boleh melunasi tanpa shift.
+    const orderOutletFlags = await getOutletFlags(order.outlet_id, connection);
     const [openShiftRows] = await connection.query(
       `SELECT id FROM tr_cashier_shift WHERE outlet_id = ? AND status = 'Open' ORDER BY id DESC LIMIT 1`,
       [order.outlet_id]
     );
-    if (!openShiftRows.length && !Number(order.is_event)) {
+    if (!openShiftRows.length && orderOutletFlags.requires_shift === 1) {
       await connection.rollback();
       return res.status(409).json({
         success: false,

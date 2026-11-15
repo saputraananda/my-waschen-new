@@ -9,12 +9,10 @@ import {
 } from '../middleware/upload.js';
 import { getEmployeeNames, formatEmployeeLabel } from '../utils/employeeNames.js';
 import { todayWibISO, toWibDateKey } from '../utils/wib.js';
-import { isEventOutlet, listEventOutlets } from '../utils/eventOutlet.js';
 
 /**
- * Setoran tunai = bukti setor uang hasil closing Final (tr_cashier_shift.deposit_*).
+ * Setoran tunai = bukti setor uang hasil closing Final (tr_cashier_shift.deposit_*), semua outlet.
  * Tidak memblokir open/close shift — hanya dilaporkan di menu Setoran Tunai.
- * Outlet Event tanpa shift: setoran per hari per event (tr_event_deposit), nominal + bukti.
  *
  * Batas wajar: bukti diunggah paling lambat H+1 dari tanggal closing (kalender WIB).
  * Lewat dari itu ditandai terlambat.
@@ -98,77 +96,6 @@ const loadShiftRows = async ({ outletId, start, end, todayKey }) => {
 };
 
 /**
- * Baris setoran Event: satu per (outlet event, tanggal) yang punya tunai masuk atau sudah ada setoran.
- * Tunai sistem = pembayaran metode Tunai di tr_payment_log untuk nota outlet event.
- */
-const loadEventRows = async ({ outletId, start, end, todayKey }) => {
-  const events = (await listEventOutlets()).filter((o) => !outletId || Number(o.id) === Number(outletId));
-  if (!events.length) return [];
-  const ids = events.map((o) => o.id);
-  const nameOf = Object.fromEntries(events.map((o) => [Number(o.id), o.full_name || o.name]));
-  const marks = ids.map(() => '?').join(',');
-
-  const cashParams = [...ids];
-  let cashSql = `SELECT t.outlet_id, DATE_FORMAT(l.created_at, '%Y-%m-%d') AS d, COALESCE(SUM(l.amount), 0) AS cash
-     FROM tr_payment_log l
-     JOIN tr_transaction t ON t.id = l.transaction_id
-     WHERE t.outlet_id IN (${marks}) AND t.is_delete_requested = 0
-       AND l.log_type IN ('DP', 'Lunas', 'Pelunasan') AND l.payment_method LIKE 'Tunai%'`;
-  const depParams = [...ids];
-  let depSql = `SELECT outlet_id, DATE_FORMAT(deposit_date, '%Y-%m-%d') AS d, deposit_amount, proof_url, notes, uploaded_by, uploaded_at
-     FROM tr_event_deposit WHERE outlet_id IN (${marks})`;
-  if (start) {
-    cashSql += ' AND DATE(l.created_at) >= ?';
-    cashParams.push(start);
-    depSql += ' AND deposit_date >= ?';
-    depParams.push(start);
-  }
-  cashSql += ' AND DATE(l.created_at) <= ? GROUP BY t.outlet_id, d';
-  cashParams.push(end);
-  depSql += ' AND deposit_date <= ?';
-  depParams.push(end);
-
-  const [cashRows] = await myWaschenPool.query(cashSql, cashParams);
-  const [depRows] = await myWaschenPool.query(depSql, depParams);
-  const nameMap = await getEmployeeNames(depRows.map((r) => r.uploaded_by));
-
-  const byKey = new Map();
-  for (const r of cashRows) {
-    if (Number(r.cash) > 0) byKey.set(`${r.outlet_id}|${r.d}`, { outlet_id: r.outlet_id, d: r.d, cash: Number(r.cash) });
-  }
-  const depByKey = new Map(depRows.map((r) => [`${r.outlet_id}|${r.d}`, r]));
-  for (const [k, r] of depByKey) {
-    if (!byKey.has(k)) byKey.set(k, { outlet_id: r.outlet_id, d: r.d, cash: 0 });
-  }
-
-  return [...byKey.entries()].map(([k, day]) => {
-    const dep = depByKey.get(k);
-    const uploaded = Boolean(dep);
-    const refKey = uploaded ? toWibDateKey(dep.uploaded_at) || todayKey : todayKey;
-    const lateDays = Math.max(0, dayDiff(refKey, day.d) - DEPOSIT_DUE_DAYS);
-    return {
-      kind: 'event',
-      key: `event-${day.outlet_id}-${day.d}`,
-      sort_at: new Date(`${day.d}T23:59:59+07:00`).toISOString(),
-      id: null,
-      outlet_id: day.outlet_id,
-      outlet_name: nameOf[Number(day.outlet_id)] || `Event #${day.outlet_id}`,
-      event_date: day.d,
-      cash_amount: day.cash,
-      deposit_amount: uploaded ? Number(dep.deposit_amount) : null,
-      status: uploaded ? 'uploaded' : 'pending',
-      is_late: lateDays > 0,
-      late_days: lateDays,
-      deposit_proof_url: uploaded ? dep.proof_url : null,
-      deposit_notes: uploaded ? dep.notes : null,
-      deposit_uploaded_at: uploaded ? dep.uploaded_at : null,
-      deposit_uploaded_by: uploaded ? dep.uploaded_by : null,
-      deposit_uploaded_by_name: uploaded ? formatEmployeeLabel(dep.uploaded_by, nameMap) : null
-    };
-  });
-};
-
-/**
  * GET /api/deposit-report?outlet_id=&start=&end=&status=
  * outlet_id kosong = semua outlet (dipakai manajemen). end dipotong sampai hari ini.
  * status: all | pending | uploaded | late
@@ -182,12 +109,8 @@ export const listDepositReport = async (req, res) => {
     if (end > todayKey) end = todayKey;
     const status = ['pending', 'uploaded', 'late'].includes(req.query.status) ? req.query.status : 'all';
 
-    // Outlet event tanpa shift → baris per hari; outlet biasa → baris per closing Final.
-    const eventOnly = outletId ? await isEventOutlet(outletId) : false;
-    const shiftRows = eventOnly ? [] : await loadShiftRows({ outletId, start, end, todayKey });
-    const eventRows = outletId && !eventOnly ? [] : await loadEventRows({ outletId, start, end, todayKey });
-
-    const all = [...shiftRows, ...eventRows].sort((x, y) => (x.sort_at < y.sort_at ? 1 : -1));
+    // Satu baris per closing Final shift, untuk semua outlet.
+    const all = await loadShiftRows({ outletId, start, end, todayKey });
     const summary = {
       total: all.length,
       uploaded: all.filter((r) => r.status === 'uploaded').length,
@@ -313,77 +236,6 @@ export const uploadDepositProof = async (req, res) => {
   } catch (error) {
     console.error('uploadDepositProof:', error);
     if (req.file?.path) await safeUnlinkAbsPath(req.file.path);
-    return res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-/**
- * POST /api/deposit-report/event/:outletId/:date/proof
- * multipart: proof (file), body: { amount, notes }
- * Setoran tunai satu hari untuk outlet Event. Upload ulang pada hari yang sama menimpa.
- */
-export const uploadEventDepositProof = async (req, res) => {
-  const discard = async () => {
-    if (req.file?.path) await safeUnlinkAbsPath(req.file.path);
-  };
-  try {
-    const outletId = parseInt(req.params.outletId);
-    const date = String(req.params.date || '');
-    const amount = Number(String(req.body?.amount ?? '').replace(/[^\d.]/g, ''));
-    const notes = String(req.body?.notes || '').trim();
-    const uploaderId = parseInt(req.auth?.employeeId) || null;
-
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: 'Bukti setoran wajib diupload' });
-    }
-    if (!isDateKey(date) || date > todayWibISO()) {
-      await discard();
-      return res.status(400).json({ success: false, message: 'Tanggal setoran tidak valid' });
-    }
-    if (!Number.isFinite(amount) || amount <= 0) {
-      await discard();
-      return res.status(400).json({ success: false, message: 'Nominal setoran wajib diisi' });
-    }
-    if (!uploaderId) {
-      await discard();
-      return res.status(400).json({ success: false, message: 'Identitas pengunggah tidak ditemukan. Silakan login ulang.' });
-    }
-    if (!(await isEventOutlet(outletId))) {
-      await discard();
-      return res.status(400).json({ success: false, message: 'Outlet ini bukan outlet Event' });
-    }
-
-    const proofUrl = buildUploadPublicUrl(path.posix.join(DEPOSIT_REPORT_FRONTLINER_SUBDIR, req.file.filename));
-    const [oldRows] = await myWaschenPool.query(
-      'SELECT proof_url FROM tr_event_deposit WHERE outlet_id = ? AND deposit_date = ?',
-      [outletId, date]
-    );
-
-    await myWaschenPool.query(
-      `INSERT INTO tr_event_deposit (outlet_id, deposit_date, deposit_amount, proof_url, notes, uploaded_by, uploaded_at)
-       VALUES (?, ?, ?, ?, ?, ?, NOW())
-       ON DUPLICATE KEY UPDATE
-         deposit_amount = VALUES(deposit_amount),
-         proof_url = VALUES(proof_url),
-         notes = VALUES(notes),
-         uploaded_by = VALUES(uploaded_by),
-         uploaded_at = NOW()`,
-      [outletId, date, amount, proofUrl, notes || null, uploaderId]
-    );
-
-    if (oldRows[0]?.proof_url) await replaceUploadUrl(oldRows[0].proof_url, proofUrl);
-
-    emitDashboardRefresh('shift:updated', { outletId, action: 'event-deposit-proof' });
-
-    const rows = await loadEventRows({ outletId, start: date, end: date, todayKey: todayWibISO() });
-    return res.status(200).json({
-      success: true,
-      message: 'Bukti setoran Event berhasil diupload',
-      data: rows.find((r) => r.event_date === date) || null
-    });
-  } catch (error) {
-    console.error('uploadEventDepositProof:', error);
-    await discard();
     return res.status(500).json({ success: false, message: error.message });
   }
 };

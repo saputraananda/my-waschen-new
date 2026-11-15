@@ -93,7 +93,7 @@ export default function Customer() {
   };
 
   // Dari modal nomor ganda: edit pelanggan yang sudah terdaftar
-  const handleEditExisting = async (existing, { continueToTransaction = false } = {}) => {
+  const handleEditExisting = async (existing) => {
     scrollToTop();
     let cust = { dbId: existing.id, id: existing.customer_code || existing.id, ...existing };
     try {
@@ -102,7 +102,7 @@ export default function Customer() {
     } catch (err) {
       console.error('Gagal memuat pelanggan:', err);
     }
-    setEditingCustomer({ ...cust, _continueToTransaction: continueToTransaction });
+    setEditingCustomer(cust);
     setActiveTab('add');
   };
 

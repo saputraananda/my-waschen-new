@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { isEventOutletActive } from '../../utils/authSession.js';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useNetworkRestored } from '../../hooks/useNetworkRestored.js';
@@ -142,8 +141,6 @@ export default function TransactionPage() {
     setCustomersLoading(true);
     setCustomersError('');
     try {
-      // Outlet Event: hanya pelanggan event tersebut, bukan seluruh pelanggan cabang
-      const isEvent = isEventOutletActive();
       const params = {
         lite: 1,
         page: custCurrentPage,
@@ -152,11 +149,8 @@ export default function TransactionPage() {
         search: debouncedCustSearch || undefined,
         tier: selectedTierFilter !== 'Semua' ? selectedTierFilter : undefined
       };
-      if (isEvent) params.outlet_id = activeOutletId;
-      // Event: pelanggannya bisa dari cabang mana pun, jadi filter = outlet event tidak menyaring cabang asal
       const branch = String(selectedBranchFilter || '').trim();
-      const isEventBranch = isEvent && branch === activeOutletName;
-      if (branch && branch.toLowerCase() !== 'semua' && !isEventBranch) params.home_branch = branch;
+      if (branch && branch.toLowerCase() !== 'semua') params.home_branch = branch;
       const res = await axios.get('/api/customers', { params, signal: ctrl.signal });
       // Abaikan response lama jika ada request lebih baru (hindari race double-fetch)
       if (reqId !== customersReqRef.current) return;
@@ -177,7 +171,7 @@ export default function TransactionPage() {
         setCustomersLoading(false);
       }
     }
-  }, [activeOutletId, activeOutletName, selectedBranchFilter, selectedTierFilter, debouncedCustSearch, custCurrentPage]);
+  }, [selectedBranchFilter, selectedTierFilter, debouncedCustSearch, custCurrentPage]);
 
   useNetworkRestored(() => {
     if (currentStep === 1) loadCustomers();
@@ -236,10 +230,11 @@ export default function TransactionPage() {
   const [isSavingOrder, setIsSavingOrder] = useState(false);
 
   const loadServices = useCallback(() => {
-    // Katalog layanan mengikuti outlet aktif (outlet Event hanya layanan khusus event)
+    // Katalog layanan mengikuti outlet aktif (layanan per outlet dari mst_service_outlet, termasuk Drop Point)
     axios.get('/api/services', { params: { outlet_id: activeOutletId } })
       .then(res => {
-        if (res.data && res.data.success && (res.data.data.length > 0 || isEventOutletActive())) {
+        // Daftar kosong tetap dipakai (ganti outlet tidak boleh menyisakan layanan outlet sebelumnya)
+        if (res.data && res.data.success && Array.isArray(res.data.data)) {
           const mapped = res.data.data.map(s => ({
             id: s.code || `s-${s.id}`,
             dbId: s.id,
@@ -268,7 +263,7 @@ export default function TransactionPage() {
     loadServices();
   }, [loadServices]);
 
-  // Ganti outlet (mis. ke Event): keranjang lama berisi layanan outlet sebelumnya, kosongkan
+  // Ganti outlet (mis. ke Drop Point): keranjang lama berisi layanan outlet sebelumnya, kosongkan
   const prevOutletRef = useRef(activeOutletId);
   useEffect(() => {
     if (prevOutletRef.current !== activeOutletId) {
@@ -982,6 +977,13 @@ export default function TransactionPage() {
         setActiveOutletId={setActiveOutletId}
         outlets={outlets}
         userProfile={userProfile}
+        onBack={() => {
+          if (currentStep > 1) {
+            setCurrentStep(currentStep - 1);
+            return true;
+          }
+          return false;
+        }}
       />
 
       {/* Main Workspace Layout */}

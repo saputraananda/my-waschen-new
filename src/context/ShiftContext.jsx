@@ -17,7 +17,7 @@ import {
 const ShiftContext = createContext(null);
 
 /** Path yang boleh diakses tanpa shift terbuka. Daily report tetap dibuka setelah close shift. */
-const SHIFT_FREE_PATHS = ['/login', '/', '/dashboard', '/daily-report', '/deposit-report', '/event-distribusi'];
+const SHIFT_FREE_PATHS = ['/login', '/', '/dashboard', '/daily-report', '/deposit-report', '/drop-point-distribusi'];
 
 function isShiftFreePath(pathname) {
   if (!pathname) return false;
@@ -128,7 +128,7 @@ export function ShiftProvider({ children }) {
     }
 
     if (!gated) {
-      // Outlet Event / non-gated: tidak ada shift; jangan tampilkan shift outlet sebelumnya
+      // Non-gated (outlet requires_shift = 0, HQ, Delivery): tidak ada shift; jangan tampilkan shift outlet sebelumnya
       setActiveShift(null);
       setShiftChecked(true);
       setSessionReady(true);

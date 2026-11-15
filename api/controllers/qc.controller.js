@@ -2,7 +2,7 @@ import multer from 'multer';
 import jwt from 'jsonwebtoken';
 import { getSessionSecret } from '../utils/sessionSecret.js';
 import { mainPool, myWaschenPool } from '../db/pool.js';
-import { isEventOutlet } from '../utils/eventOutlet.js';
+import { isDropPointOutlet } from '../utils/dropPointOutlet.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -42,6 +42,43 @@ function mobileSecret() {
     throw err;
   }
   return secret;
+}
+
+/** Outlet yang sedang dipilih di POS (query / body / header X-Active-Outlet-Id). */
+function requestedOutlet(req) {
+  return (
+    Number(req.query?.outlet_id) ||
+    Number(req.body?.outlet_id) ||
+    Number(req.body?.outletId) ||
+    Number(req.headers?.['x-active-outlet-id']) ||
+    null
+  );
+}
+
+function hasValidToken(req) {
+  const raw = String(req.headers.authorization || '');
+  const token = raw.startsWith('Bearer ') ? raw.slice(7).trim() : null;
+  if (!token) return false;
+  try {
+    jwt.verify(token, getSessionSecret());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 401 hanya bila token memang tidak valid (POS akan logout otomatis).
+ * Token valid tapi akun tidak punya role/outlet staf (mis. Manajemen) -> 403, sesi tetap jalan.
+ */
+function rejectActor(req, res) {
+  if (!hasValidToken(req)) {
+    return res.status(401).json({ success: false, message: 'Sesi tidak valid, silakan login ulang' });
+  }
+  return res.status(403).json({
+    success: false,
+    message: 'QC hanya bisa dilakukan akun staf outlet (punya role & outlet di mst_role). Akun Manajemen hanya bisa melihat.'
+  });
 }
 
 /**
@@ -97,16 +134,12 @@ async function resolveActor(req) {
 
   let outletId = Number(roleRows[0]?.outlet_id) || null;
   // Fallback: outlet aktif di POS (kalau mst_role.outlet_id belum diisi)
-  const requestedOutletId =
-    Number(req.query?.outlet_id) ||
-    Number(req.body?.outlet_id) ||
-    Number(req.body?.outletId) ||
-    null;
+  const requestedOutletId = requestedOutlet(req);
   if (!outletId) {
     outletId = requestedOutletId;
   }
-  // Staf boleh bekerja di outlet Event (pilihan outlet di POS); outlet lain tetap terkunci ke mst_role.
-  if (requestedOutletId && requestedOutletId !== outletId && (await isEventOutlet(requestedOutletId))) {
+  // Staf boleh bekerja di outlet Drop Point (pilihan outlet di POS); outlet lain tetap terkunci ke mst_role.
+  if (requestedOutletId && requestedOutletId !== outletId && (await isDropPointOutlet(requestedOutletId))) {
     outletId = requestedOutletId;
   }
   if (!outletId) return null;
@@ -149,7 +182,7 @@ async function resolveListActor(req) {
   const row = userRows[0];
   if (Number(row?.company_id) !== 1) return null;
 
-  const outletId = Number(req.query.outlet_id);
+  const outletId = requestedOutlet(req);
   if (!outletId) return null;
 
   const [outlets] = await myWaschenPool.query(
@@ -184,7 +217,7 @@ const ITEM_SQL = `
   SELECT d.id, d.transaction_id, d.service_name, d.qty, d.unit, d.item_work_status,
          d.has_finding, d.finding_note, d.is_on_hold, d.hold_stage, d.requires_ironing,
          d.fulfillment_type, d.brand, d.color, d.condition_notes,
-         d.is_event, d.production_outlet_id, po.name AS production_outlet_name,
+         d.production_outlet_id, po.name AS production_outlet_name,
          t.outlet_id AS txn_outlet_id,
          cat.code AS category_code
   FROM tr_transaction_detail d
@@ -199,10 +232,12 @@ export const getQcList = async (req, res) => {
   try {
     const actor = await resolveListActor(req);
     if (!actor) {
-      return res.status(401).json({
+      if (!hasValidToken(req)) {
+        return res.status(401).json({ success: false, message: 'Sesi tidak valid, silakan login ulang' });
+      }
+      return res.status(403).json({
         success: false,
-        message:
-          'Sesi tidak valid atau outlet belum ditetapkan. Silakan logout lalu login ulang. Pastikan akun punya role & outlet di mst_role.'
+        message: 'Outlet belum ditetapkan. Pastikan akun punya role & outlet di mst_role, atau pilih outlet di header.'
       });
     }
     const { outletId, role } = actor;
@@ -216,13 +251,14 @@ export const getQcList = async (req, res) => {
       : (isDeliveryStaff ? 'delivery' : 'all');
 
     const statuses = tab === 'delivery' ? ['Siap Diantar', 'Sedang Diantar'] : ['Antrean'];
-    // Item event yang sudah dibagi ke outlet ini tapi belum QC awal juga muncul di tab Frontliner
-    // (barang bisa tiba di cabang lebih dulu). Stand Event tetap melihatnya lewat t.outlet_id.
-    const includeAssignedEvent = tab === 'frontliner';
-    const outletScopeSql = includeAssignedEvent
-      ? `(t.outlet_id = ? OR (d.is_event = 1 AND d.production_outlet_id = ?))`
+    // Item yang didistribusikan (production_outlet_id terisi) ke outlet ini tapi belum QC awal juga
+    // muncul di tab Frontliner (barang bisa tiba di cabang lebih dulu). Outlet nota (drop point)
+    // tetap melihatnya lewat t.outlet_id; item tidak didistribusikan dikerjakan di outlet nota.
+    const includeAssignedDropPoint = tab === 'frontliner';
+    const outletScopeSql = includeAssignedDropPoint
+      ? `(t.outlet_id = ? OR d.production_outlet_id = ?)`
       : `t.outlet_id = ?`;
-    const params = includeAssignedEvent ? [outletId, outletId, ...statuses] : [outletId, ...statuses];
+    const params = includeAssignedDropPoint ? [outletId, outletId, ...statuses] : [outletId, ...statuses];
     let extra = '';
     if (tab === 'delivery' || pickup === 'delivery') {
       extra += ` AND d.fulfillment_type = 'Delivery_Kurir'`;
@@ -256,6 +292,7 @@ export const getQcList = async (req, res) => {
     // Terbaru dulu; t.id sebagai tie-breaker supaya urutan antar halaman stabil
     const [txns] = await myWaschenPool.query(
       `SELECT DISTINCT t.id, t.order_no, t.order_date, t.payment_status, t.outlet_id, t.source,
+              (SELECT o.name FROM mst_outlet o WHERE o.id = t.outlet_id AND o.is_drop_point = 1) AS drop_point_name,
               c.name AS customer_name, c.phone AS customer_phone,
               c.address AS customer_street, c.block AS customer_block, c.house_number AS customer_house_number
        ${fromWhere}
@@ -267,10 +304,10 @@ export const getQcList = async (req, res) => {
     let items = [];
     if (txns.length) {
       const [detailRows] = await myWaschenPool.query(ITEM_SQL, [txns.map((t) => t.id)]);
-      // Nota event: stand Event melihat semua item notanya; cabang hanya item yang dibagi ke cabangnya
+      // Outlet nota melihat semua item notanya; cabang produksi hanya item yang didistribusikan ke cabangnya
       items = detailRows.filter(
         (d) =>
-          Number(d.is_event) !== 1 ||
+          d.production_outlet_id == null ||
           Number(d.txn_outlet_id) === outletId ||
           Number(d.production_outlet_id) === outletId
       );
@@ -281,6 +318,7 @@ export const getQcList = async (req, res) => {
       const [holdRows] = await myWaschenPool.query(
         `SELECT d.id AS detail_id, d.service_name, d.qty, d.unit, d.finding_note, d.item_work_status,
                 t.order_no, t.source, c.name AS customer_name, c.phone AS customer_phone,
+                (SELECT o.name FROM mst_outlet o WHERE o.id = t.outlet_id AND o.is_drop_point = 1) AS drop_point_name,
                 cat.code AS category_code,
                 p.id AS hold_id, p.notes AS report_notes, p.stage AS reported_stage,
                 p.employee_name AS reported_by, p.created_at AS reported_at
@@ -292,7 +330,7 @@ export const getQcList = async (req, res) => {
          JOIN tr_item_progress p ON p.transaction_detail_id = d.id
            AND p.status IN ('hold','returned') AND p.hold_resolved_at IS NULL
          WHERE d.is_on_hold = 1
-           AND (t.outlet_id = ? OR (d.is_event = 1 AND d.production_outlet_id = ?))
+           AND (t.outlet_id = ? OR d.production_outlet_id = ?)
            AND COALESCE(p.returned_to_stage, p.stage) = 'frontliner'
          ORDER BY p.created_at ASC`,
         [outletId, outletId]
@@ -341,8 +379,8 @@ export const getQcList = async (req, res) => {
 /** GET /api/qc/item-kg — master jenis pakaian kiloan (aktif) untuk rinci opsional Frontliner/Delivery */
 export const getItemKgMaster = async (req, res) => {
   try {
-    const actor = await resolveActor(req);
-    if (!actor) {
+    // Master referensi saja: cukup sesi valid (Manajemen juga boleh membuka form QC)
+    if (!hasValidToken(req)) {
       return res.status(401).json({ success: false, message: 'Sesi tidak valid, silakan login ulang' });
     }
     const [rows] = await myWaschenPool.query(
@@ -358,12 +396,12 @@ export const getItemKgMaster = async (req, res) => {
 export const submitPosQc = async (req, res) => {
   try {
     const actor = await resolveActor(req);
-    if (!actor) {
-      return res.status(401).json({ success: false, message: 'Sesi tidak valid, silakan login ulang' });
-    }
+    if (!actor) return rejectActor(req, res);
 
     const fd = new FormData();
     fd.append('employee_id', String(actor.employeeId));
+    // Outlet kerja staf (bisa drop point yang dipilih di header); Waschen Mobile memvalidasi ulang
+    fd.append('outlet_id', String(actor.outletId));
     for (const key of [
       'transaction_detail_id', 'stage', 'qc_status', 'qc_decision', 'returned_to_stage',
       'notes', 'wa_contacted', 'requires_ironing', 'bags', 'packings', 'kg_items'
@@ -394,9 +432,7 @@ export const submitPosQc = async (req, res) => {
 export const resolvePosHold = async (req, res) => {
   try {
     const actor = await resolveActor(req);
-    if (!actor) {
-      return res.status(401).json({ success: false, message: 'Sesi tidak valid, silakan login ulang' });
-    }
+    if (!actor) return rejectActor(req, res);
     const detailId = Number(req.body?.detailId);
     const decision = req.body?.decision;
     if (!detailId) return res.status(422).json({ success: false, message: 'Item tidak valid' });
@@ -406,6 +442,7 @@ export const resolvePosHold = async (req, res) => {
     const result = await forwardMobile('/api/realtime/progress-hold-resolve', {
       json: {
         employee_id: actor.employeeId,
+        outlet_id: actor.outletId,
         detailId,
         decision,
         note: req.body?.note || ''

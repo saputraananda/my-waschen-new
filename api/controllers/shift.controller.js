@@ -1,5 +1,6 @@
 import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
+import { getOutletFlags } from '../utils/dropPointOutlet.js';
 import { getEmployeeNames, formatEmployeeLabel } from '../utils/employeeNames.js';
 import { todayWibISO, formatWibWeekdayUpper, formatWibDateLong } from '../utils/wib.js';
 
@@ -240,6 +241,21 @@ export const openShift = async (req, res) => {
     const eid = parseInt(cashierEmployeeId);
     if (!eid) {
       return res.status(400).json({ success: false, message: 'cashierEmployeeId wajib diisi' });
+    }
+
+    // Outlet nonaktif / outlet tanpa shift (requires_shift = 0, diatur admin di SuperApp) tidak bisa buka shift.
+    const outletFlags = await getOutletFlags(oid);
+    if (!outletFlags.exists) {
+      return res.status(404).json({ success: false, message: 'Outlet tidak ditemukan.' });
+    }
+    if (outletFlags.is_active !== 1) {
+      return res.status(409).json({ success: false, message: 'Outlet ini sedang tidak aktif, tidak bisa membuka shift.' });
+    }
+    if (outletFlags.requires_shift !== 1) {
+      return res.status(409).json({
+        success: false,
+        message: 'Outlet ini tidak memakai shift. Transaksi bisa langsung dibuat tanpa membuka shift.'
+      });
     }
 
     const [openRows] = await myWaschenPool.query(

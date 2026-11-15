@@ -255,7 +255,7 @@ export default function Dashboard() {
     joinOutletRoom(activeOutletId);
 
     const scheduleRefresh = (payload = {}) => {
-      // Dashboard hanya memuat outlet aktif: event outlet lain tidak perlu menarik ulang data
+      // Dashboard hanya memuat outlet aktif: outlet drop point lain tidak perlu menarik ulang data
       if (
         payload.outletId != null &&
         activeOutletId &&

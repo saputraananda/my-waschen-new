@@ -222,7 +222,7 @@ export const addPettyCashEntry = async (req, res) => {
     const resolvedOutletId = outletId || 2;
     const { shiftId: openShiftId, initialPettyCash } = await getOpenShiftPettyFloat(resolvedOutletId);
     // shiftId dari client tidak dipercaya (bisa basi setelah ganti outlet); pakai shift terbuka outlet ini.
-    // Outlet Event tidak punya shift, jadi null.
+    // Outlet tanpa shift (requires_shift = 0) / belum ada shift terbuka: null.
     const resolvedShiftId = openShiftId || null;
 
     const balanceSnapshot = await getApprovedBalance(resolvedOutletId);

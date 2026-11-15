@@ -22,7 +22,7 @@ const DepositReport = lazy(() => import('./pages/Deposit-Report/index.jsx'));
 const PrinterSettings = lazy(() => import('./pages/Settings/PrinterSettings.jsx'));
 const InventoryPage = lazy(() => import('./pages/Inventory/index.jsx'));
 const QCFrontDeliv = lazy(() => import('./pages/Dashboard/components/QCFrontDeliv.jsx'));
-const EventDistribution = lazy(() => import('./pages/EventDistribution/index.jsx'));
+const DropPointDistribution = lazy(() => import('./pages/DropPointDistribution/index.jsx'));
 const ComplaintRequest = lazy(() => import('./pages/Complaint/index.jsx'));
 
 function App() {
@@ -110,7 +110,7 @@ function App() {
                 <Route path="/settings/printer" element={<PrinterSettings />} />
                 <Route path="/inventory" element={<InventoryPage />} />
                 <Route path="/qc" element={<QCFrontDeliv />} />
-                <Route path="/event-distribusi" element={<EventDistribution />} />
+                <Route path="/drop-point-distribusi" element={<DropPointDistribution />} />
                 <Route path="/complaint" element={<ComplaintRequest />} />
                 <Route path="/login" element={<LoginPage />} />
               </Routes>

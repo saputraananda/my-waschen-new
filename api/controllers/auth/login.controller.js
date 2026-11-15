@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getSessionSecret } from '../../utils/sessionSecret.js';
 import { mainPool, myWaschenPool } from '../../db/pool.js';
-import { listEventOutlets } from '../../utils/eventOutlet.js';
+import { listDropPointOutlets } from '../../utils/dropPointOutlet.js';
 
 export const loginUser = async (req, res) => {
   const { username, password } = req.body;
@@ -77,6 +77,7 @@ export const loginUser = async (req, res) => {
     let assignedRole = null;
     let assignedOutletId = null;
     let assignedOutletName = null;
+    let assignedOutletFlags = null;
 
     if (user.employee_id) {
       const [roleRows] = await myWaschenPool.query(
@@ -92,11 +93,20 @@ export const loginUser = async (req, res) => {
 
         if (assignedOutletId) {
           const [outletRows] = await myWaschenPool.query(
-            'SELECT name, full_name FROM mst_outlet WHERE id = ? LIMIT 1',
+            `SELECT name, full_name,
+                    COALESCE(is_drop_point, 0) AS is_drop_point,
+                    COALESCE(is_active, 0) AS is_active,
+                    COALESCE(requires_shift, 1) AS requires_shift
+             FROM mst_outlet WHERE id = ? LIMIT 1`,
             [assignedOutletId]
           );
           if (outletRows.length > 0) {
             assignedOutletName = outletRows[0].full_name || outletRows[0].name;
+            assignedOutletFlags = {
+              is_drop_point: Number(outletRows[0].is_drop_point),
+              is_active: Number(outletRows[0].is_active),
+              requires_shift: Number(outletRows[0].requires_shift)
+            };
           }
         }
       }
@@ -106,14 +116,23 @@ export const loginUser = async (req, res) => {
     let outlets = [];
     if (user.company_id === 1) {
       const [outletRows] = await myWaschenPool.query(
-        'SELECT id, name, full_name FROM mst_outlet ORDER BY name ASC'
+        `SELECT id, name, full_name,
+                COALESCE(is_drop_point, 0) AS is_drop_point,
+                COALESCE(is_active, 0) AS is_active,
+                COALESCE(requires_shift, 1) AS requires_shift
+         FROM mst_outlet ORDER BY name ASC`
       );
-      outlets = outletRows;
+      outlets = outletRows.map((o) => ({
+        ...o,
+        is_drop_point: Number(o.is_drop_point),
+        is_active: Number(o.is_active),
+        requires_shift: Number(o.requires_shift)
+      }));
     }
 
-    // Outlet virtual Event (bisa lebih dari satu). Staf outlet boleh memilih outlet sendiri
-    // atau salah satu event yang sedang berjalan (active); event selesai tetap dikirim untuk audit.
-    const eventOutlets = await listEventOutlets();
+    // Outlet Drop Point (bisa lebih dari satu). Staf outlet boleh memilih outlet sendiri
+    // atau salah satu drop point yang sedang aktif (active); drop point nonaktif tetap dikirim untuk audit.
+    const dropPointOutlets = await listDropPointOutlets();
 
     // Return success response with user and employee info
     return res.status(200).json({
@@ -134,10 +153,12 @@ export const loginUser = async (req, res) => {
         profilePath: user.profile_path || user.avatar,
         assignedRole,
         assignedOutletId,
-        assignedOutletName
+        assignedOutletName,
+        // { is_drop_point, is_active, requires_shift } outlet asal staf (null bila tidak ada)
+        assignedOutletFlags
       },
       outlets,
-      eventOutlets
+      dropPointOutlets
     });
 
   } catch (error) {

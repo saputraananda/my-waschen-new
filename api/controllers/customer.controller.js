@@ -2,12 +2,7 @@ import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 import { normalizePhone, composeFullAddress } from '../utils/phone.js';
 import { getWibYearMonth, formatWibDateLong } from '../utils/wib.js';
-import { isEventOutlet } from '../utils/eventOutlet.js';
 import { resolveValidCashier } from '../utils/cashierGuard.js';
-
-/** Pelanggan sebuah event: didaftarkan di event itu atau pernah bertransaksi di sana (2 param: outlet id). */
-const EVENT_CUSTOMER_SQL = `(c.preferred_outlet_id = ?
-  OR EXISTS (SELECT 1 FROM tr_transaction t WHERE t.customer_id = c.id AND t.outlet_id = ?))`;
 
 const CUSTOMER_SELECT = `
   SELECT c.*,
@@ -156,8 +151,7 @@ const resolveOutletIdForCustomer = async (preferredOutletId, homeBranch) => {
 };
 
 /**
- * Cari pelanggan lain dengan nomor HP yang sama (satu nomor = satu pelanggan, termasuk di outlet event:
- * pelanggan cabang yang ikut event memakai data yang sudah ada).
+ * Cari pelanggan lain dengan nomor HP yang sama (satu nomor = satu pelanggan, berlaku di semua outlet).
  */
 const findPhoneConflict = async (cleanPhone, excludeId = null) => {
   const params = [cleanPhone];
@@ -272,14 +266,8 @@ export const getCustomers = async (req, res) => {
     }
 
     if (outlet_id) {
-      if (await isEventOutlet(outlet_id)) {
-        // Outlet event: pelanggan yang didaftarkan di event ini atau pernah bertransaksi di event ini
-        sql += ` AND ${EVENT_CUSTOMER_SQL}`;
-        params.push(outlet_id, outlet_id);
-      } else {
-        sql += ' AND c.preferred_outlet_id = ?';
-        params.push(outlet_id);
-      }
+      sql += ' AND c.preferred_outlet_id = ?';
+      params.push(outlet_id);
     }
 
     const pageNum = parseInt(req.query.page, 10);
@@ -375,13 +363,8 @@ export const getCustomerChurn = async (req, res) => {
     const where = ['c.is_active = 1'];
     const params = [];
     if (outletId > 0) {
-      if (await isEventOutlet(outletId)) {
-        where.push(EVENT_CUSTOMER_SQL);
-        params.push(outletId, outletId);
-      } else {
-        where.push('c.preferred_outlet_id = ?');
-        params.push(outletId);
-      }
+      where.push('c.preferred_outlet_id = ?');
+      params.push(outletId);
     }
     if (status) {
       where.push(`${CHURN_STATUS_SQL} = ?`);
@@ -423,13 +406,8 @@ export const getCustomerChurn = async (req, res) => {
     const countWhere = ['c.is_active = 1'];
     const countParams = [];
     if (outletId > 0) {
-      if (await isEventOutlet(outletId)) {
-        countWhere.push(EVENT_CUSTOMER_SQL);
-        countParams.push(outletId, outletId);
-      } else {
-        countWhere.push('c.preferred_outlet_id = ?');
-        countParams.push(outletId);
-      }
+      countWhere.push('c.preferred_outlet_id = ?');
+      countParams.push(outletId);
     }
     const [[counts]] = await myWaschenPool.query(
       `SELECT COUNT(*) AS semua,

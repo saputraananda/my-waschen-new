@@ -2,22 +2,15 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Banknote, Paperclip, X, AlertTriangle } from 'lucide-react';
 import { formatWibDateTime } from '../../../utils/wib.js';
-import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
-import { formatDateKeyId } from '../../../utils/dateCutoffFilter.js';
 
 /**
- * Modal upload bukti setoran tunai untuk satu closing Final, atau satu hari outlet Event
- * (Event wajib isi nominal yang disetor).
+ * Modal upload bukti setoran tunai untuk satu closing Final shift.
  * Dibuka dari halaman Setoran Tunai. Jika sudah ada bukti, upload ini menggantinya.
  */
 export default function UploadDepositModal({ row, onUploaded, onCancel }) {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [notes, setNotes] = useState('');
-  const isEvent = row.kind === 'event';
-  const [amountInput, setAmountInput] = useState(
-    isEvent ? formatRupiah(String(Math.round(row.deposit_amount ?? row.cash_amount ?? 0))) : ''
-  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -48,22 +41,14 @@ export default function UploadDepositModal({ row, onUploaded, onCancel }) {
       setError('Foto/PDF bukti setoran wajib diupload');
       return;
     }
-    if (isEvent && parseRupiah(amountInput) <= 0) {
-      setError('Nominal yang disetor wajib diisi');
-      return;
-    }
     setSubmitting(true);
     setError('');
     try {
       const fd = new FormData();
       fd.append('proof', file);
       fd.append('notes', notes || '');
-      if (isEvent) fd.append('amount', String(parseRupiah(amountInput)));
 
-      const url = isEvent
-        ? `/api/deposit-report/event/${row.outlet_id}/${row.event_date}/proof`
-        : `/api/deposit-report/${row.id}/proof`;
-      const res = await axios.post(url, fd, {
+      const res = await axios.post(`/api/deposit-report/${row.id}/proof`, fd, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
       });
 
@@ -107,17 +92,11 @@ export default function UploadDepositModal({ row, onUploaded, onCancel }) {
 
           <div className="p-3 bg-slate-50 border border-[#e0e0e0] rounded-xl space-y-1">
             <span className="text-xs font-black text-[#313030] block">
-              {row.outlet_name}{isEvent ? ' · Setoran harian Event' : ` · Shift ${sn === 2 ? 'Siang' : 'Pagi'}`}
+              {row.outlet_name}{` · Shift ${sn === 2 ? 'Siang' : 'Pagi'}`}
             </span>
             <span className="text-[11px] text-slate-500 font-medium block">
-              {isEvent ? (
-                <>Tanggal: {formatDateKeyId(row.event_date)} · Tunai sistem Rp {Number(row.cash_amount || 0).toLocaleString('id-ID')}</>
-              ) : (
-                <>
-                  Closing: {formatWibDateTime(row.closed_at)}
-                  {row.declared_revenue != null && <> · Revenue Rp {Number(row.declared_revenue || 0).toLocaleString('id-ID')}</>}
-                </>
-              )}
+              Closing: {formatWibDateTime(row.closed_at)}
+              {row.declared_revenue != null && <> · Revenue Rp {Number(row.declared_revenue || 0).toLocaleString('id-ID')}</>}
             </span>
             {replacing && (
               <span className="text-[10px] text-amber-700 font-bold block">
@@ -125,19 +104,6 @@ export default function UploadDepositModal({ row, onUploaded, onCancel }) {
               </span>
             )}
           </div>
-
-          {isEvent && (
-            <div className="space-y-2">
-              <span className="text-[10px] font-bold text-slate-500 uppercase block">Nominal Disetor (Rp) *</span>
-              <input
-                inputMode="numeric"
-                value={amountInput}
-                onChange={(e) => setAmountInput(formatRupiah(e.target.value))}
-                placeholder="0"
-                className="w-full px-3 py-2.5 border border-[#e0e0e0] rounded-xl bg-white font-black outline-none focus:border-[#5f1340]"
-              />
-            </div>
-          )}
 
           <div className="space-y-2">
             <span className="text-[10px] font-bold text-slate-500 uppercase block">Bukti Setoran (foto/PDF) *</span>

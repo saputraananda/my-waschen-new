@@ -5,7 +5,6 @@ import { formatName } from '../../../utils/FormatName';
 import { formatWorkPercentage } from '../../../utils/workStatusMeta.js';
 import CombinedReceiptModal from '../../../components/CombinedReceiptModal.jsx';
 import ThermalNotaMerge from '../../../components/ThermalNotaMerge.jsx';
-import { isEventOutletId } from '../../../utils/authSession.js';
 import { customerPickLabel } from '../../../utils/customerPickLabel.js';
 import {
   Users,
@@ -324,8 +323,9 @@ export default function ListCustomer({
                 title="Filter cabang"
               >
                 <option value="Semua">Semua Cabang</option>
-                {isEventOutletId(activeOutletId) && !outlets.some((o) => String(o.id) === String(activeOutletId)) && (
-                  <option value={String(activeOutletId)}>{activeOutletName || 'Event'}</option>
+                {/* Outlet aktif (mis. drop point hasil ganti outlet staf) belum tentu ada di daftar cabang */}
+                {activeOutletId && !outlets.some((o) => String(o.id) === String(activeOutletId)) && (
+                  <option value={String(activeOutletId)}>{activeOutletName || `Outlet #${activeOutletId}`}</option>
                 )}
                 {outlets.map((o) => (
                   <option key={o.id} value={String(o.id)}>

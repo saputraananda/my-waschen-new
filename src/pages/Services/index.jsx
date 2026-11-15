@@ -50,7 +50,7 @@ export default function Services() {
       .catch(err => console.error('Gagal mengambil data outlet:', err));
   }, [navigate]);
 
-  // Katalog mengikuti outlet aktif di header (outlet Event hanya layanan khusus event)
+  // Katalog mengikuti outlet aktif di header (layanan per outlet dari mst_service_outlet, termasuk Drop Point)
   useEffect(() => {
     fetchServices();
   }, [activeOutletId]);

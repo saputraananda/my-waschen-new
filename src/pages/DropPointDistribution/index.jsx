@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Loader2, Search, Share2, Lock, CheckCircle2 } from 'lucide-react';
 import HeaderNav from '../../components/HeaderNav';
-import { isEventOutletId } from '../../utils/authSession.js';
+import { isDropPointOutletId } from '../../utils/authSession.js';
 
 const authCfg = () => ({
   headers: {
@@ -18,8 +18,11 @@ const FILTERS = [
   { key: 'all', label: 'Semua' }
 ];
 
-/** Bagi item nota Event ke cabang produksi. Terkunci setelah pencucian dimulai di cabang. */
-export default function EventDistribution() {
+/**
+ * Bagi item nota Drop Point ke cabang produksi (atau kembalikan ke drop point).
+ * Terkunci setelah item keluar dari status Antrean.
+ */
+export default function DropPointDistribution() {
   const navigate = useNavigate();
   const [filter, setFilter] = useState('unassigned');
   const [search, setSearch] = useState('');
@@ -34,33 +37,33 @@ export default function EventDistribution() {
   const [notice, setNotice] = useState('');
   const [activeOutletName, setActiveOutletName] = useState(localStorage.getItem('activeOutletName') || '');
   const [activeOutletId, setActiveOutletId] = useState(localStorage.getItem('activeOutletId') || '');
-  // Event yang sedang didistribusikan (beberapa event bisa berjalan bersamaan)
-  const [events, setEvents] = useState([]);
-  const [eventId, setEventId] = useState(isEventOutletId(activeOutletId) ? String(activeOutletId) : '');
+  // Drop Point yang sedang didistribusikan (beberapa drop point bisa aktif bersamaan)
+  const [dropPoints, setDropPoints] = useState([]);
+  const [dropPointId, setDropPointId] = useState(isDropPointOutletId(activeOutletId) ? String(activeOutletId) : '');
   const [userProfile] = useState(() => ({
     fullName: localStorage.getItem('fullName') || 'Kasir Waschen',
     role: localStorage.getItem('companyId') === '1' ? 'Management Alora' : (localStorage.getItem('activeRole') || 'Staff Kasir')
   }));
 
   useEffect(() => {
-    document.title = 'Distribusi Event | Waschen Laundry';
+    document.title = 'Distribusi Drop Point | Waschen Laundry';
     if (!localStorage.getItem('token')) navigate('/login', { replace: true });
   }, [navigate]);
 
-  // Ganti outlet di header ke event lain -> halaman ikut pindah event
+  // Ganti outlet di header ke drop point lain -> halaman ikut pindah drop point
   useEffect(() => {
-    if (isEventOutletId(activeOutletId)) setEventId(String(activeOutletId));
-    axios.get('/api/event/list', authCfg())
+    if (isDropPointOutletId(activeOutletId)) setDropPointId(String(activeOutletId));
+    axios.get('/api/drop-point/list', authCfg())
       .then((res) => {
         const list = res.data?.data || [];
-        setEvents(list);
-        setEventId((cur) => (list.some((ev) => String(ev.id) === cur) ? cur : String(list[0]?.id || '')));
+        setDropPoints(list);
+        setDropPointId((cur) => (list.some((dp) => String(dp.id) === cur) ? cur : String(list[0]?.id || '')));
       })
-      .catch(() => setEvents([]));
+      .catch(() => setDropPoints([]));
   }, [activeOutletId]);
 
   const load = useCallback(async () => {
-    if (!eventId) {
+    if (!dropPointId) {
       setItems([]);
       setSummary([]);
       setLoading(false);
@@ -69,16 +72,16 @@ export default function EventDistribution() {
     setLoading(true);
     setError('');
     try {
-      const res = await axios.get('/api/event/items', { params: { eventOutletId: eventId, filter, search }, ...authCfg() });
+      const res = await axios.get('/api/drop-point/items', { params: { dropPointOutletId: dropPointId, filter, search }, ...authCfg() });
       setItems(res.data?.data || []);
       setSummary(res.data?.summary || []);
       setSelected(new Set());
     } catch (err) {
-      setError(err.response?.data?.message || 'Gagal memuat item event');
+      setError(err.response?.data?.message || 'Gagal memuat item Drop Point');
     } finally {
       setLoading(false);
     }
-  }, [eventId, filter, search]);
+  }, [dropPointId, filter, search]);
 
   useEffect(() => {
     const t = setTimeout(load, search ? 300 : 0);
@@ -86,7 +89,7 @@ export default function EventDistribution() {
   }, [load, search]);
 
   useEffect(() => {
-    axios.get('/api/event/outlets', authCfg())
+    axios.get('/api/drop-point/outlets', authCfg())
       .then((res) => setBranches(res.data?.data || []))
       .catch(() => setBranches([]));
   }, []);
@@ -124,7 +127,7 @@ export default function EventDistribution() {
     setError('');
     setNotice('');
     try {
-      const res = await axios.post('/api/event/assign', { eventOutletId: Number(eventId), itemIds: [...selected], outletId: Number(targetOutlet) }, authCfg());
+      const res = await axios.post('/api/drop-point/assign', { dropPointOutletId: Number(dropPointId), itemIds: [...selected], outletId: Number(targetOutlet) }, authCfg());
       await load();
       setNotice(res.data?.message || 'Berhasil dibagi');
     } catch (err) {
@@ -149,30 +152,31 @@ export default function EventDistribution() {
         <div className="bg-white border border-[#e0e0e0] rounded-3xl p-4 sm:p-6">
           <h1 className="text-lg sm:text-2xl font-black flex items-center gap-2">
             <Share2 className="h-5 w-5 sm:h-6 sm:w-6 text-[#5f1340] shrink-0" />
-            Distribusi Event ke Cabang
+            Distribusi Drop Point ke Cabang
           </h1>
-          {events.length > 1 ? (
+          {dropPoints.length > 1 ? (
             <select
-              value={eventId}
-              onChange={(e) => setEventId(e.target.value)}
+              value={dropPointId}
+              onChange={(e) => setDropPointId(e.target.value)}
               className="mt-3 w-full sm:w-auto rounded-xl border border-[#e0e0e0] bg-white px-3 py-2 text-sm font-bold outline-none"
-              aria-label="Pilih event"
+              aria-label="Pilih Drop Point"
             >
-              {events.map((ev) => (
-                <option key={ev.id} value={String(ev.id)}>
-                  {(ev.full_name || ev.name) + (ev.active ? '' : ' (selesai)')}
+              {dropPoints.map((dp) => (
+                <option key={dp.id} value={String(dp.id)}>
+                  {(dp.full_name || dp.name) + (dp.active ? '' : ' (nonaktif)')}
                 </option>
               ))}
             </select>
-          ) : events[0] ? (
-            <p className="mt-1 text-sm font-extrabold text-[#5f1340]">{events[0].full_name || events[0].name}</p>
+          ) : dropPoints[0] ? (
+            <p className="mt-1 text-sm font-extrabold text-[#5f1340]">{dropPoints[0].full_name || dropPoints[0].name}</p>
           ) : null}
           <p className="text-xs text-slate-400 mt-1">
-            Pilih item, lalu tentukan cabang yang mengerjakan. Bisa diubah selama pencucian belum dimulai di cabang.
+            Item yang tidak dibagi dikerjakan di drop point ini sendiri. Pilih item, lalu tentukan cabang yang mengerjakan.
+            Bisa diubah (atau dikembalikan ke drop point) selama item masih berstatus Antrean.
           </p>
           <div className="flex flex-wrap gap-2 mt-4">
             <span className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-extrabold">
-              Belum dibagi: {unassignedCount}
+              Belum dibagi (dikerjakan di drop point): {unassignedCount}
             </span>
             {summary.filter((s) => s.production_outlet_id != null).map((s) => (
               <span key={s.production_outlet_id} className="px-3 py-1.5 rounded-xl bg-[#f8f8f8] border border-[#e0e0e0] text-xs font-bold">
@@ -219,6 +223,9 @@ export default function EventDistribution() {
               aria-label="Cabang tujuan"
             >
               <option value="">Pilih cabang tujuan…</option>
+              {dropPointId && (
+                <option value={dropPointId}>Kerjakan di drop point (tidak dibagi)</option>
+              )}
               {branches.map((b) => (
                 <option key={b.id} value={b.id}>{b.full_name || b.name}</option>
               ))}
@@ -240,7 +247,7 @@ export default function EventDistribution() {
           {loading ? (
             <div className="py-12 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-[#5f1340]" /></div>
           ) : !grouped.length ? (
-            <p className="py-12 text-center text-sm text-slate-400">Tidak ada item event pada filter ini.</p>
+            <p className="py-12 text-center text-sm text-slate-400">Tidak ada item Drop Point pada filter ini.</p>
           ) : (
             <div className="flex flex-col gap-3">
               {grouped.map(({ head, rows }) => {
@@ -292,7 +299,7 @@ export default function EventDistribution() {
                         </div>
                         {it.locked ? (
                           <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-slate-500">
-                            <Lock className="h-3.5 w-3.5" /> {it.production_outlet_name || 'Diproses'}
+                            <Lock className="h-3.5 w-3.5" /> {it.production_outlet_name || 'Diproses di drop point'}
                           </span>
                         ) : it.production_outlet_name ? (
                           <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-emerald-700">

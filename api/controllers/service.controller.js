@@ -1,38 +1,33 @@
 import { myWaschenPool } from '../db/pool.js';
-import { isEventOutlet } from '../utils/eventOutlet.js';
+import { EFFECTIVE_SERVICE_COLUMNS, EFFECTIVE_UNIT_SQL, EFFECTIVE_CATEGORY_ID_SQL } from '../utils/serviceOutlet.js';
 
 /**
- * GET /api/services
- * Mengambil daftar layanan/jasa laundry beserta kategorinya
+ * GET /api/services?outlet_id=
+ * Dengan outlet_id: layanan yang tersedia di outlet itu (mst_service_outlet), nilai efektif
+ * = override outlet atau master. Tanpa outlet_id: master layanan aktif (mis. untuk BOM inventory).
  */
 export const getServices = async (req, res) => {
   try {
     const { category, search } = req.query;
-    // Outlet event: hanya layanan khusus event ini / semua event (+ biaya tambahan non-produksi).
-    // Outlet lain: tanpa layanan event.
-    const eventMode = await isEventOutlet(req.query.outlet_id);
-    const eventOutletId = eventMode ? Number(req.query.outlet_id) : null;
+    const outletId = parseInt(req.query.outlet_id, 10) || null;
 
+    // Tanpa outlet: so = baris kosong, sehingga nilai efektif = master.
     let sql = `
-      SELECT s.*, 
-             c.name as category_name, 
+      SELECT ${EFFECTIVE_SERVICE_COLUMNS},
+             c.name as category_name,
              c.code as category_code,
              COALESCE(c.is_production, 1) as category_is_production,
-             COALESCE(s.unit, u.symbol, u.code, 'Kg') as unit,
+             ${EFFECTIVE_UNIT_SQL} as unit,
              u.name as unit_name
       FROM mst_service s
-      LEFT JOIN mst_service_category c ON s.category_id = c.id
-      LEFT JOIN mst_unit u ON s.unit_id = u.id
+      ${outletId
+        ? 'JOIN mst_service_outlet so ON so.service_id = s.id AND so.outlet_id = ? AND so.is_active = 1'
+        : 'LEFT JOIN mst_service_outlet so ON 1 = 0'}
+      LEFT JOIN mst_service_category c ON c.id = ${EFFECTIVE_CATEGORY_ID_SQL}
+      LEFT JOIN mst_unit u ON u.id = COALESCE(so.unit_id, s.unit_id)
       WHERE s.is_active = 1
     `;
-    const params = [];
-
-    const eventFilter = (alias) => eventMode
-      ? ` AND ((COALESCE(${alias}.is_event_only, 0) = 1
-              AND (${alias}.event_outlet_id IS NULL OR ${alias}.event_outlet_id = ${eventOutletId}))
-            OR COALESCE(${alias}.is_production, 1) = 0)`
-      : ` AND COALESCE(${alias}.is_event_only, 0) = 0`;
-    sql += eventFilter('c');
+    const params = outletId ? [outletId] : [];
 
     if (category && category !== 'Semua') {
       sql += ' AND (c.code = ? OR c.name LIKE ?)';
@@ -40,16 +35,25 @@ export const getServices = async (req, res) => {
     }
 
     if (search && search.trim()) {
-      sql += ' AND (s.name LIKE ? OR s.code LIKE ?)';
+      sql += ' AND (COALESCE(so.name, s.name) LIKE ? OR s.code LIKE ?)';
       params.push(`%${search.trim()}%`, `%${search.trim()}%`);
     }
 
     sql += ' ORDER BY s.is_featured DESC, s.id ASC';
 
     const [rows] = await myWaschenPool.query(sql, params);
-    const [categories] = await myWaschenPool.query(
-      `SELECT * FROM mst_service_category c WHERE is_active = 1 ${eventFilter('c')} ORDER BY id ASC`
-    );
+    // Kategori yang punya layanan di outlet ini (outlet tanpa layanan = tanpa kategori).
+    const [categories] = outletId
+      ? await myWaschenPool.query(
+        `SELECT * FROM mst_service_category
+         WHERE is_active = 1 AND id IN (
+           SELECT DISTINCT ${EFFECTIVE_CATEGORY_ID_SQL}
+           FROM mst_service_outlet so JOIN mst_service s ON s.id = so.service_id
+           WHERE so.outlet_id = ? AND so.is_active = 1 AND s.is_active = 1)
+         ORDER BY id ASC`,
+        [outletId]
+      )
+      : await myWaschenPool.query('SELECT * FROM mst_service_category WHERE is_active = 1 ORDER BY id ASC');
 
     return res.status(200).json({
       success: true,
@@ -159,6 +163,12 @@ export const createService = async (req, res) => {
         description || null,
         isFeatured ? 1 : 0
       ]
+    );
+    // Layanan baru langsung tersedia di semua outlet (termasuk outlet Drop Point).
+    await myWaschenPool.query(
+      `INSERT IGNORE INTO mst_service_outlet (service_id, outlet_id, is_active)
+       SELECT ?, id, 1 FROM mst_outlet`,
+      [result.insertId]
     );
 
     const [newService] = await myWaschenPool.query(

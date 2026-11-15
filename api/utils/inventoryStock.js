@@ -192,13 +192,18 @@ export async function applyStockMovement(connection, {
  * Jika layanan tidak punya BOM → no-op (qty 0).
  * qty line item dikalikan qty_per_service.
  */
+/** Penanda item di notes log BOM: "[item #<transaction_detail_id>]" (tr_inventory_log tidak punya kolom detail). */
+export const bomItemTag = (detailId) => `[item #${parseInt(detailId, 10)}]`;
+
 export async function consumeServiceBom(connection, {
   outletId,
   serviceId,
   lineQty = 1,
   employeeId = null,
   transactionId = null,
-  orderNo = null
+  orderNo = null,
+  /** tr_transaction_detail.id — dicatat di notes agar log bisa dibalik tepat per item */
+  detailId = null
 }) {
   const sid = parseInt(serviceId, 10);
   const oid = parseInt(outletId, 10);
@@ -221,6 +226,7 @@ export async function consumeServiceBom(connection, {
     const useQty = (parseFloat(bom.qty_per_service) || 0) * multiplier;
     if (useQty <= 0) continue;
 
+    const tag = detailId ? ` ${bomItemTag(detailId)}` : '';
     const moved = await applyStockMovement(connection, {
       outletId: oid,
       itemId: bom.item_id,
@@ -230,8 +236,8 @@ export async function consumeServiceBom(connection, {
       referenceType: 'transaction',
       referenceId: transactionId || null,
       notes: orderNo
-        ? `Pemakaian BOM layanan #${sid} — nota ${orderNo} (${bom.item_name})`
-        : `Pemakaian BOM layanan #${sid} (${bom.item_name})`
+        ? `Pemakaian BOM layanan #${sid} — nota ${orderNo} (${bom.item_name})${tag}`
+        : `Pemakaian BOM layanan #${sid} (${bom.item_name})${tag}`
     });
     results.push({
       itemId: bom.item_id,
@@ -241,4 +247,59 @@ export async function consumeServiceBom(connection, {
     });
   }
   return results;
+}
+
+/**
+ * Batalkan log pemakaian BOM (movement Usage) satu item di satu outlet, mis. saat item Drop Point
+ * dipindah outlet produksi. Usage tidak pernah mengubah qty_current, jadi pembatalan cukup
+ * menghapus baris log Usage item tsb — qty_current tidak disentuh.
+ * Log baru ditandai bomItemTag(detailId); untuk log lama tanpa penanda, dihapus satu log per
+ * baris BOM yang cocok (outlet, nota, item, qty).
+ * @returns {number} jumlah log yang dihapus
+ */
+export async function reverseServiceBomUsage(connection, {
+  outletId,
+  transactionId,
+  detailId,
+  serviceId,
+  lineQty = 1
+}) {
+  const oid = parseInt(outletId, 10);
+  const tid = parseInt(transactionId, 10);
+  const did = parseInt(detailId, 10);
+  if (!oid || !tid || !did) return 0;
+
+  const [tagged] = await connection.query(
+    `DELETE FROM tr_inventory_log
+     WHERE movement_type = 'Usage' AND reference_type = 'transaction'
+       AND reference_id = ? AND outlet_id = ? AND notes LIKE ?`,
+    [tid, oid, `%${bomItemTag(did)}%`]
+  );
+  if (tagged.affectedRows > 0) return tagged.affectedRows;
+
+  // Log lama (sebelum penanda item): cocokkan per baris BOM.
+  const sid = parseInt(serviceId, 10);
+  const multiplier = Math.max(0, parseFloat(lineQty) || 0);
+  if (!sid || multiplier <= 0) return 0;
+  const [bomRows] = await connection.query(
+    `SELECT si.item_id, si.qty_per_service
+     FROM mst_service_inventory si
+     WHERE si.service_id = ? AND si.is_active = 1`,
+    [sid]
+  );
+  let removed = 0;
+  for (const bom of bomRows) {
+    const useQty = (parseFloat(bom.qty_per_service) || 0) * multiplier;
+    if (useQty <= 0) continue;
+    const [r] = await connection.query(
+      `DELETE FROM tr_inventory_log
+       WHERE movement_type = 'Usage' AND reference_type = 'transaction'
+         AND reference_id = ? AND outlet_id = ? AND item_id = ? AND ABS(qty - ?) <= 0.006
+         AND (notes IS NULL OR notes NOT LIKE '%[item #%')
+       ORDER BY id DESC LIMIT 1`,
+      [tid, oid, bom.item_id, useQty]
+    );
+    removed += r.affectedRows;
+  }
+  return removed;
 }

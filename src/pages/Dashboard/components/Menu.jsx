@@ -13,7 +13,7 @@ import {
   Banknote
 } from 'lucide-react';
 import { useShiftOptional } from '../../../context/ShiftContext.jsx';
-import { canUseEventDistribution } from '../../../utils/authSession.js';
+import { canUseDropPointDistribution } from '../../../utils/authSession.js';
 
 const MENU_ITEMS = [
   {
@@ -110,12 +110,12 @@ const MENU_ITEMS = [
     labelHover: 'group-hover:text-lime-700'
   },
   {
-    key: 'event-distribusi',
-    path: '/event-distribusi',
-    label: 'Distribusi Event',
+    key: 'drop-point-distribusi',
+    path: '/drop-point-distribusi',
+    label: 'Distribusi Drop Point',
     hint: 'Bagi ke Cabang',
     shiftFree: true,
-    eventOnly: true,
+    dropPointOnly: true,
     icon: Share2,
     iconWrap: 'bg-violet-50 text-violet-700 group-hover:bg-violet-100/60',
     labelHover: 'group-hover:text-violet-700'
@@ -130,8 +130,8 @@ export default function Menu({ navigate, onOrderClick }) {
   const shiftChecked = shiftCtx?.shiftChecked;
   const showShiftLock = Boolean(mustGateShift && shiftChecked && !isShiftReady);
 
-  const visibleItems = MENU_ITEMS.filter((item) => !item.eventOnly || canUseEventDistribution());
-  // 10 menu: 5 atas + 5 bawah. 11 menu (dengan Distribusi Event): 6 + 5. Selain itu satu baris di layar lebar.
+  const visibleItems = MENU_ITEMS.filter((item) => !item.dropPointOnly || canUseDropPointDistribution());
+  // 10 menu: 5 atas + 5 bawah. 11 menu (dengan Distribusi Drop Point): 6 + 5. Selain itu satu baris di layar lebar.
   const gridCols = visibleItems.length === 11
     ? 'md:grid-cols-6'
     : visibleItems.length === 10

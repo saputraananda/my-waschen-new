@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Search, TrendingDown } from 'lucide-react';
-import { isEventOutletId } from '../../../utils/authSession.js';
 
 const CHURN_TABS = ['Semua', 'Active', 'Warning', 'Churn', 'Dormant', 'Lost'];
 
@@ -134,8 +133,9 @@ export default function CustomerChurn({ outlets = [], activeOutletName, activeOu
             title="Filter cabang"
           >
             <option value="Semua">Semua Cabang</option>
-            {isEventOutletId(activeOutletId) && !outlets.some((o) => String(o.id) === String(activeOutletId)) && (
-              <option value={String(activeOutletId)}>{localStorage.getItem('activeOutletName') || 'Event'}</option>
+            {/* Outlet aktif (mis. drop point hasil ganti outlet staf) belum tentu ada di daftar cabang */}
+            {activeOutletId && !outlets.some((o) => String(o.id) === String(activeOutletId)) && (
+              <option value={String(activeOutletId)}>{localStorage.getItem('activeOutletName') || `Outlet #${activeOutletId}`}</option>
             )}
             {outlets.map((o) => (
               <option key={o.id} value={String(o.id)}>

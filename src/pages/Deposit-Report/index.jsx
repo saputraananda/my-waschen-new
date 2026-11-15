@@ -71,7 +71,7 @@ export default function DepositReport() {
     return { start: base.start || '', end };
   }, [dateMode, cutoffMonth, rangeStart, rangeEnd, today]);
 
-  // Staf mengikuti outlet aktif di header: outlet biasa → setoran closing Final, outlet Event → setoran harian.
+  // Staf mengikuti outlet aktif di header (setoran closing Final shift outlet tsb).
   const outletFilter = isHq ? hqOutletId : activeOutletId;
 
   const load = useCallback(async () => {
@@ -137,7 +137,7 @@ export default function DepositReport() {
               <div>
                 <h1 className="text-xl font-black tracking-tight">Setoran Tunai</h1>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Bukti setor uang tiap closing Final (outlet Event: tiap hari). Batas upload H+{dueDays}.
+                  Bukti setor uang tiap closing Final shift. Batas upload H+{dueDays}.
                 </p>
               </div>
             </div>
@@ -300,45 +300,22 @@ function StatusBadge({ row }) {
 
 function DepositRow({ row, onUpload }) {
   const uploaded = row.status === 'uploaded';
-  const isEvent = row.kind === 'event';
   return (
     <tr className={row.is_late && !uploaded ? 'bg-rose-50/40' : ''}>
       <td className="py-3 px-4 whitespace-nowrap">
-        {isEvent ? (
-          <span className="block">{formatDateKeyId(row.event_date)}</span>
-        ) : (
-          <>
-            <span className="block">{formatWibDateTime(row.closed_at)}</span>
-            <span className="block text-[10px] text-slate-400 font-medium">
-              Ditutup: {formatEmployeeName(row.closed_by_name || row.opener_name)}
-            </span>
-          </>
-        )}
+        <span className="block">{formatWibDateTime(row.closed_at)}</span>
+        <span className="block text-[10px] text-slate-400 font-medium">
+          Ditutup: {formatEmployeeName(row.closed_by_name || row.opener_name)}
+        </span>
       </td>
       <td className="py-3 px-4">
         <span className="block">{row.outlet_name}</span>
         <span className="block text-[10px] text-slate-400 font-medium">
-          {isEvent ? 'Event · setoran harian' : `Shift ${Number(row.shift_number) === 2 ? 'Siang' : 'Pagi'} · #${row.id}`}
+          {`Shift ${Number(row.shift_number) === 2 ? 'Siang' : 'Pagi'} · #${row.id}`}
         </span>
       </td>
       <td className="py-3 px-4 text-right whitespace-nowrap text-[#5f1340]">
-        {isEvent ? (
-          <>
-            <span className="block">{fmtRp(row.cash_amount)}</span>
-            {row.deposit_amount != null && (
-              <span className="block text-[10px] font-medium text-slate-500">
-                Disetor {fmtRp(row.deposit_amount)}
-                {Number(row.deposit_amount) !== Number(row.cash_amount) && (
-                  <span className={Number(row.deposit_amount) < Number(row.cash_amount) ? 'text-rose-700 font-black' : 'text-amber-700 font-black'}>
-                    {' '}({Number(row.deposit_amount) - Number(row.cash_amount) > 0 ? '+' : '-'}{fmtRp(Math.abs(Number(row.deposit_amount) - Number(row.cash_amount)))})
-                  </span>
-                )}
-              </span>
-            )}
-          </>
-        ) : (
-          row.declared_revenue != null ? fmtRp(row.declared_revenue) : '—'
-        )}
+        {row.declared_revenue != null ? fmtRp(row.declared_revenue) : '—'}
       </td>
       <td className="py-3 px-4"><StatusBadge row={row} /></td>
       <td className="py-3 px-4">

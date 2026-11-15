@@ -1,6 +1,5 @@
 import React from 'react';
 import { Users, Plus, Search, ArrowRight, ChevronLeft, ChevronRight, RefreshCw, Loader2 } from 'lucide-react';
-import { isEventOutletActive } from '../../../utils/authSession.js';
 import { customerPickLabel } from '../../../utils/customerPickLabel.js';
 
 /** Visible page buttons with ellipsis — avoids rendering 200+ buttons. */
@@ -45,12 +44,10 @@ export default function SelectCustomer({
   onReloadCustomers,
   navigate
 }) {
-  const isEventOutlet = isEventOutletActive();
-
   const resetFilters = () => {
     setCustomerSearch('');
     setSelectedTierFilter('Semua');
-    setSelectedBranchFilter(isEventOutlet && activeOutletName ? activeOutletName : 'Semua');
+    setSelectedBranchFilter('Semua');
     setCustCurrentPage(1);
   };
 
@@ -127,7 +124,8 @@ export default function SelectCustomer({
               className="w-full h-10 px-3 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl text-xs font-semibold text-[#313030] outline-none focus:bg-white focus:border-[#5f1340] cursor-pointer"
             >
               <option value="Semua">Semua Cabang Outlet</option>
-              {isEventOutlet && activeOutletName && !(outlets || []).some((o) => (o.full_name || o.name) === activeOutletName) && (
+              {/* Outlet aktif (mis. drop point hasil ganti outlet staf) belum tentu ada di daftar cabang */}
+              {activeOutletName && !(outlets || []).some((o) => (o.full_name || o.name) === activeOutletName) && (
                 <option value={activeOutletName}>{activeOutletName}</option>
               )}
               {(outlets || []).map((o) => (

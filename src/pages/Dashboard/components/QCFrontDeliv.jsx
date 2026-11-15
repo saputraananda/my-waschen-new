@@ -57,7 +57,24 @@ function qcNotePlaceholder(stage, kiloan, status) {
 const QC_SCANNER_ID = 'qc-nota-scanner';
 
 /** Identitas QC dibaca server dari token login, bukan PIN. */
-const authCfg = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` } });
+const authCfg = () => ({
+  headers: {
+    Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
+    'X-Active-Outlet-Id': localStorage.getItem('activeOutletId') || ''
+  }
+});
+
+/** Penanda nota yang dibuat di outlet Drop Point (mst_outlet.is_drop_point = 1). */
+function DropPointBadge({ name }) {
+  return (
+    <span
+      className="shrink-0 bg-sky-50 text-sky-700 border border-sky-200 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md truncate max-w-[10rem]"
+      title={`Nota dari outlet Drop Point ${name}`}
+    >
+      Drop Point · {name}
+    </span>
+  );
+}
 
 const STAGE_LABEL = {
   frontliner: 'Frontliner',
@@ -872,6 +889,7 @@ export default function QCFrontDeliv() {
                         <div className="flex items-center gap-1.5 min-w-0">
                           <p className="text-sm font-black text-[#313030] truncate">{h.order_no}</p>
                           {h.source === 'SMARTLINK' && <SmartlinkBadge />}
+                          {h.drop_point_name && <DropPointBadge name={h.drop_point_name} />}
                         </div>
                         <p className="text-[11px] text-slate-400 font-medium truncate mt-0.5">
                           {h.customer_name || 'Customer'} · {h.service_name} · {Number(h.qty)} {h.unit}
@@ -1018,6 +1036,7 @@ export default function QCFrontDeliv() {
                       <div className="flex items-center gap-1.5 min-w-0">
                         <p className="font-black text-sm text-[#5f1340] truncate">{txn.order_no}</p>
                         {txn.source === 'SMARTLINK' && <SmartlinkBadge />}
+                        {txn.drop_point_name && <DropPointBadge name={txn.drop_point_name} />}
                       </div>
                       <p className="font-black text-base leading-tight text-[#313030] truncate mt-1">{txn.customer_name}</p>
                       {place && (

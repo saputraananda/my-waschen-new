@@ -15,7 +15,7 @@ export function priceCheckMode() {
   return String(process.env.PRICE_CHECK_MODE || 'log').toLowerCase() === 'enforce' ? 'enforce' : 'log';
 }
 
-export async function auditOrderPricing(connection, { items, subtotal, discountAmount, grandTotal, speedId }) {
+export async function auditOrderPricing(connection, { items, subtotal, discountAmount, grandTotal, speedId, outletId }) {
   const fatal = [];
   const issues = [];
 
@@ -39,13 +39,30 @@ export async function auditOrderPricing(connection, { items, subtotal, discountA
   const lineSum = (items || []).reduce((s, it) => s + (num(it.subtotal || it.effectiveSubtotal) || 0), 0);
   if (Math.abs(lineSum - sub) > TOLERANCE) issues.push(`subtotal ${sub} != jumlah baris ${lineSum}`);
 
-  const ids = [...new Set((items || []).map((it) => parseInt(it.serviceId || it.serviceDbId || it.id, 10)).filter(Boolean))];
+  // Setiap baris wajib punya id layanan yang valid dan ada di master — tidak dilewati diam-diam.
+  const rawIds = (items || []).map((it) => parseInt(it.serviceId || it.serviceDbId || it.id, 10));
+  if (rawIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+    fatal.push('Ada item tanpa id layanan yang valid');
+    return { fatal, issues };
+  }
+  const ids = [...new Set(rawIds)];
   if (ids.length) {
-    const [rows] = await connection.query('SELECT id, price FROM mst_service WHERE id IN (?)', [ids]);
-    const priceOf = new Map(rows.map((r) => [r.id, parseFloat(r.price) || 0]));
+    // Harga efektif outlet (override mst_service_outlet, jika kosong harga master).
+    const [rows] = await connection.query(
+      `SELECT s.id, COALESCE(so.price, s.price) AS price
+       FROM mst_service s
+       LEFT JOIN mst_service_outlet so ON so.service_id = s.id AND so.outlet_id = ?
+       WHERE s.id IN (?)`,
+      [Number(outletId) || 0, ids]
+    );
+    const priceOf = new Map(rows.map((r) => [Number(r.id), parseFloat(r.price) || 0]));
+    const unknown = ids.filter((id) => !priceOf.has(id));
+    if (unknown.length) {
+      fatal.push(`Layanan tidak ditemukan: #${unknown.join(', #')}`);
+      return { fatal, issues };
+    }
     for (const it of items) {
       const id = parseInt(it.serviceId || it.serviceDbId || it.id, 10);
-      if (!priceOf.has(id)) continue;
       const qty = num(it.qty) || 1;
       const line = num(it.subtotal || it.effectiveSubtotal) || 0;
       const min = priceOf.get(id) * qty;

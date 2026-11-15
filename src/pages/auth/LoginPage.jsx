@@ -9,6 +9,7 @@ import {
     EyeOff,
 } from 'lucide-react';
 import { formatEmployeeName } from '../../utils/FormatName.js';
+import { storeOutletFlags } from '../../utils/authSession.js';
 
 // Import local images from assets/images
 import img1 from '../../assets/images/1.webp';
@@ -124,8 +125,17 @@ export default function LoginPage() {
 
                 const outlets = response.data.outlets || [];
                 localStorage.setItem('outlets', JSON.stringify(outlets));
-                const eventOutlets = Array.isArray(response.data.eventOutlets) ? response.data.eventOutlets : [];
-                localStorage.setItem('eventOutlets', JSON.stringify(eventOutlets));
+                const dropPointOutlets = Array.isArray(response.data.dropPointOutlets) ? response.data.dropPointOutlets : [];
+                localStorage.setItem('dropPointOutlets', JSON.stringify(dropPointOutlets));
+                // Flag per outlet (is_drop_point, is_active, requires_shift) untuk gerbang shift saat ganti outlet
+                storeOutletFlags({
+                    outlets,
+                    dropPointOutlets,
+                    assignedOutletId: user.assignedOutletId,
+                    assignedOutletFlags: user.assignedOutletFlags
+                });
+                // Bersihkan kunci lama sebelum rename Event -> Drop Point
+                localStorage.removeItem('eventOutlets');
                 localStorage.removeItem('eventOutlet');
 
                 if (isHq) {
@@ -139,7 +149,7 @@ export default function LoginPage() {
                 } else {
                     localStorage.setItem('activeOutletId', user.assignedOutletId || '2');
                     localStorage.setItem('activeOutletName', user.assignedOutletName || 'Waschen Laundry Citra Gran');
-                    // Outlet asal staf, untuk kembali dari outlet Event
+                    // Outlet asal staf, untuk kembali dari outlet Drop Point
                     localStorage.setItem('homeOutletId', user.assignedOutletId || '2');
                     localStorage.setItem('homeOutletName', user.assignedOutletName || 'Waschen Laundry Citra Gran');
                 }

@@ -22,7 +22,7 @@ import complaintRoutes from './routes/complaint.routes.js';
 import complaintInternalRoutes from './routes/complaintInternal.routes.js';
 import deleteRequestInternalRoutes from './routes/deleteRequestInternal.routes.js';
 import refundApprovalInternalRoutes from './routes/refundApprovalInternal.routes.js';
-import eventRoutes from './routes/event.routes.js';
+import dropPointRoutes from './routes/dropPoint.routes.js';
 import { getBaseUploadDir, getUploadUrlPrefix, uploadPaymentReceipt, verifyUploadContents, buildUploadPublicUrl, safeUnlinkUploadUrl } from './middleware/upload.js';
 import { requirePosAuth } from './middleware/requireAuth.js';
 import { getSessionSecret } from './utils/sessionSecret.js';
@@ -96,6 +96,6 @@ app.use('/api/printer-settings', printerRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/qc', qcRoutes);
 app.use('/api/complaints', complaintRoutes);
-app.use('/api/event', eventRoutes);
+app.use('/api/drop-point', dropPointRoutes);
 
 export default app;
