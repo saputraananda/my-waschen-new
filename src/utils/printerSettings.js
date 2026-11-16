@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { isExpressRow } from './notaPricing.js';
 
 export const PERHATIAN_ITEMS = [
   'Pengambilan barang harap disertai nota',
@@ -122,9 +123,12 @@ export function mapDbTransactionToReceipt(raw, fallbackOutletName = '') {
     customerAddress: raw.customer_address || '',
     cashierName: raw.cashier_name || 'Kasir Waschen',
     perfume: raw.parfume_name || 'Tanpa parfum',
-    isExpress: Number(raw.speed_surcharge) > 0 || /express/i.test(String(raw.speed_name || '')),
+    isExpress: isExpressRow(raw),
     isDelivery: raw.is_delivery === 1,
+    subtotal: parseFloat(raw.subtotal) || 0,
+    speedSurcharge: parseFloat(raw.speed_surcharge) || 0,
     discountAmount: parseFloat(raw.discount_amount) || 0,
+    promoName: raw.discount_notes || '',
     grandTotal: grand,
     paidAmount: paid,
     changeAmount: parseFloat(raw.change_amount) || 0,

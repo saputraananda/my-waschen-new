@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { buildCustomerTrackingUrl } from '../utils/customerTrackingUrl.js';
 import { DEFAULT_CUSTOMER_SETTINGS } from '../utils/printerSettings.js';
 import { WIB_TZ, addWibDays, toWibDateKey } from '../utils/wib.js';
+import { getNotaPricing } from '../utils/notaPricing.js';
 
 /**
  * Satu sumber kalimat nota digital (WhatsApp / preview).
@@ -90,7 +91,23 @@ function selesaiStamp(receipt) {
     if (formatted !== '-') return formatted;
   }
   const base = receipt?.createdAtRaw || receipt?.createdAt;
-  return formatStamp(base, receipt?.isExpress ? 1 : 2);
+  return formatStamp(base, getNotaPricing(receipt).isExpress ? 1 : 2);
+}
+
+/** Rincian harga asli → express → promo, hanya bila ada express / promo. */
+function pricingLines(pricing) {
+  if (!pricing.showBreakdown) return [];
+  const lines = [];
+  if (pricing.hasSurcharge) {
+    lines.push(`Subtotal: ${formatRp(pricing.subtotal)}`);
+    lines.push(`Biaya Express: +${formatRp(pricing.surcharge)}`);
+  }
+  lines.push(`Harga normal: ${formatRp(pricing.original)}`);
+  if (pricing.hasPromo) {
+    lines.push(`🎁 Promo ${pricing.promoName}: -${formatRp(pricing.discount)}`);
+  }
+  lines.push('');
+  return lines;
 }
 
 const RULE = '━━━━━━━━━━━━━━';
@@ -102,6 +119,7 @@ export function buildDigitalNotaBody(receipt) {
   if (!receipt) return '';
   const orderNo = receipt.id || receipt.orderNo || '';
   const items = Array.isArray(receipt.items) ? receipt.items : [];
+  const pricing = getNotaPricing(receipt);
   const detail = items.length
     ? items.map(itemBlock).join('\n\n')
     : `✦ *${receipt.serviceType || receipt.category || 'Layanan Laundry'}*`;
@@ -110,6 +128,7 @@ export function buildDigitalNotaBody(receipt) {
     '*WASCHEN PREMIUM LAUNDRY*',
     '',
     `*NOTA ${orderNo}*`,
+    ...(pricing.isExpress ? ['⚡ *NOTA EXPRESS*'] : []),
     '',
     `Pelanggan: ${receipt.customerName || 'Pelanggan'}`,
     `Outlet: ${receipt.branch || '-'}`,
@@ -122,7 +141,9 @@ export function buildDigitalNotaBody(receipt) {
     '',
     RULE,
     '',
+    ...pricingLines(pricing),
     `*TOTAL · ${formatRp(receipt.grandTotal)}*`,
+    ...(pricing.hasPromo ? [`_Anda hemat ${formatRp(pricing.discount)}_`] : []),
     `Pembayaran: *${paymentLabel(receipt)}*`
   ].join('\n');
 }

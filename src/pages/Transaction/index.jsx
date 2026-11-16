@@ -665,6 +665,8 @@ export default function TransactionPage() {
     return {
       rawSubtotal,
       subtotalAfterExpress,
+      // Tambahan biaya express (disimpan ke tr_transaction.speed_surcharge)
+      expressSurcharge: subtotalAfterExpress - rawSubtotal,
       discountAmount,
       grandTotal
     };
@@ -895,6 +897,7 @@ export default function TransactionPage() {
         perfume: selectedPerfume,
         isExpress,
         promoName: activePromo.name,
+        speedSurcharge: calculations.expressSurcharge,
         discountAmount: calculations.discountAmount,
         isDelivery,
         generalNotes: generalOrderNotes || '-',

@@ -11,6 +11,7 @@ import { getOutletFlags } from '../utils/dropPointOutlet.js';
 import { getEmployeeNames, fillFallbackNames } from '../utils/employeeName.js';
 import { buildCustomerTrackingUrl } from '../utils/customerTrackingUrl.js';
 import { attachQueueNo } from '../utils/queueNo.js';
+import { fetchSmartlinkWorkLog, groupSmartlinkWork, isSmartlinkTransaction, smartlinkEmployeeIds } from '../utils/smartlinkWorkLog.js';
 import { replaceUploadUrl, safeUnlinkAbsPath, buildUploadPublicUrl, isItemPhotoUrl, ITEM_PHOTO_SUBDIR, DELETE_REQUEST_SUBDIR, REFUND_REQUEST_SUBDIR } from '../middleware/upload.js';
 import { REFUND_TYPES, findPendingRefund, insertRefundRequest, REFUND_SUMMARY_COLUMNS } from '../utils/transactionRefund.js';
 import { toWibYmdCompact, formatWibTime } from '../utils/wib.js';
@@ -908,6 +909,40 @@ export const getTransactionDetail = async (req, res) => {
       'SELECT * FROM tr_transaction_status_log WHERE transaction_id = ? ORDER BY id ASC',
       [order.id]
     );
+
+    // Alur pengerjaan per item: QC produksi (tr_item_progress) + riwayat lama Smartlink
+    const PROGRESS_LABELS = {
+      frontliner: 'Frontliner', washing: 'Pencucian', ironing: 'Penyetrikaan',
+      packing: 'Pengemasan', delivery: 'Pengiriman', handover: 'Serah Terima'
+    };
+    const [[progressRows], smartlinkRows] = await Promise.all([
+      myWaschenPool.query(
+        `SELECT id, transaction_detail_id, stage, employee_id, employee_name, qc_status, qc_decision, notes, status, completed_at, created_at
+         FROM tr_item_progress WHERE transaction_id = ? ORDER BY completed_at ASC, id ASC`,
+        [order.id]
+      ),
+      isSmartlinkTransaction(order)
+        ? fetchSmartlinkWorkLog((sql, params) => myWaschenPool.query(sql, params), order.id)
+        : Promise.resolve([])
+    ]);
+    const workerNames = await getEmployeeNames([
+      ...progressRows.map((p) => p.employee_id),
+      ...smartlinkEmployeeIds(smartlinkRows)
+    ]);
+    const smartlinkByDetail = groupSmartlinkWork(items, smartlinkRows, (eid) => workerNames.get(eid) || null);
+    const byTime = (a, b) => new Date(a.completed_at || a.created_at || 0) - new Date(b.completed_at || b.created_at || 0);
+    for (const it of items) {
+      const progress = progressRows
+        .filter((p) => Number(p.transaction_detail_id) === Number(it.id))
+        .map((p) => ({
+          ...p,
+          source: 'pos',
+          stage_label: PROGRESS_LABELS[p.stage] || p.stage,
+          employee_name: p.employee_name || workerNames.get(Number(p.employee_id)) || null,
+          completed_at: p.completed_at || p.created_at
+        }));
+      it.workers = [...(smartlinkByDetail[it.id] || []), ...progress].sort(byTime);
+    }
 
     order.items = items;
     order.logs = logs;

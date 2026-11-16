@@ -20,13 +20,13 @@ import ItemPhotoField from '../../../components/ItemPhotoField.jsx';
 import ChangeFulfillmentModal from '../../../components/ChangeFulfillmentModal.jsx';
 import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
 import CleanoxItemsPanel from './CleanoxItemsPanel.jsx';
+import { getNotaPricing, isExpressRow } from '../../../utils/notaPricing.js';
 import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
 
   CreditCard,
-  History,
   Printer,
   Receipt,
   Upload,
@@ -38,7 +38,8 @@ import {
   MessageCircle,
   Truck,
   Trash2,
-  Loader2
+  Loader2,
+  Clock
 } from 'lucide-react';
 import {
   sendCustomerNotaWhatsAppFromOrder,
@@ -69,7 +70,6 @@ export default function DetailTransaction() {
 
   const [order, setOrder] = useState(null);
   const [items, setItems] = useState([]);
-  const [logs, setLogs] = useState([]);
   const [cleanoxItems, setCleanoxItems] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedItemId, setExpandedItemId] = useState(null);
@@ -127,9 +127,10 @@ export default function DetailTransaction() {
     serviceType: raw.speed_name ? `${raw.order_category} - ${raw.speed_name}` : raw.order_category,
     perfume: raw.parfume_name || 'Standar',
     speed: raw.speed_name || 'Reguler',
-    isExpress: Number(raw.speed_surcharge) > 0,
+    isExpress: isExpressRow(raw),
     isDelivery: raw.is_delivery === 1,
     isSmartlink: raw.source === 'SMARTLINK',
+    accessCode: raw.access_code ? String(raw.access_code) : '',
     deliveryAddress: raw.delivery_address || '',
     deliveryNotes: raw.delivery_notes || '',
     settledByEmployeeId: raw.settled_by_employee_id || null,
@@ -137,7 +138,9 @@ export default function DetailTransaction() {
     settledAt: raw.settled_at || null,
     paidAt: raw.paid_at || null,
     subtotal: parseFloat(raw.subtotal) || 0,
+    speedSurcharge: parseFloat(raw.speed_surcharge) || 0,
     discountAmount: parseFloat(raw.discount_amount) || 0,
+    promoName: raw.discount_notes || '',
     grandTotal: parseFloat(raw.grand_total) || 0,
     paidAmount: parseFloat(raw.paid_amount) || 0,
     changeAmount: parseFloat(raw.change_amount) || 0,
@@ -175,6 +178,7 @@ export default function DetailTransaction() {
     laundryMethodName: it.laundry_method_name || (it.laundry_method_code === 'DC' ? 'Dry Clean' : 'Wet Clean'),
     laundryMethodCode: it.laundry_method_code || (it.is_dry_clean === 1 ? 'DC' : 'WC'),
     photoUrl: it.photo_url || null,
+    workers: Array.isArray(it.workers) ? it.workers : [],
     fulfillmentType: it.fulfillment_type || (orderIsDelivery ? 'Delivery_Kurir' : 'Ambil_Di_Outlet')
   }));
 
@@ -192,7 +196,6 @@ export default function DetailTransaction() {
       const mapped = mapOrder(raw);
       setOrder(mapped);
       setItems(mapItems(raw.items, mapped.isDelivery));
-      setLogs(raw.logs || []);
       setCleanoxItems(raw.cleanoxItems || []);
       document.title = `Detail ${mapped.id} | Waschen Laundry`;
 
@@ -559,7 +562,10 @@ export default function DetailTransaction() {
       perfume: order.perfume,
       isExpress: order.isExpress,
       isDelivery: order.isDelivery,
+      subtotal: order.subtotal,
+      speedSurcharge: order.speedSurcharge,
       discountAmount: order.discountAmount,
+      promoName: order.promoName,
       grandTotal: order.grandTotal,
       paidAmount: order.paidAmount,
       changeAmount: order.changeAmount,
@@ -621,6 +627,7 @@ export default function DetailTransaction() {
 
   const paymentStatus = normalizePaymentStatus(order?.paymentStatus);
   const remaining = Math.max(0, (order?.grandTotal || 0) - (order?.paidAmount || 0));
+  const pricing = getNotaPricing(order);
 
   return (
     <div className="min-h-screen bg-[#f8f8f8] text-[#313030] flex flex-col font-sans">
@@ -664,6 +671,14 @@ export default function DetailTransaction() {
                     >
                       {formatWorkPercentage(order.workStatus)}
                     </span>
+                    {order.accessCode && (
+                      <span
+                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border border-[#5f1340]/20 bg-[#5f1340]/5 text-[#5f1340] text-[10px] font-black"
+                        title="PIN nota digital pelanggan"
+                      >
+                        PIN <span className="font-mono text-xs tracking-[0.2em]">{order.accessCode}</span>
+                      </span>
+                    )}
                     {order.isSmartlink && (
                       <span
                         className="px-2.5 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700 text-[10px] font-black"
@@ -748,6 +763,11 @@ export default function DetailTransaction() {
                     <span className="font-black text-sm text-[#313030] block mt-0.5">{order.serviceType}</span>
                     <span className="text-[11px] text-pink-700 font-bold">Aroma: {order.perfume}</span>
                     <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                      {pricing.isExpress && (
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border bg-amber-50 text-amber-800 border-amber-300">
+                          ⚡ Express
+                        </span>
+                      )}
                       <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
                         order.isDelivery
                           ? 'bg-orange-50 text-orange-700 border-orange-200'
@@ -767,6 +787,37 @@ export default function DetailTransaction() {
                   </div>
                   <div className="p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl">
                     <span className="text-[10px] font-bold text-slate-400 uppercase block">Tagihan</span>
+                    {pricing.showBreakdown && (
+                      <div className="mt-1 mb-1 space-y-0.5 text-[11px]">
+                        {pricing.hasSurcharge && (
+                          <>
+                            <div className="flex justify-between gap-2 text-slate-500">
+                              <span>Subtotal</span>
+                              <span className="font-bold tabular-nums">Rp {pricing.subtotal.toLocaleString('id-ID')}</span>
+                            </div>
+                            <div className="flex justify-between gap-2 text-amber-700">
+                              <span>Biaya Express</span>
+                              <span className="font-bold tabular-nums">+Rp {pricing.surcharge.toLocaleString('id-ID')}</span>
+                            </div>
+                          </>
+                        )}
+                        <div className="flex justify-between gap-2 text-slate-500">
+                          <span>Harga normal</span>
+                          <span className={`font-bold tabular-nums ${pricing.hasPromo ? 'line-through' : ''}`}>
+                            Rp {pricing.original.toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                        {pricing.hasPromo && (
+                          <div className="flex justify-between gap-2 text-emerald-700">
+                            <span className="min-w-0 truncate" title={pricing.promoName}>
+                              Promo {pricing.promoName}
+                            </span>
+                            <span className="font-bold tabular-nums shrink-0">-Rp {pricing.discount.toLocaleString('id-ID')}</span>
+                          </div>
+                        )}
+                        <div className="border-t border-dashed border-slate-300 pt-0.5" />
+                      </div>
+                    )}
                     <span className="font-black text-sm text-[#5f1340] block mt-0.5">Rp {order.grandTotal.toLocaleString('id-ID')}</span>
                     <span className={`text-[11px] font-extrabold ${
                       paymentStatus === 'Lunas' ? 'text-emerald-600' : paymentStatus === 'DP' ? 'text-amber-700' : 'text-rose-600'
@@ -1012,6 +1063,51 @@ export default function DetailTransaction() {
                               <span className="text-[10px] text-slate-400 font-medium">ID item #{it.id}</span>
                             </div>
                           </div>
+
+                          {/* Alur pengerjaan: QC produksi + riwayat Smartlink */}
+                          <div className="mt-3">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                              Alur Pengerjaan
+                            </span>
+                            {it.workers.length === 0 ? (
+                              <div className="flex items-center gap-2 rounded-xl border border-dashed border-[#e0e0e0] bg-white px-3 py-2.5 text-[11px] text-slate-400">
+                                <Clock className="h-3.5 w-3.5" />
+                                Belum ada tahap produksi yang dikerjakan
+                              </div>
+                            ) : (
+                              <ol className="relative ml-1.5 space-y-2.5 border-l-2 border-slate-200 pl-3.5">
+                                {it.workers.map((w, wi) => {
+                                  const last = wi === it.workers.length - 1;
+                                  return (
+                                    <li key={w.id || wi} className="relative">
+                                      <span className={`absolute -left-[21px] top-1 h-3 w-3 rounded-full border-2 bg-white ${last ? 'border-[#5f1340]' : 'border-emerald-400'}`} />
+                                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px]">
+                                        <span className="font-black text-[#313030]">{w.stage_label || w.stage}</span>
+                                        {w.employee_name && (
+                                          <span className="text-slate-600">· {formatEmployeeName(w.employee_name)}</span>
+                                        )}
+                                        {w.source === 'smartlink' && (
+                                          <span className="rounded border border-slate-200 bg-slate-50 px-1 py-px text-[9px] font-bold text-slate-500">Smartlink</span>
+                                        )}
+                                        {w.source === 'smartlink' && w.qty != null && (
+                                          <span className="text-[10px] text-slate-400">{Number(w.qty).toLocaleString('id-ID')} {String(w.unit || '').toLowerCase()}</span>
+                                        )}
+                                        {w.qc_status && (
+                                          <span className={`rounded border px-1 py-px text-[9px] font-bold ${w.qc_status === 'aman' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+                                            QC {w.qc_status}
+                                          </span>
+                                        )}
+                                        <span className="ml-auto text-[10px] text-slate-400 tabular-nums">
+                                          {w.completed_at ? formatDateId(w.completed_at) : '-'}
+                                        </span>
+                                      </div>
+                                      {w.notes && <p className="mt-0.5 text-[10px] text-slate-500">{w.notes}</p>}
+                                    </li>
+                                  );
+                                })}
+                              </ol>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1033,29 +1129,6 @@ export default function DetailTransaction() {
               onChanged={setCleanoxItems}
               showToast={showToast}
             />
-
-            {/* Status logs */}
-            {logs.length > 0 && (
-              <div className="bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-2xs">
-                <h2 className="text-sm font-black text-[#313030] uppercase tracking-wider flex items-center gap-2 mb-3">
-                  <History className="h-4 w-4 text-[#5f1340]" />
-                  Log Status Pengerjaan
-                </h2>
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {logs.map((log) => (
-                    <div key={log.id || `${log.status}-${log.created_at}`} className="p-2.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl flex justify-between gap-3 text-xs">
-                      <div>
-                        <span className="font-black text-[#313030]">{log.status}</span>
-                        {log.notes && <span className="text-[10px] text-slate-500 block">{log.notes}</span>}
-                      </div>
-                      <span className="text-[10px] text-slate-400 shrink-0">
-                        {log.created_at ? formatDateId(log.created_at) : ''}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </>
         )}
       </main>

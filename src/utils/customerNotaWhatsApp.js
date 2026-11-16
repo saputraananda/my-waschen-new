@@ -4,6 +4,7 @@ import { DEFAULT_CUSTOMER_SETTINGS } from './printerSettings.js';
 import { formatDateId } from './FilterDate.js';
 import { buildDigitalNotaMessage } from '../components/DigitalNota.jsx';
 import { buildCustomerTrackingUrl } from './customerTrackingUrl.js';
+import { isExpressRow } from './notaPricing.js';
 
 /** Nomor lokal 08… → digit WA internasional 62… */
 export function toWhatsAppDigits(phone) {
@@ -69,7 +70,10 @@ export function toCustomerNotaReceipt(order, itemsOverride) {
     perfume: order.perfume || 'Standar',
     isExpress: order.isExpress ?? /express/i.test(String(order.speed || '')),
     isDelivery: Boolean(order.isDelivery),
+    subtotal: Number(order.subtotal) || 0,
+    speedSurcharge: Number(order.speedSurcharge) || 0,
     discountAmount: Number(order.discountAmount) || 0,
+    promoName: order.promoName || order.discountNotes || '',
     grandTotal: Number(order.grandTotal ?? order.totalAmount) || 0,
     paidAmount: Number(order.paidAmount) || 0,
     changeAmount: Number(order.changeAmount) || 0,
@@ -100,9 +104,12 @@ export function mapApiTransactionToReceipt(raw) {
     createdAt: raw.order_date ? formatDateId(raw.order_date) : undefined,
     createdAtRaw: raw.order_date,
     perfume: raw.parfume_name || 'Standar',
-    isExpress: Number(raw.speed_surcharge) > 0,
+    isExpress: isExpressRow(raw),
     isDelivery: raw.is_delivery === 1,
+    subtotal: parseFloat(raw.subtotal) || 0,
+    speedSurcharge: parseFloat(raw.speed_surcharge) || 0,
     discountAmount: parseFloat(raw.discount_amount) || 0,
+    promoName: raw.discount_notes || '',
     grandTotal: parseFloat(raw.grand_total) || 0,
     paidAmount: parseFloat(raw.paid_amount) || 0,
     changeAmount: parseFloat(raw.change_amount) || 0,

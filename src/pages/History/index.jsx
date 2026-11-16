@@ -175,9 +175,6 @@ export default function History() {
               <HistoryIcon className="h-6 w-6 text-[#5f1340]" />
               <span>Riwayat Transaksi, Refund & Delete</span>
             </h1>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Daftar pesanan kasir, cetak ulang struk, pengajuan refund kelebihan bayar, dan hapus nota (Pending vs Approved)
-            </p>
           </div>
 
           <button

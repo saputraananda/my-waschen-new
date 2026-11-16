@@ -1,4 +1,5 @@
 import { on, PERHATIAN_ITEMS } from './printerSettings.js';
+import { getNotaPricing } from './notaPricing.js';
 import {
   rupiah,
   getQrValue,
@@ -77,7 +78,36 @@ function T(text, extra = {}) {
 
 /** "Tipe : Express" / "Tipe : Reguler" (toggle Tipe Pengerjaan) */
 function pushTipe(rows, receipt, settings) {
-  if (on(settings, 'show_express')) rows.push(T(`Tipe : ${receipt.isExpress ? 'Express' : 'Reguler'}`));
+  if (!on(settings, 'show_express')) return;
+  const express = getNotaPricing(receipt).isExpress;
+  rows.push(T(`Tipe : ${express ? 'EXPRESS' : 'Reguler'}`, express ? { bold: true } : {}));
+}
+
+/**
+ * Rincian harga: harga asli, biaya express, promo, lalu Grand Total.
+ * Tanpa express/promo tetap seperti format lama (Total = Grand Total).
+ */
+function pushTotals(rows, receipt, settings) {
+  const p = getNotaPricing(receipt);
+  const showPromo = p.hasPromo && on(settings, 'show_discount');
+  if (!p.hasSurcharge && !showPromo) {
+    rows.push(T(padNotaRow('Total :', rupiah(p.grand))));
+    rows.push({ type: 'dash' });
+    rows.push(T(padNotaRow('Grand Total', rupiah(p.grand)), { bold: true }));
+    return;
+  }
+  if (p.hasSurcharge) {
+    rows.push(T(padNotaRow('Subtotal :', rupiah(p.subtotal))));
+    rows.push(T(padNotaRow('Biaya Express :', `+${rupiah(p.surcharge)}`)));
+  }
+  rows.push(T(padNotaRow('Harga Normal :', rupiah(p.original))));
+  if (showPromo) {
+    wrapNotaText(`Promo : ${p.promoName}`).forEach((l) => rows.push(T(l)));
+    rows.push(T(padNotaRow('Potongan Promo :', `-${rupiah(p.discount)}`)));
+  }
+  rows.push({ type: 'dash' });
+  rows.push(T(padNotaRow('Grand Total', rupiah(p.grand)), { bold: true }));
+  if (showPromo) rows.push(T(`Anda hemat ${rupiah(p.discount)}`, { align: 'center' }));
 }
 
 const DC_TAG = '(DC)';
@@ -177,7 +207,6 @@ export function buildCustomerNotaModel(receipt, settings) {
   const rows = [];
   const items = receipt.items || [];
   const paid = Number(receipt.paidAmount) || 0;
-  const grand = Number(receipt.grandTotal) || 0;
   const addr = receipt.customerAddress;
   const hasAddr = addr && addr !== '-' && String(addr).trim() !== '';
   const outletPhone = getOutletPhone(receipt);
@@ -237,11 +266,7 @@ export function buildCustomerNotaModel(receipt, settings) {
   rows.push(T(`Total Item : ${Math.round(countTotalBarang(items))} Item`));
   rows.push({ type: 'dash' });
 
-  if (on(settings, 'show_total')) {
-    rows.push(T(padNotaRow('Total :', rupiah(grand))));
-    rows.push({ type: 'dash' });
-    rows.push(T(padNotaRow('Grand Total', rupiah(grand)), { bold: true }));
-  }
+  if (on(settings, 'show_total')) pushTotals(rows, receipt, settings);
 
   if (on(settings, 'show_payment')) {
     rows.push(T('Pembayaran:'));
