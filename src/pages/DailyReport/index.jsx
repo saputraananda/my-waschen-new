@@ -108,7 +108,7 @@ export default function DailyReport() {
       />
 
       <main className="max-w-[1200px] w-full mx-auto p-4 sm:p-6 flex-grow flex flex-col gap-5">
-        <div className="bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-xs flex flex-col sm:flex-row justify-between gap-4 items-start sm:items-center">
+        <div className="bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-xs flex flex-col sm:flex-row justify-between gap-4 items-stretch sm:items-center min-w-0">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-[#5f1340]/10 text-[#5f1340] rounded-2xl">
               <FileText className="h-5 w-5" />
@@ -118,20 +118,20 @@ export default function DailyReport() {
               <p className="text-xs text-slate-400 mt-0.5">Riwayat open/close shift & ceklis nota</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] sm:flex sm:items-center gap-2 w-full sm:w-auto min-w-0">
             <input
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="px-3 py-2 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340]"
+              className="w-full min-w-0 sm:w-auto appearance-none [-webkit-appearance:none] bg-white px-3 py-2 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340]"
             />
             <button
               type="button"
               onClick={handleExport}
               disabled={exporting || loading || shifts.length === 0}
-              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              className="whitespace-nowrap px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
-              <FileSpreadsheet className="h-4 w-4" />
+              <FileSpreadsheet className="h-4 w-4 shrink-0" />
               {exporting ? 'Mengekspor...' : 'Export Excel'}
             </button>
             {localStorage.getItem('companyId') === '1' && (
@@ -143,7 +143,7 @@ export default function DailyReport() {
                   setActiveOutletId(id);
                   if (o) setActiveOutletName(o.full_name || o.name);
                 }}
-                className="px-3 py-2 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340]"
+                className="col-span-2 w-full min-w-0 sm:w-auto sm:max-w-[220px] bg-white px-3 py-2 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340] truncate"
               >
                 {outlets.map((o) => (
                   <option key={o.id} value={o.id}>{o.full_name || o.name}</option>

@@ -16,7 +16,7 @@ import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../c
 import PaymentProofFields from '../../../components/PaymentProofFields.jsx';
 import BackdatePaymentField, { paidDatePayload } from '../../../components/BackdatePaymentField.jsx';
 import TransactionBarcodeCard from '../../../components/TransactionBarcodeCard.jsx';
-import ItemPhotoField from '../../../components/ItemPhotoField.jsx';
+import ItemPhotosField from '../../../components/ItemPhotosField.jsx';
 import ChangeFulfillmentModal from '../../../components/ChangeFulfillmentModal.jsx';
 import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
 import CleanoxItemsPanel from './CleanoxItemsPanel.jsx';
@@ -178,6 +178,11 @@ export default function DetailTransaction() {
     laundryMethodName: it.laundry_method_name || (it.laundry_method_code === 'DC' ? 'Dry Clean' : 'Wet Clean'),
     laundryMethodCode: it.laundry_method_code || (it.is_dry_clean === 1 ? 'DC' : 'WC'),
     photoUrl: it.photo_url || null,
+    // Semua foto kondisi item (tr_transaction_detail_photo); fallback foto tunggal lama
+    photos: (Array.isArray(it.photos) && it.photos.length
+      ? it.photos
+      : (it.photo_url ? [{ id: `legacy-${it.id}`, photo_url: it.photo_url }] : [])
+    ).map((p) => ({ id: p.id, url: p.photo_url })),
     workers: Array.isArray(it.workers) ? it.workers : [],
     fulfillmentType: it.fulfillment_type || (orderIsDelivery ? 'Delivery_Kurir' : 'Ambil_Di_Outlet')
   }));
@@ -987,12 +992,28 @@ export default function DetailTransaction() {
                         <div className="px-3.5 sm:px-4 pb-4 pt-1 border-t border-[#e0e0e0]/80 bg-[#fafafa]">
                           <div className="flex flex-col lg:flex-row gap-3">
                             {/* Photo */}
-                            <div className="shrink-0 w-full lg:w-[120px]">
-                              <ItemPhotoField
-                                photoUrl={it.photoUrl}
+                            <div className="shrink-0 w-full lg:w-[260px] min-w-0">
+                              <ItemPhotosField
+                                photos={it.photos}
                                 uploadUrl={`/api/transactions/${order.dbId}/items/${it.id}/photo`}
                                 orderLabel={order.id}
-                                onUploaded={(url) => setItems((prev) => prev.map((x) => (x.id === it.id ? { ...x, photoUrl: url } : x)))}
+                                onUploaded={(url, data) => setItems((prev) => prev.map((x) => (x.id === it.id
+                                  ? {
+                                      ...x,
+                                      photoUrl: x.photoUrl || url,
+                                      photos: Array.isArray(data?.photos)
+                                        ? data.photos.map((p) => ({ id: p.id, url: p.photo_url }))
+                                        : [...x.photos, { url }]
+                                    }
+                                  : x)))}
+                                onRemove={async (p) => {
+                                  const res = await axios.delete(
+                                    `/api/transactions/${order.dbId}/items/${it.id}/photos/${encodeURIComponent(p.id)}`,
+                                    { headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` } }
+                                  );
+                                  const next = (res.data?.data?.photos || []).map((x) => ({ id: x.id, url: x.photo_url }));
+                                  setItems((prev) => prev.map((x) => (x.id === it.id ? { ...x, photos: next, photoUrl: next[0]?.url || null } : x)));
+                                }}
                               />
                             </div>
 
@@ -1060,7 +1081,6 @@ export default function DetailTransaction() {
                               }`}>
                                 {isDone ? 'Selesai' : 'Belum selesai'}
                               </span>
-                              <span className="text-[10px] text-slate-400 font-medium">ID item #{it.id}</span>
                             </div>
                           </div>
 

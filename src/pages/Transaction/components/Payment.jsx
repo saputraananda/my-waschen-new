@@ -95,20 +95,20 @@ export default function Payment({
       <div className="lg:col-span-7 flex flex-col gap-5">
         <div className="bg-white border border-[#e0e0e0] rounded-3xl p-5 sm:p-6 shadow-xs flex flex-col gap-5">
           
-          <div className="flex items-center justify-between pb-4 border-b border-[#e0e0e0]">
-            <div>
+          <div className="flex items-start justify-between gap-3 pb-4 border-b border-[#e0e0e0]">
+            <div className="min-w-0">
               <h2 className="text-base font-black text-[#5f1340] uppercase tracking-wider flex items-center gap-2">
-                <Receipt className="h-5 w-5" />
-                <span>Rincian Nota Transaksi POS</span>
+                <Receipt className="h-5 w-5 shrink-0" />
+                <span>Rincian Nota</span>
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">Periksa kembali data pelanggan dan rincian item cucian</p>
             </div>
             <button
               type="button"
               onClick={() => setCurrentStep(3)}
-              className="px-3.5 py-2 bg-[#f8f8f8] hover:bg-[#e0e0e0] border border-[#e0e0e0] text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer"
+              className="shrink-0 whitespace-nowrap px-3.5 py-2 bg-[#f8f8f8] hover:bg-[#e0e0e0] border border-[#e0e0e0] text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer"
             >
-              <ArrowLeft className="h-3.5 w-3.5" />
+              <ArrowLeft className="h-3.5 w-3.5 shrink-0" />
               <span>Ubah Keranjang</span>
             </button>
           </div>
@@ -255,12 +255,9 @@ export default function Payment({
               </div>
             )}
 
-            <div className="p-4 bg-gradient-to-r from-[#5f1340]/10 via-[#5f1340]/5 to-transparent border border-[#5f1340]/20 rounded-2xl flex justify-between items-center mt-2">
-              <div>
-                <span className="text-[11px] font-black uppercase tracking-wider text-[#5f1340] block">Grand Total Tagihan</span>
-                <span className="text-[10px] text-slate-400 font-medium">Total yang harus dibayar</span>
-              </div>
-              <span className="text-2xl font-black text-[#5f1340] tracking-tight">
+            <div className="p-4 bg-gradient-to-r from-[#5f1340]/10 via-[#5f1340]/5 to-transparent border border-[#5f1340]/20 rounded-2xl flex flex-wrap justify-between items-center gap-x-3 gap-y-1 mt-2">
+              <span className="text-[11px] font-black uppercase tracking-wider text-[#5f1340]">Grand Total</span>
+              <span className="ml-auto whitespace-nowrap text-xl sm:text-2xl font-black text-[#5f1340] tracking-tight tabular-nums">
                 Rp {calculations.grandTotal.toLocaleString('id-ID')}
               </span>
             </div>

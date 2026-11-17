@@ -500,14 +500,11 @@ export default function HistoryTransaction({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-base font-extrabold text-[#313030] tracking-tight">Riwayat Transaksi POS</h3>
+              <h3 className="text-base font-extrabold text-[#313030] tracking-tight">Riwayat Transaksi</h3>
               <span className="px-2.5 py-0.5 rounded-full bg-[#5f1340]/10 text-[#5f1340] text-[10px] font-black border border-[#5f1340]/15">
                 {displayOrders.length} Order
               </span>
             </div>
-            <p className="text-xs text-slate-400 font-medium mt-0.5">
-              Klik baris untuk melihat rincian status pengerjaan per item
-            </p>
           </div>
 
           {((dateMode === 'range' && (rangeStart || rangeEnd)) || cutoffMonth !== getCutoffMonthKey() || paymentFilter !== 'Semua' || selectedBranchFilter !== 'Semua' || activeFilterTab !== 'Semua' || searchQuery) && (
@@ -700,10 +697,6 @@ export default function HistoryTransaction({
                           </span>
                         )}
                       </div>
-                      <span className="text-[9.5px] font-mono text-slate-400 font-normal block mt-0.5 flex items-center gap-1">
-                        <QrCode className="h-3 w-3 text-slate-400 shrink-0" />
-                        {order.barcode || order.id}
-                      </span>
                     </td>
 
                     <td className="py-3.5 px-6 whitespace-nowrap">

@@ -12,7 +12,8 @@ import { getEmployeeNames, fillFallbackNames } from '../utils/employeeName.js';
 import { buildCustomerTrackingUrl } from '../utils/customerTrackingUrl.js';
 import { attachQueueNo } from '../utils/queueNo.js';
 import { fetchSmartlinkWorkLog, groupSmartlinkWork, isSmartlinkTransaction, smartlinkEmployeeIds } from '../utils/smartlinkWorkLog.js';
-import { replaceUploadUrl, safeUnlinkAbsPath, buildUploadPublicUrl, isItemPhotoUrl, ITEM_PHOTO_SUBDIR, DELETE_REQUEST_SUBDIR, REFUND_REQUEST_SUBDIR } from '../middleware/upload.js';
+import { collectPhotoUrls, insertItemPhotos, loadItemPhotos, MAX_ITEM_PHOTOS } from '../utils/itemPhotos.js';
+import { safeUnlinkUploadUrl, replaceUploadUrl, safeUnlinkAbsPath, buildUploadPublicUrl, isItemPhotoUrl, ITEM_PHOTO_SUBDIR, DELETE_REQUEST_SUBDIR, REFUND_REQUEST_SUBDIR } from '../middleware/upload.js';
 import { REFUND_TYPES, findPendingRefund, insertRefundRequest, REFUND_SUMMARY_COLUMNS } from '../utils/transactionRefund.js';
 import { toWibYmdCompact, formatWibTime } from '../utils/wib.js';
 import { resolveValidCashier } from '../utils/cashierGuard.js';
@@ -460,6 +461,7 @@ export const createTransaction = async (req, res) => {
       const lineQty = parseFloat(item.qty) || 1;
       const fulfillmentType = isDelivery ? 'Delivery_Kurir' : 'Ambil_Di_Outlet';
       const isProduction = productionOf.get(parseInt(serviceId, 10)) === 0 ? 0 : 1;
+      const photoUrls = collectPhotoUrls(item, isItemPhotoUrl);
       const detailParams = [
         transactionId,
         serviceId,
@@ -478,7 +480,7 @@ export const createTransaction = async (req, res) => {
         item.conditionNotes || null,
         isProduction ? 'Antrean' : 'Selesai',
         isProduction ? null : new Date(),
-        isItemPhotoUrl(item.photoUrl) ? item.photoUrl : null,
+        photoUrls[0] || null, // sampul; semua foto di tr_transaction_detail_photo
         fulfillmentType
       ];
 
@@ -488,6 +490,12 @@ export const createTransaction = async (req, res) => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         detailParams
       );
+      await insertItemPhotos(connection, {
+        transactionId,
+        detailId: detailResult.insertId,
+        urls: photoUrls,
+        uploadedBy: resolvedCashierId
+      });
       // Phase 17: item Cleanox By Waschen -> antrean produksi Cleanox (1 baris per barang fisik)
       if (item.isCleanox && isProduction) {
         if (cleanoxOutletName === undefined) {
@@ -931,7 +939,9 @@ export const getTransactionDetail = async (req, res) => {
     ]);
     const smartlinkByDetail = groupSmartlinkWork(items, smartlinkRows, (eid) => workerNames.get(eid) || null);
     const byTime = (a, b) => new Date(a.completed_at || a.created_at || 0) - new Date(b.completed_at || b.created_at || 0);
+    const photosByDetail = await loadItemPhotos((sql, params) => myWaschenPool.query(sql, params), items);
     for (const it of items) {
+      it.photos = photosByDetail[it.id] || [];
       const progress = progressRows
         .filter((p) => Number(p.transaction_detail_id) === Number(it.id))
         .map((p) => ({
@@ -2074,7 +2084,7 @@ export const uploadItemPhotoDraft = async (req, res) => {
 
 /**
  * POST /api/transactions/:id/items/:itemId/photo
- * Upload / ganti foto item pada nota yang sudah dibuat.
+ * Tambah foto item pada nota yang sudah dibuat (bisa >1; foto pertama = sampul photo_url).
  */
 export const uploadItemPhoto = async (req, res) => {
   try {
@@ -2103,12 +2113,35 @@ export const uploadItemPhoto = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Item tidak ditemukan pada nota ini' });
     }
 
-    await myWaschenPool.query('UPDATE tr_transaction_detail SET photo_url = ? WHERE id = ?', [photoUrl, itemRows[0].id]);
-    await replaceUploadUrl(itemRows[0].photo_url, photoUrl);
+    const detail = itemRows[0];
+    const existing = await loadItemPhotos((sql, params) => myWaschenPool.query(sql, params), [detail]);
+    if ((existing[detail.id] || []).length >= MAX_ITEM_PHOTOS) {
+      await safeUnlinkAbsPath(req.file.path);
+      return res.status(400).json({ success: false, message: `Maksimal ${MAX_ITEM_PHOTOS} foto per item` });
+    }
+
+    const saved = await insertItemPhotos(myWaschenPool, {
+      transactionId: order.id,
+      detailId: detail.id,
+      urls: [photoUrl],
+      uploadedBy: Number(req.auth?.employeeId) || null
+    });
+    if (!saved) {
+      // Tabel foto belum dimigrasi: perilaku lama (ganti foto tunggal)
+      await myWaschenPool.query('UPDATE tr_transaction_detail SET photo_url = ? WHERE id = ?', [photoUrl, detail.id]);
+      await replaceUploadUrl(detail.photo_url, photoUrl);
+    } else if (!detail.photo_url) {
+      await myWaschenPool.query('UPDATE tr_transaction_detail SET photo_url = ? WHERE id = ?', [photoUrl, detail.id]);
+    }
 
     emitDashboardRefresh('transaction:updated', { outletId: order.outlet_id, transactionId: order.id });
 
-    return res.status(200).json({ success: true, message: 'Foto item tersimpan', data: { photoUrl } });
+    const after = await loadItemPhotos((sql, params) => myWaschenPool.query(sql, params), [{ ...detail, photo_url: detail.photo_url || photoUrl }]);
+    return res.status(200).json({
+      success: true,
+      message: 'Foto item tersimpan',
+      data: { photoUrl, photos: after[detail.id] || [] }
+    });
   } catch (error) {
     console.error('Error uploadItemPhoto:', error);
     if (req.file?.path) await safeUnlinkAbsPath(req.file.path);
@@ -2120,6 +2153,63 @@ export const uploadItemPhoto = async (req, res) => {
  * POST /api/transactions/:id/payment-proof
  * Upload bukti bayar (file / foto kamera) → UPLOAD_BASE_DIR/assets/payment_receipt
  */
+/**
+ * DELETE /api/transactions/:id/items/:itemId/photos/:photoId
+ * Hapus satu foto item (foto tidak wajib, boleh sampai habis).
+ */
+export const deleteItemPhoto = async (req, res) => {
+  try {
+    const { id, itemId, photoId } = req.params;
+    const [orderRows] = await myWaschenPool.query(
+      'SELECT id, outlet_id FROM tr_transaction WHERE id = ? OR order_no = ? LIMIT 1',
+      [id, id]
+    );
+    if (!orderRows.length) return res.status(404).json({ success: false, message: 'Nota tidak ditemukan' });
+    const order = orderRows[0];
+
+    const [itemRows] = await myWaschenPool.query(
+      'SELECT id, photo_url FROM tr_transaction_detail WHERE id = ? AND transaction_id = ? LIMIT 1',
+      [itemId, order.id]
+    );
+    if (!itemRows.length) return res.status(404).json({ success: false, message: 'Item tidak ditemukan pada nota ini' });
+    const detail = itemRows[0];
+
+    if (!/^\d+$/.test(String(photoId))) {
+      return res.status(400).json({ success: false, message: 'Foto lama belum dimigrasi, tidak bisa dihapus satu per satu' });
+    }
+    const [photoRows] = await myWaschenPool.query(
+      'SELECT id, photo_url FROM tr_transaction_detail_photo WHERE id = ? AND transaction_detail_id = ? LIMIT 1',
+      [photoId, detail.id]
+    );
+    if (!photoRows.length) return res.status(404).json({ success: false, message: 'Foto tidak ditemukan' });
+    const photo = photoRows[0];
+
+    await myWaschenPool.query('DELETE FROM tr_transaction_detail_photo WHERE id = ?', [photo.id]);
+    // Sampul ikut pindah ke foto berikutnya
+    if (detail.photo_url === photo.photo_url) {
+      const [[next]] = await myWaschenPool.query(
+        'SELECT photo_url FROM tr_transaction_detail_photo WHERE transaction_detail_id = ? ORDER BY id ASC LIMIT 1',
+        [detail.id]
+      );
+      await myWaschenPool.query('UPDATE tr_transaction_detail SET photo_url = ? WHERE id = ?', [next?.photo_url || null, detail.id]);
+    }
+    const [[stillUsed]] = await myWaschenPool.query(
+      'SELECT COUNT(*) AS n FROM tr_transaction_detail_photo WHERE photo_url = ?',
+      [photo.photo_url]
+    );
+    if (!Number(stillUsed.n)) await safeUnlinkUploadUrl(photo.photo_url);
+
+    emitDashboardRefresh('transaction:updated', { outletId: order.outlet_id, transactionId: order.id });
+
+    const [[fresh]] = await myWaschenPool.query('SELECT id, photo_url FROM tr_transaction_detail WHERE id = ?', [detail.id]);
+    const after = await loadItemPhotos((sql, params) => myWaschenPool.query(sql, params), [fresh]);
+    return res.status(200).json({ success: true, message: 'Foto item dihapus', data: { photos: after[detail.id] || [] } });
+  } catch (error) {
+    console.error('Error deleteItemPhoto:', error);
+    return res.status(500).json({ success: false, message: 'Gagal menghapus foto item' });
+  }
+};
+
 export const uploadPaymentProof = async (req, res) => {
   try {
     const { id } = req.params;

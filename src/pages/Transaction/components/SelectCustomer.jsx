@@ -76,10 +76,9 @@ export default function SelectCustomer({
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pb-3 border-b border-[#e0e0e0]">
           <div>
             <h1 className="text-xl font-black text-[#313030] tracking-tight flex items-center gap-2">
-              <Users className="h-5 w-5 text-[#5f1340]" />
-              <span>Langkah 1: Pilih Pelanggan POS Waschen</span>
+              <Users className="h-5 w-5 shrink-0 text-[#5f1340]" />
+              <span>Langkah 1 : Pilih Pelanggan</span>
             </h1>
-            <p className="text-xs text-slate-400 mt-0.5">Prioritas member VIP & Gold ditampilkan terlebih dahulu untuk kemudahan kasir</p>
           </div>
 
           <div className="flex items-center gap-2 self-stretch sm:self-auto">

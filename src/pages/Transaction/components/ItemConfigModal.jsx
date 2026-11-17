@@ -594,10 +594,11 @@ export default function ItemConfigModal({
           </div>
 
           {/* Modal Footer - Fixed at bottom */}
-          <div className="p-3.5 sm:p-4 border-t border-[#e0e0e0] bg-[#f8f8f8]/80 flex items-center justify-between gap-3 shrink-0">
-            <div>
-              <span className="text-[9.5px] font-bold text-slate-400 uppercase tracking-wider block">Subtotal Item:</span>
-              <span className="text-base sm:text-lg font-black text-[#5f1340]">
+          <div className="p-3.5 sm:p-4 border-t border-[#e0e0e0] bg-[#f8f8f8]/80 flex flex-col gap-3 shrink-0">
+            <div className="min-w-0">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Subtotal Item</span>
+                <span className="whitespace-nowrap text-lg font-black text-[#5f1340] tabular-nums">
                 Rp {(
                   isAddon
                     ? (parseFloat(itemSpecs.qty || 0) * unitRate)
@@ -607,7 +608,8 @@ export default function ItemConfigModal({
                       ? (((parseFloat(itemSpecs.length || 0)) * (parseFloat(itemSpecs.width || 0)) * (parseInt(itemSpecs.qty || 0, 10))) * unitRate)
                       : ((parseInt(itemSpecs.qty || 0, 10)) * unitRate)
                 ).toLocaleString('id-ID')}
-              </span>
+                </span>
+              </div>
               {!isKiloan && !isAddon && parseInt(itemSpecs.qty, 10) > 1 && (
                 <span className="block text-[10px] font-bold text-slate-500">
                   Dipecah jadi {parseInt(itemSpecs.qty, 10)} item terpisah (QC per item)
@@ -615,20 +617,20 @@ export default function ItemConfigModal({
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="grid grid-cols-[auto_1fr] items-center gap-2">
               <button
                 type="button"
                 onClick={() => setConfiguringItem(null)}
-                className="px-4 py-2.5 bg-white border border-[#e0e0e0] hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                className="px-5 py-2.5 bg-white border border-[#e0e0e0] hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer"
               >
                 Batal
               </button>
 
               <button
                 type="submit"
-                className="px-5 py-2.5 bg-gradient-to-r from-[#5f1340] to-[#7d1956] hover:from-[#4d0f33] hover:to-[#6a1549] text-white font-black text-xs rounded-xl shadow-xs active:scale-98 transition-all cursor-pointer flex items-center gap-1.5"
+                className="px-5 py-2.5 bg-gradient-to-r from-[#5f1340] to-[#7d1956] hover:from-[#4d0f33] hover:to-[#6a1549] text-white font-black text-xs rounded-xl shadow-xs active:scale-98 transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap"
               >
-                {isEditing ? <Save className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+                {isEditing ? <Save className="h-3.5 w-3.5 shrink-0" /> : <Plus className="h-3.5 w-3.5 shrink-0" />}
                 <span>{isEditing ? 'Simpan' : 'Masukkan Keranjang'}</span>
               </button>
             </div>

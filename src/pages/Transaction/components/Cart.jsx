@@ -1,7 +1,7 @@
 import React from 'react';
 import { Receipt, Trash2, Edit3, Zap, Truck, ArrowLeft, ArrowRight } from 'lucide-react';
 import ItemConfigModal from './ItemConfigModal.jsx';
-import ItemPhotoField from '../../../components/ItemPhotoField.jsx';
+import ItemPhotosField from '../../../components/ItemPhotosField.jsx';
 
 export default function Cart({
   cartItems,
@@ -10,7 +10,8 @@ export default function Cart({
   handleEditCartItem,
   handleToggleItemCleanox,
   handleToggleItemDryClean,
-  handleSetItemPhoto,
+  handleAddItemPhoto,
+  handleRemoveItemPhoto,
   configuringItem,
   setConfiguringItem,
   itemSpecs,
@@ -145,15 +146,6 @@ export default function Cart({
                       <span>Edit Rincian Item</span>
                     </span>
                     <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                      {item.category !== 'Biaya' && handleSetItemPhoto && (
-                        <ItemPhotoField
-                          compact
-                          photoUrl={item.photoUrl}
-                          uploadUrl="/api/transactions/item-photo"
-                          orderLabel={item.name}
-                          onUploaded={(url) => handleSetItemPhoto(item.cartId, url)}
-                        />
-                      )}
                       {item.size && item.size !== '-' && (
                         <span className="text-[10px] font-bold text-purple-900 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full">
                           Ukuran: {item.size}
@@ -176,6 +168,19 @@ export default function Cart({
                       )}
                     </div>
                   </div>
+
+                  {/* Foto item: satu baris penuh supaya jelas terlihat */}
+                  {item.category !== 'Biaya' && handleAddItemPhoto && (
+                    <div className="pt-2 mt-2 border-t border-dashed border-[#e0e0e0]">
+                      <ItemPhotosField
+                        photos={(Array.isArray(item.photoUrls) ? item.photoUrls : (item.photoUrl ? [item.photoUrl] : [])).map((url) => ({ url }))}
+                        uploadUrl="/api/transactions/item-photo"
+                        orderLabel={item.name}
+                        onUploaded={(url) => handleAddItemPhoto(item.cartId, url)}
+                        onRemove={(p) => handleRemoveItemPhoto(item.cartId, p.url)}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

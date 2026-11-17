@@ -195,10 +195,49 @@ export async function ensureDigitalNotaAccess(orderNo) {
   };
 }
 
-function openWhatsAppChat(digits, text) {
+/**
+ * iOS Safari (dan sebagian Android) memblokir window.open yang dipanggil SETELAH await
+ * (bukan lagi "aksi pengguna"). Maka tab dibuka kosong seketika saat klik,
+ * lalu diarahkan ke WA setelah data nota siap.
+ */
+function reserveWhatsAppWindow() {
+  try {
+    const win = window.open('', '_blank');
+    if (!win) return null;
+    try {
+      win.document.title = 'Membuka WhatsApp…';
+      win.document.body.innerHTML = '<p style="font-family:sans-serif;padding:24px;color:#5f1340">Menyiapkan nota digital, membuka WhatsApp…</p>';
+    } catch {
+      // abaikan — hanya teks tunggu
+    }
+    return win;
+  } catch {
+    return null;
+  }
+}
+
+function releaseWhatsAppWindow(win) {
+  try {
+    if (win && !win.closed) win.close();
+  } catch {
+    // abaikan
+  }
+}
+
+function openWhatsAppChat(digits, text, win = null) {
   // Langsung ke api.whatsapp.com — redirect wa.me me-re-encode query dan merusak emoji non-BMP.
   const url = `https://api.whatsapp.com/send?phone=${digits}&text=${encodeURIComponent(text)}`;
-  window.open(url, '_blank', 'noopener,noreferrer');
+  if (win && !win.closed) {
+    try {
+      win.opener = null;
+      win.location.href = url;
+      return;
+    } catch {
+      // jatuh ke cara cadangan
+    }
+  }
+  // Popup tetap diblokir / mode PWA: buka di tab ini (WA app akan mengambil alih)
+  window.location.href = url;
 }
 
 /**
@@ -209,11 +248,23 @@ export async function sendCustomerNotaWhatsApp(receipt, options = {}) {
   const settings = options.settings || DEFAULT_CUSTOMER_SETTINGS;
   const digits = toWhatsAppDigits(receipt?.customerPhone);
   if (!digits) {
+    releaseWhatsAppWindow(options.waWindow);
     const err = new Error('Nomor WhatsApp pelanggan kosong');
     err.code = 'NO_PHONE';
     throw err;
   }
 
+  // Harus sebelum await pertama (masih dalam aksi klik)
+  const waWindow = options.waWindow || reserveWhatsAppWindow();
+  try {
+    return await sendWithWindow(receipt, settings, digits, waWindow);
+  } catch (err) {
+    releaseWhatsAppWindow(waWindow);
+    throw err;
+  }
+}
+
+async function sendWithWindow(receipt, settings, digits, waWindow) {
   const access = await ensureDigitalNotaAccess(receipt?.id);
   const enriched = {
     ...receipt,
@@ -229,7 +280,7 @@ export async function sendCustomerNotaWhatsApp(receipt, options = {}) {
     throw err;
   }
 
-  openWhatsAppChat(digits, text);
+  openWhatsAppChat(digits, text, waWindow);
   return {
     mode: 'wa_me',
     sharedImage: false,
@@ -251,6 +302,9 @@ export async function sendCustomerNotaWhatsAppFromOrder(order, options = {}) {
     throw err;
   }
 
+  // Pesan tab WA sekarang (sebelum await) — lihat reserveWhatsAppWindow
+  const waWindow = sendOpts.waWindow || reserveWhatsAppWindow();
+
   if (fetchDetail) {
     try {
       const res = await axios.get(`/api/transactions/${encodeURIComponent(receipt.id)}`);
@@ -268,7 +322,7 @@ export async function sendCustomerNotaWhatsAppFromOrder(order, options = {}) {
     }
   }
 
-  return sendCustomerNotaWhatsApp(receipt, sendOpts);
+  return sendCustomerNotaWhatsApp(receipt, { ...sendOpts, waWindow });
 }
 
 /** Pesan alert setelah buka WA. */

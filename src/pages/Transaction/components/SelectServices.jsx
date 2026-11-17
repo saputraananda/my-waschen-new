@@ -105,11 +105,8 @@ export default function SelectServices({
           <div>
             <h2 className="text-sm font-black text-[#5f1340] uppercase tracking-wider flex items-center gap-2">
               <ShoppingBag className="h-4 w-4 shrink-0" />
-              <span>Langkah 2: Pilih Layanan Laundry</span>
+              <span>Langkah 2 : Pilih Layanan</span>
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Kiloan mengikuti minimal order masing-masing layanan. Anda dapat memilih lebih dari satu layanan.
-            </p>
           </div>
         </div>
 

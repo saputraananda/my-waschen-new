@@ -621,11 +621,23 @@ export default function TransactionPage() {
     )));
   };
 
-  const handleSetItemPhoto = (cartId, photoUrl) => {
+  // Foto kondisi item: opsional, boleh lebih dari 1
+  const itemPhotoUrls = (item) => (Array.isArray(item.photoUrls) ? item.photoUrls : (item.photoUrl ? [item.photoUrl] : []));
+  const handleAddItemPhoto = (cartId, photoUrl) => {
     setCartItems((prev) => prev.map((item) => (
-      item.cartId === cartId ? { ...item, photoUrl } : item
+      item.cartId === cartId
+        ? { ...item, photoUrls: [...itemPhotoUrls(item).filter((u) => u !== photoUrl), photoUrl], photoUrl: undefined }
+        : item
     )));
   };
+  const handleRemoveItemPhoto = (cartId, photoUrl) => {
+    setCartItems((prev) => prev.map((item) => (
+      item.cartId === cartId
+        ? { ...item, photoUrls: itemPhotoUrls(item).filter((u) => u !== photoUrl), photoUrl: undefined }
+        : item
+    )));
+  };
+
 
   const handleToggleItemDryClean = (cartId) => {
     setCartItems(cartItems.map((item) => {
@@ -811,7 +823,7 @@ export default function TransactionPage() {
         material: item.material,
         size: item.size,
         conditionNotes: item.note,
-        photoUrl: item.photoUrl || null
+        photoUrls: itemPhotoUrls(item)
       }))
     };
 
@@ -1132,7 +1144,8 @@ export default function TransactionPage() {
             handleEditCartItem={handleEditCartItem}
             handleToggleItemCleanox={handleToggleItemCleanox}
             handleToggleItemDryClean={handleToggleItemDryClean}
-            handleSetItemPhoto={handleSetItemPhoto}
+            handleAddItemPhoto={handleAddItemPhoto}
+            handleRemoveItemPhoto={handleRemoveItemPhoto}
             configuringItem={configuringItem}
             setConfiguringItem={setConfiguringItem}
             itemSpecs={itemSpecs}

@@ -6,18 +6,15 @@ import HeaderNav from '../../components/HeaderNav';
 import HistoryTransaction from './components/HistoryTransaction';
 import RequestDeleteTransaction from './components/RequestDeleteTransaction';
 import RequestRefundTransaction from './components/RequestRefundTransaction';
-import { useShift } from '../../context/ShiftContext.jsx';
 import { getCutoffRange } from '../../utils/dateCutoffFilter.js';
 import {
   History as HistoryIcon,
   Trash2,
-  ShoppingBag,
   RefreshCcw
 } from 'lucide-react';
 
 export default function History() {
   const navigate = useNavigate();
-  const { startOrderFlow } = useShift();
   const [userProfile, setUserProfile] = useState(null);
   const [activeOutletName, setActiveOutletName] = useState(localStorage.getItem('activeOutletName') || 'Waschen Laundry Raffles Hills');
   const [activeOutletId, setActiveOutletId] = useState(localStorage.getItem('activeOutletId') || '');
@@ -31,7 +28,7 @@ export default function History() {
   const [transactionsLoading, setTransactionsLoading] = useState(true);
 
   useEffect(() => {
-    document.title = 'Riwayat Transaksi POS | Waschen Laundry';
+    document.title = 'Riwayat Transaksi | Waschen Laundry';
     const token = localStorage.getItem('token');
     if (!token) {
       navigate('/login', { replace: true });
@@ -170,20 +167,12 @@ export default function History() {
 
       <main className="max-w-[1500px] w-full mx-auto p-4 sm:p-6 flex-grow flex flex-col gap-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-2xs">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-[#313030] tracking-tight flex items-center gap-2.5">
-              <HistoryIcon className="h-6 w-6 text-[#5f1340]" />
-              <span>Riwayat Transaksi, Refund & Delete</span>
+          <div className="min-w-0 w-full">
+            <h1 className="text-[clamp(13px,4.1vw,24px)] font-black text-[#313030] tracking-tight flex items-center gap-2 sm:gap-2.5 min-w-0">
+              <HistoryIcon className="h-5 w-5 sm:h-6 sm:w-6 shrink-0 text-[#5f1340]" />
+              <span className="whitespace-nowrap truncate">Riwayat Transaksi, Refund & Delete</span>
             </h1>
           </div>
-
-          <button
-            onClick={startOrderFlow}
-            className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-[#5f1340] hover:bg-[#4d0f33] text-white font-black rounded-xl text-xs transition-all shadow-2xs cursor-pointer whitespace-nowrap"
-          >
-            <ShoppingBag className="h-4 w-4" />
-            <span>Order</span>
-          </button>
         </div>
 
         <div className="flex border-b border-[#e0e0e0] gap-2 overflow-x-auto">

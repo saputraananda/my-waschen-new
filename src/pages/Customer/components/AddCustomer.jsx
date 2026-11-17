@@ -402,7 +402,7 @@ export default function AddCustomer({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="flex flex-col gap-1">
                       <label className={labelCls}>Tanggal Lahir</label>
-                      <div className="relative">
+                      <div className="relative min-w-0">
                         {!form.birthDate && (
                           <span
                             aria-hidden="true"
@@ -412,7 +412,7 @@ export default function AddCustomer({
                           </span>
                         )}
                         <input
-                          className={`${fieldCls} w-full ${!form.birthDate ? 'text-transparent [&::-webkit-datetime-edit]:text-transparent [&::-webkit-calendar-picker-indicator]:opacity-100' : ''}`}
+                          className={`${fieldCls} w-full min-w-0 max-w-full appearance-none [-webkit-appearance:none] text-left [&::-webkit-date-and-time-value]:text-left ${!form.birthDate ? 'text-transparent [&::-webkit-datetime-edit]:text-transparent [&::-webkit-calendar-picker-indicator]:opacity-100' : ''}`}
                           type="date"
                           value={form.birthDate}
                           onChange={(e) => patch({ birthDate: e.target.value })}
