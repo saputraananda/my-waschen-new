@@ -77,7 +77,7 @@ function rejectActor(req, res) {
   }
   return res.status(403).json({
     success: false,
-    message: 'QC hanya bisa dilakukan akun staf outlet (punya role & outlet). Akun Manajemen hanya bisa melihat.'
+    message: 'Outlet belum ditetapkan. Pilih outlet di header POS untuk melakukan QC.'
   });
 }
 
@@ -143,6 +143,12 @@ async function resolveActor(req) {
     outletId = requestedOutletId;
   }
   if (!outletId) return null;
+
+  // Akun tanpa mst_role (mis. Manajemen): nama dari mst_employee supaya QC tercatat atas namanya
+  if (!roleRows[0]?.employee_name && !fullName) {
+    const [emp] = await mainPool.query('SELECT full_name FROM mst_employee WHERE employee_id = ? LIMIT 1', [employeeId]);
+    fullName = String(emp[0]?.full_name || '').trim();
+  }
 
   return {
     employeeId,
@@ -402,6 +408,8 @@ export const submitPosQc = async (req, res) => {
     fd.append('employee_id', String(actor.employeeId));
     // Outlet kerja staf (bisa drop point yang dipilih di header); Waschen Mobile memvalidasi ulang
     fd.append('outlet_id', String(actor.outletId));
+    // Nama pengerja (dipakai Waschen Mobile bila karyawan tidak punya mst_role, mis. Manajemen)
+    if (actor.fullName) fd.append('employee_name', actor.fullName);
     for (const key of [
       'transaction_detail_id', 'stage', 'qc_status', 'qc_decision', 'returned_to_stage',
       'notes', 'wa_contacted', 'requires_ironing', 'bags', 'packings', 'kg_items'
@@ -443,6 +451,7 @@ export const resolvePosHold = async (req, res) => {
       json: {
         employee_id: actor.employeeId,
         outlet_id: actor.outletId,
+        employee_name: actor.fullName || '',
         detailId,
         decision,
         note: req.body?.note || ''
