@@ -20,7 +20,7 @@ const FILTERS = [
 
 /**
  * Bagi item nota Drop Point ke cabang produksi (atau kembalikan ke drop point).
- * Terkunci setelah item keluar dari status Antrean.
+ * Terkunci setelah item dicuci (boleh dibagi saat Antrean atau sesudah QC awal / Pencucian).
  */
 export default function DropPointDistribution() {
   const navigate = useNavigate();
@@ -172,7 +172,7 @@ export default function DropPointDistribution() {
           ) : null}
           <p className="text-xs text-slate-400 mt-1">
             Item yang tidak dibagi dikerjakan di drop point ini sendiri. Pilih item, lalu tentukan cabang yang mengerjakan.
-            Bisa diubah (atau dikembalikan ke drop point) selama item masih berstatus Antrean.
+            Bisa dibagi sebelum atau sesudah QC awal di drop point, dan bisa diubah (atau dikembalikan ke drop point) selama item belum dicuci.
           </p>
           <div className="flex flex-wrap gap-2 mt-4">
             <span className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-extrabold">

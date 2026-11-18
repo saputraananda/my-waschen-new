@@ -277,8 +277,7 @@ export default function AddMember({
             <CreditCard className="h-6 w-6" />
           </div>
           <div>
-            <h2 className="text-lg font-black text-[#313030]">Aktivasi Paket Membership Member</h2>
-            <p className="text-xs text-slate-400">Pilih pelanggan terdaftar dari database mst_customer & setorkan nominal pas paket deposit</p>
+            <h2 className="text-lg font-black text-[#313030]">Aktivasi Member Waschen</h2>
           </div>
         </div>
 
@@ -298,7 +297,7 @@ export default function AddMember({
           <div className="flex items-center justify-between border-b border-[#e0e0e0] pb-2">
             <div className="flex items-center gap-2 text-[#5f1340] font-black text-xs uppercase tracking-wider">
               <UserCheck className="h-4 w-4" />
-              <span>1. Identitas Member (Pilih Customer Terdaftar)</span>
+              <span>1. Identitas Member</span>
             </div>
             <button
               type="button"

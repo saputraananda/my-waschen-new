@@ -9,22 +9,25 @@ import { isDropPointOutlet, listDropPointOutlets } from '../utils/dropPointOutle
  *
  * Drop Point = outlet biasa. production_outlet_id NULL = item dikerjakan di drop point itu sendiri
  * (seperti outlet biasa); NOT NULL = didistribusikan ke outlet tsb untuk produksi/QC.
- * Item boleh dibagi / dipindah / dikembalikan ke drop point hanya selama masih di status awal
- * (Antrean), tidak di-hold, dan belum ada progres produksi selain QC awal (frontliner).
+ * Item boleh dibagi / dipindah / dikembalikan ke drop point selama BELUM DICUCI: status Antrean
+ * atau Pencucian (QC awal frontliner sudah selesai, menunggu cuci), tidak di-hold, dan belum ada
+ * progres produksi selain QC awal (frontliner). Alur drop point: terima + QC awal di drop point,
+ * lalu dibagi ke cabang yang mencuci.
  *
  * Stok BOM: pemakaian (movement Usage, tidak mengubah qty_current) dicatat saat nota dibuat di
  * outlet nota (drop point). Saat item pindah outlet produksi, log Usage di outlet lama dibatalkan
  * dan dicatat ulang di outlet baru — tepat per item (penanda transaction_detail id di notes log).
  */
 
-const EDITABLE_STATUS = 'Antrean';
+/** Status yang masih boleh dibagi: sebelum QC awal, atau sesudah QC awal tapi belum dicuci. */
+const EDITABLE_STATUSES = ['Antrean', 'Pencucian'];
 
 /** SQL: jumlah progres produksi yang sudah berjalan selain QC awal (frontliner). */
 const STARTED_PROGRESS_SQL = `(SELECT COUNT(*) FROM tr_item_progress p
   WHERE p.transaction_detail_id = d.id AND p.stage <> 'frontliner')`;
 
 const isItemEditable = (it) =>
-  it.item_work_status === EDITABLE_STATUS && Number(it.is_on_hold) !== 1 && Number(it.progress_started) === 0;
+  EDITABLE_STATUSES.includes(it.item_work_status) && Number(it.is_on_hold) !== 1 && Number(it.progress_started) === 0;
 
 /**
  * Outlet drop point yang sedang dikerjakan. Staf: dikunci ke outlet di header (req.dropPointScope).
@@ -196,7 +199,7 @@ export const assignDropPointItems = async (req, res) => {
       await connection.rollback();
       return res.status(409).json({
         success: false,
-        message: `${locked.length} item sudah mulai diproses (bukan status Antrean / sedang di-hold) dan tidak bisa dipindah.`,
+        message: `${locked.length} item sudah dicuci / diproses lebih lanjut atau sedang di-hold, tidak bisa dipindah.`,
         lockedIds: locked.map((it) => it.id)
       });
     }
