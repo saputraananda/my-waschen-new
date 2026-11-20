@@ -7,10 +7,10 @@ import DateModeFilter from '../../components/DateModeFilter.jsx';
 import { ProofLink } from '../../components/ImageLightbox.jsx';
 import UploadDepositModal from './components/UploadDepositModal.jsx';
 import { formatEmployeeName } from '../../utils/FormatName.js';
-import { todayWibISO, formatWibDateTime } from '../../utils/wib.js';
+import { todayWibISO } from '../../utils/wib.js';
 import { isHqUser } from '../../utils/authSession.js';
 import { getCutoffMonthKey, getCutoffRangeForMonth, formatDateKeyId } from '../../utils/dateCutoffFilter.js';
-import { Banknote, Paperclip, RefreshCw, AlertTriangle, CheckCircle2, Clock3 } from 'lucide-react';
+import { Banknote, RefreshCw, AlertTriangle, CheckCircle2, Clock3, Upload, Image as ImageIcon } from 'lucide-react';
 
 const STATUS_TABS = [
   { key: 'all', label: 'Semua' },
@@ -116,6 +116,25 @@ export default function DepositReport() {
 
   const periodLabel = `${range.start ? formatDateKeyId(range.start) : 'Awal'} – ${formatDateKeyId(range.end)}`;
 
+
+  // Kelompokkan per tanggal closing (terbaru di atas)
+  const groups = useMemo(() => {
+    const map = new Map();
+    rows.forEach((r) => {
+      const k = dateKeyOf(r.closed_at);
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(r);
+    });
+    return [...map.entries()]
+      .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+      .map(([key, items]) => ({
+        key,
+        items: items.sort((a, b) => new Date(b.closed_at) - new Date(a.closed_at)),
+        revenue: items.reduce((sum, r) => sum + (Number(r.declared_revenue) || 0), 0),
+        pending: items.filter((r) => r.status !== 'uploaded').length
+      }));
+  }, [rows]);
+
   return (
     <div className="min-h-screen bg-[#f8f8f8] text-[#313030] flex flex-col font-sans">
       <HeaderNav
@@ -127,26 +146,20 @@ export default function DepositReport() {
         userProfile={userProfile}
       />
 
-      <main className="max-w-[1200px] w-full mx-auto p-4 sm:p-6 flex-grow flex flex-col gap-5">
-        <div className="bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-xs flex flex-col gap-4">
-          <div className="flex flex-col sm:flex-row justify-between gap-3 sm:items-center">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-[#5f1340]/10 text-[#5f1340] rounded-2xl">
-                <Banknote className="h-5 w-5" />
-              </div>
-              <div>
-                <h1 className="text-xl font-black tracking-tight">Setoran Tunai</h1>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Bukti setor uang tiap closing Final shift. Batas upload H+{dueDays}.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
+      <main className="max-w-[1500px] w-full min-w-0 mx-auto p-3 sm:p-6 flex-grow flex flex-col gap-4 sm:gap-5">
+        {/* Header + filter */}
+        <div className="bg-white border border-[#e0e0e0] rounded-3xl p-4 sm:p-5 flex flex-col gap-3 min-w-0">
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="text-lg sm:text-2xl font-black tracking-tight flex items-center gap-2 min-w-0">
+              <Banknote className="h-5 w-5 sm:h-6 sm:w-6 text-[#5f1340] shrink-0" />
+              <span className="truncate">Setoran Tunai</span>
+            </h1>
+            <div className="flex items-center gap-2 shrink-0">
               {isHq && (
                 <select
                   value={hqOutletId}
                   onChange={(e) => setHqOutletId(e.target.value)}
-                  className="px-3 py-2 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340] bg-white"
+                  className="hidden sm:block max-w-[220px] px-3 py-2.5 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340] bg-white truncate"
                 >
                   <option value="">Semua Outlet</option>
                   {outlets.map((o) => (
@@ -157,15 +170,28 @@ export default function DepositReport() {
               <button
                 type="button"
                 onClick={load}
-                className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#5f1340]/10 text-[#5f1340] rounded-xl text-xs font-black cursor-pointer"
+                title="Muat ulang"
+                className="p-2.5 bg-[#5f1340]/10 hover:bg-[#5f1340]/15 text-[#5f1340] rounded-xl cursor-pointer"
               >
-                <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-                Refresh
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          {isHq && (
+            <select
+              value={hqOutletId}
+              onChange={(e) => setHqOutletId(e.target.value)}
+              className="sm:hidden w-full px-3 py-2.5 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340] bg-white"
+            >
+              <option value="">Semua Outlet</option>
+              {outlets.map((o) => (
+                <option key={o.id} value={o.id}>{o.full_name || o.name}</option>
+              ))}
+            </select>
+          )}
+
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
             <DateModeFilter
               mode={dateMode}
               onModeChange={setDateMode}
@@ -177,33 +203,21 @@ export default function DepositReport() {
               onCutoffMonthChange={setCutoffMonth}
               showCutoffLabel={false}
             />
-            <span className="text-[10px] font-bold text-slate-400">
-              Ditampilkan: {periodLabel} (sampai hari ini)
-            </span>
+            <span className="text-[11px] font-bold text-slate-400">{periodLabel}</span>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <SummaryTile label="Total Setoran" value={summary.total} />
-          <SummaryTile label="Sudah Upload" value={summary.uploaded} tone="emerald" />
-          <SummaryTile label="Belum Upload" value={summary.pending} tone="amber" />
-          <SummaryTile label="Terlambat" value={summary.late} tone="rose" />
-        </div>
-
-        <div className="flex flex-wrap gap-1.5">
+        {/* Ringkasan = tombol filter status */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
           {STATUS_TABS.map((t) => (
-            <button
+            <StatusTile
               key={t.key}
-              type="button"
+              label={t.label}
+              value={t.key === 'all' ? summary.total : summary[t.key]}
+              tone={t.key}
+              active={statusTab === t.key}
               onClick={() => setStatusTab(t.key)}
-              className={`px-3 py-1.5 rounded-xl text-[11px] font-black border cursor-pointer transition-colors ${
-                statusTab === t.key
-                  ? 'bg-[#5f1340] text-white border-[#5f1340]'
-                  : 'bg-white text-slate-600 border-[#e0e0e0] hover:bg-slate-50'
-              }`}
-            >
-              {t.label}
-            </button>
+            />
           ))}
         </div>
 
@@ -220,28 +234,29 @@ export default function DepositReport() {
           </div>
         ) : rows.length === 0 ? (
           <div className="bg-white border border-[#e0e0e0] rounded-3xl p-12 text-center text-slate-400 text-xs font-bold">
-            Tidak ada setoran untuk filter ini
+            Tidak ada setoran
           </div>
         ) : (
-          <div className="bg-white border border-[#e0e0e0] rounded-3xl shadow-xs overflow-x-auto">
-            <table className="w-full min-w-[860px] text-xs">
-              <thead>
-                <tr className="bg-[#f8f8f8] text-[10px] uppercase text-slate-400 font-extrabold">
-                  <th className="py-3 px-4 text-left">Closing / Tanggal</th>
-                  <th className="py-3 px-4 text-left">Outlet · Shift</th>
-                  <th className="py-3 px-4 text-right">Revenue / Tunai</th>
-                  <th className="py-3 px-4 text-left">Status</th>
-                  <th className="py-3 px-4 text-left">Diupload Oleh</th>
-                  <th className="py-3 px-4 text-left">Bukti</th>
-                  <th className="py-3 px-4 text-right">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#e0e0e0]/60 font-semibold">
-                {rows.map((r) => (
-                  <DepositRow key={r.key} row={r} onUpload={() => setUploadRow(r)} />
+          <div className="bg-white border border-[#e0e0e0] rounded-3xl p-3 sm:p-5 flex flex-col gap-5">
+            {groups.map((g) => (
+              <section key={g.key} className="flex flex-col gap-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-0.5 px-1">
+                  <h2 className="text-sm font-black text-[#313030]">
+                    {longDate(g.key)}
+                    {relativeDay(g.key, today) && <span className="font-medium text-slate-500"> · {relativeDay(g.key, today)}</span>}
+                  </h2>
+                  <p className="text-[11px] sm:text-xs text-slate-500">
+                    {g.items.length} closing · <strong className="text-[#313030] tabular-nums">{fmtRp(g.revenue)}</strong> ·{' '}
+                    {g.pending > 0
+                      ? <strong className="text-amber-700">{g.pending} belum upload</strong>
+                      : <strong className="text-emerald-700">semua sudah upload</strong>}
+                  </p>
+                </div>
+                {g.items.map((r) => (
+                  <ClosingItem key={r.key} row={r} dueDays={dueDays} onUpload={() => setUploadRow(r)} />
                 ))}
-              </tbody>
-            </table>
+              </section>
+            ))}
           </div>
         )}
       </main>
@@ -257,110 +272,178 @@ export default function DepositReport() {
   );
 }
 
-function SummaryTile({ label, value, tone }) {
-  const tones = {
-    emerald: 'text-emerald-700',
-    amber: 'text-amber-700',
-    rose: 'text-rose-700'
-  };
+/* ------------------------------------------------------------------ helpers */
+
+const pad = (n) => String(n).padStart(2, '0');
+
+/** YYYY-MM-DD (zona waktu perangkat = WIB di outlet) */
+function dateKeyOf(v) {
+  const d = v ? new Date(v) : null;
+  if (!d || Number.isNaN(d.getTime())) return '0000-00-00';
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function keyToDate(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
+/** "Jumat, 20 Nov 2026" */
+const longDate = (key) => keyToDate(key).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+
+function relativeDay(key, todayKey) {
+  const diff = Math.round((keyToDate(todayKey) - keyToDate(key)) / 86400000);
+  if (diff === 0) return 'Hari ini';
+  if (diff === 1) return 'Kemarin';
+  return '';
+}
+
+const hhmm = (v) => {
+  const d = v ? new Date(v) : null;
+  return !d || Number.isNaN(d.getTime()) ? '-' : `${pad(d.getHours())}.${pad(d.getMinutes())}`;
+};
+
+/** "Waschen Laundry Citra Gran" → "Citra Gran" */
+const shortOutlet = (name) => String(name || '-').replace(/^waschen\s+laundry\s+/i, '');
+
+/** "An'nisa Puspa Khairani Rangkuti" → "An'nisa P. K. Rangkuti" */
+function shortName(name) {
+  const parts = String(formatEmployeeName(name) || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 2) return parts.join(' ') || '-';
+  return [parts[0], ...parts.slice(1, -1).map((p) => `${p[0]}.`), parts[parts.length - 1]].join(' ');
+}
+
+const TILE_TONES = {
+  all: { text: 'text-[#313030]', active: 'border-[#5f1340] ring-2 ring-[#5f1340]/15' },
+  uploaded: { text: 'text-emerald-700', active: 'border-emerald-500 ring-2 ring-emerald-500/15' },
+  pending: { text: 'text-amber-700', active: 'border-amber-500 ring-2 ring-amber-500/15' },
+  late: { text: 'text-rose-700', active: 'border-rose-500 ring-2 ring-rose-500/15' }
+};
+
+function StatusTile({ label, value, tone, active, onClick }) {
+  const t = TILE_TONES[tone] || TILE_TONES.all;
   return (
-    <div className="bg-white border border-[#e0e0e0] rounded-2xl p-4 shadow-xs">
-      <span className="text-[9px] text-slate-400 font-bold uppercase block">{label}</span>
-      <span className={`text-2xl font-black block mt-1 ${tones[tone] || 'text-[#313030]'}`}>{value}</span>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-left bg-white border rounded-2xl px-4 py-3 cursor-pointer transition-all ${active ? t.active : 'border-[#e0e0e0] hover:border-slate-300'}`}
+    >
+      <span className="text-[11px] text-slate-500 font-bold block">{label}</span>
+      <span className={`text-xl sm:text-2xl font-black tabular-nums block ${t.text}`}>{Number(value || 0).toLocaleString('id-ID')}</span>
+    </button>
   );
 }
 
-function StatusBadge({ row }) {
-  if (row.status === 'uploaded') {
-    return (
-      <div className="flex flex-col gap-1 items-start">
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black">
-          <CheckCircle2 className="h-3 w-3" /> Sudah Upload
-        </span>
-        {row.is_late && (
-          <span className="text-[10px] font-black text-rose-700">Terlambat {row.late_days} hari</span>
-        )}
-      </div>
-    );
-  }
-  return (
-    <div className="flex flex-col gap-1 items-start">
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-black">
-        <Clock3 className="h-3 w-3" /> Belum Upload
-      </span>
-      {row.is_late && (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black">
-          Terlambat {row.late_days} hari
-        </span>
-      )}
-    </div>
-  );
-}
+/* ------------------------------------------------------------- satu closing */
 
-function DepositRow({ row, onUpload }) {
+function ClosingItem({ row, dueDays, onUpload }) {
   const uploaded = row.status === 'uploaded';
+  const late = row.is_late && !uploaded;
+  const isSiang = Number(row.shift_number) === 2;
+
+  const tone = uploaded
+    ? { card: 'bg-white border-[#e0e0e0]', box: 'bg-indigo-50 text-indigo-900' }
+    : late
+      ? { card: 'bg-rose-50/60 border-rose-200', box: 'bg-rose-100/70 text-rose-900' }
+      : { card: 'bg-amber-50/60 border-amber-200', box: 'bg-amber-100/70 text-amber-900' };
+
+  // Batas upload = tanggal closing + H+dueDays
+  const dueDate = keyToDate(dateKeyOf(row.closed_at));
+  dueDate.setDate(dueDate.getDate() + Number(dueDays || 0));
+  const dueLabel = Number(dueDays || 0) === 0
+    ? 'Upload sebelum tutup hari'
+    : `Batas ${dueDate.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' })}`;
+
+  const sameDayUpload = uploaded && dateKeyOf(row.deposit_uploaded_at) === dateKeyOf(row.closed_at);
+  const uploadedWhen = uploaded
+    ? (sameDayUpload
+      ? hhmm(row.deposit_uploaded_at)
+      : `${keyToDate(dateKeyOf(row.deposit_uploaded_at)).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} ${hhmm(row.deposit_uploaded_at)}`)
+    : '';
+
   return (
-    <tr className={row.is_late && !uploaded ? 'bg-rose-50/40' : ''}>
-      <td className="py-3 px-4 whitespace-nowrap">
-        <span className="block">{formatWibDateTime(row.closed_at)}</span>
-        <span className="block text-[10px] text-slate-400 font-medium">
-          Ditutup: {formatEmployeeName(row.closed_by_name || row.opener_name)}
-        </span>
-      </td>
-      <td className="py-3 px-4">
-        <span className="block">{row.outlet_name}</span>
-        <span className="block text-[10px] text-slate-400 font-medium">
-          {`Shift ${Number(row.shift_number) === 2 ? 'Siang' : 'Pagi'} · #${row.id}`}
-        </span>
-      </td>
-      <td className="py-3 px-4 text-right whitespace-nowrap text-[#5f1340]">
-        {row.declared_revenue != null ? fmtRp(row.declared_revenue) : '—'}
-      </td>
-      <td className="py-3 px-4"><StatusBadge row={row} /></td>
-      <td className="py-3 px-4">
-        {uploaded ? (
-          <>
-            <span className="block">{formatEmployeeName(row.deposit_uploaded_by_name)}</span>
-            <span className="block text-[10px] text-slate-400 font-medium">
-              {formatWibDateTime(row.deposit_uploaded_at)}
-            </span>
-            {row.deposit_notes && (
-              <span className="block text-[10px] text-slate-500 font-medium mt-0.5 max-w-[14rem] break-words">
-                {row.deposit_notes}
-              </span>
+    <div className={`border rounded-2xl p-3 sm:p-4 flex flex-col md:flex-row md:items-center gap-3 md:gap-5 ${tone.card}`}>
+      {/* Jam + shift, outlet, revenue */}
+      <div className="flex items-center gap-3 sm:gap-4 min-w-0 md:flex-1">
+        <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex flex-col items-center justify-center shrink-0 ${tone.box}`}>
+          <span className="text-sm sm:text-base font-black tabular-nums leading-none">{hhmm(row.closed_at)}</span>
+          <span className="text-[9px] sm:text-[10px] font-black tracking-wider mt-1">{isSiang ? 'SIANG' : 'PAGI'}</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm sm:text-base font-black text-[#313030] truncate" title={row.outlet_name}>{shortOutlet(row.outlet_name)}</p>
+          <p className="text-[11px] sm:text-xs text-slate-500 truncate">
+            Closing oleh {formatEmployeeName(row.closed_by_name || row.opener_name)}
+          </p>
+        </div>
+        <div className="text-right shrink-0">
+          <span className="block text-[10px] sm:text-[11px] text-slate-400 font-semibold">Revenue</span>
+          <span className="block text-sm sm:text-lg font-black text-[#313030] tabular-nums leading-tight">
+            {row.declared_revenue != null ? fmtRp(row.declared_revenue) : '—'}
+          </span>
+        </div>
+      </div>
+
+      {/* Status bukti + aksi */}
+      <div className="flex items-center gap-3 md:w-[46%] lg:w-[42%] shrink-0 pt-3 md:pt-0 border-t md:border-t-0 md:border-l border-black/5 md:pl-5">
+        <div className="flex items-start gap-2.5 min-w-0 flex-1">
+          {uploaded ? (
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+          ) : (
+            <Clock3 className={`h-5 w-5 shrink-0 mt-0.5 ${late ? 'text-rose-600' : 'text-amber-600'}`} />
+          )}
+          <div className="min-w-0">
+            {uploaded ? (
+              <>
+                <p className="text-xs sm:text-sm font-black text-emerald-700 truncate">Bukti diupload {uploadedWhen}</p>
+                <p className="text-[11px] sm:text-xs text-slate-500 truncate" title={row.deposit_notes || ''}>
+                  oleh {shortName(row.deposit_uploaded_by_name)}{row.deposit_notes ? ` · "${row.deposit_notes}"` : ''}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className={`text-xs sm:text-sm font-black truncate ${late ? 'text-rose-700' : 'text-amber-800'}`}>
+                  {late ? `Terlambat ${row.late_days} hari` : 'Bukti setor belum ada'}
+                </p>
+                <p className={`text-[11px] sm:text-xs truncate ${late ? 'text-rose-600' : 'text-amber-700'}`}>
+                  {late ? 'Segera upload bukti setor' : dueLabel}
+                </p>
+              </>
             )}
-          </>
-        ) : (
-          <span className="text-slate-300">—</span>
-        )}
-      </td>
-      <td className="py-3 px-4">
-        {uploaded ? (
-          <ProofLink
-            url={row.deposit_proof_url}
-            title="Bukti setoran tunai"
-            className="inline-flex items-center gap-1 text-[#5f1340] font-black underline cursor-pointer"
-          >
-            <Paperclip className="h-3 w-3" /> Lihat Bukti
-          </ProofLink>
-        ) : (
-          <span className="text-slate-300">—</span>
-        )}
-      </td>
-      <td className="py-3 px-4 text-right">
-        <button
-          type="button"
-          onClick={onUpload}
-          className={`px-3 py-1.5 rounded-xl text-[11px] font-black cursor-pointer ${
-            uploaded
-              ? 'bg-white border border-[#e0e0e0] text-slate-600 hover:bg-slate-50'
-              : 'bg-gradient-to-r from-[#5f1340] to-[#7d1956] text-white shadow-sm'
-          }`}
-        >
-          {uploaded ? 'Ganti' : 'Upload'}
-        </button>
-      </td>
-    </tr>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {uploaded ? (
+            <>
+              <ProofLink
+                url={row.deposit_proof_url}
+                title="Bukti setoran tunai"
+                className="inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-[#e0e0e0] bg-white hover:border-[#5f1340]/40 text-[#313030] text-xs font-black cursor-pointer whitespace-nowrap"
+              >
+                <ImageIcon className="h-4 w-4" />
+                <span className="hidden sm:inline">Lihat bukti</span>
+              </ProofLink>
+              <button
+                type="button"
+                onClick={onUpload}
+                title="Ganti bukti"
+                className="p-2 sm:p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={onUpload}
+              className="inline-flex items-center gap-1.5 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-[#5f1340] hover:bg-[#4d0f33] text-white text-xs font-black cursor-pointer whitespace-nowrap shadow-sm"
+            >
+              <Upload className="h-4 w-4" />
+              Upload bukti
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

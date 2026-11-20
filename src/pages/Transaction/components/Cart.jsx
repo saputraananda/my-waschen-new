@@ -44,10 +44,9 @@ export default function Cart({
         <div className="bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-xs flex flex-col gap-4">
           <div className="pb-3 border-b border-[#e0e0e0]">
             <h2 className="text-sm font-black text-[#5f1340] uppercase tracking-wider flex items-center gap-2">
-              <Receipt className="h-4 w-4" />
-              <span>Langkah 3: Rincian Item di Keranjang ({cartItems.length})</span>
+              <Receipt className="h-4 w-4 shrink-0" />
+              <span>Langkah 3 : Keranjang ({cartItems.length})</span>
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">Klik item atau &quot;Edit Rincian&quot; untuk ubah qty, catatan, merk, warna, dll. — sama seperti saat pilih layanan</p>
           </div>
 
           {cartItems.length > 0 ? (

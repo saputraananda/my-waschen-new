@@ -149,34 +149,37 @@ export default function DropPointDistribution() {
         userProfile={userProfile}
       />
       <main className="max-w-[1500px] w-full min-w-0 mx-auto p-3 sm:p-6 flex-grow flex flex-col gap-4 sm:gap-6">
-        <div className="bg-white border border-[#e0e0e0] rounded-3xl p-4 sm:p-6">
-          <h1 className="text-lg sm:text-2xl font-black flex items-center gap-2">
-            <Share2 className="h-5 w-5 sm:h-6 sm:w-6 text-[#5f1340] shrink-0" />
-            Distribusi Drop Point ke Cabang
-          </h1>
-          {dropPoints.length > 1 ? (
-            <select
-              value={dropPointId}
-              onChange={(e) => setDropPointId(e.target.value)}
-              className="mt-3 w-full sm:w-auto rounded-xl border border-[#e0e0e0] bg-white px-3 py-2 text-sm font-bold outline-none"
-              aria-label="Pilih Drop Point"
+        <div className="bg-white border border-[#e0e0e0] rounded-3xl p-4 sm:p-6 flex flex-col gap-3">
+          {/* Judul + pilihan drop point satu baris (turun ke bawah di layar sempit) */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <h1 className="text-lg sm:text-2xl font-black flex items-center gap-2 min-w-0">
+              <Share2 className="h-5 w-5 sm:h-6 sm:w-6 text-[#5f1340] shrink-0" />
+              <span className="min-w-0">Distribusi Drop Point</span>
+            </h1>
+            {dropPoints.length > 1 ? (
+              <select
+                value={dropPointId}
+                onChange={(e) => setDropPointId(e.target.value)}
+                className="w-full sm:w-auto sm:min-w-[240px] rounded-xl border border-[#e0e0e0] bg-white px-3 py-2.5 text-sm font-bold outline-none focus:border-[#5f1340]"
+                aria-label="Pilih Drop Point"
+              >
+                {dropPoints.map((dp) => (
+                  <option key={dp.id} value={String(dp.id)}>
+                    {(dp.full_name || dp.name) + (dp.active ? '' : ' (nonaktif)')}
+                  </option>
+                ))}
+              </select>
+            ) : dropPoints[0] ? (
+              <span className="text-sm font-extrabold text-[#5f1340] sm:text-right">{dropPoints[0].full_name || dropPoints[0].name}</span>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <span
+              className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-extrabold"
+              title="Item yang belum dibagi dikerjakan di drop point ini"
             >
-              {dropPoints.map((dp) => (
-                <option key={dp.id} value={String(dp.id)}>
-                  {(dp.full_name || dp.name) + (dp.active ? '' : ' (nonaktif)')}
-                </option>
-              ))}
-            </select>
-          ) : dropPoints[0] ? (
-            <p className="mt-1 text-sm font-extrabold text-[#5f1340]">{dropPoints[0].full_name || dropPoints[0].name}</p>
-          ) : null}
-          <p className="text-xs text-slate-400 mt-1">
-            Item yang tidak dibagi dikerjakan di drop point ini sendiri. Pilih item, lalu tentukan cabang yang mengerjakan.
-            Bisa dibagi sebelum atau sesudah QC awal di drop point, dan bisa diubah (atau dikembalikan ke drop point) selama item belum dicuci.
-          </p>
-          <div className="flex flex-wrap gap-2 mt-4">
-            <span className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-extrabold">
-              Belum dibagi (dikerjakan di drop point): {unassignedCount}
+              Belum dibagi: {unassignedCount}
             </span>
             {summary.filter((s) => s.production_outlet_id != null).map((s) => (
               <span key={s.production_outlet_id} className="px-3 py-1.5 rounded-xl bg-[#f8f8f8] border border-[#e0e0e0] text-xs font-bold">

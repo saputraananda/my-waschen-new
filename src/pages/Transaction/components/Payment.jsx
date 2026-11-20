@@ -1,11 +1,18 @@
 import React, { useState } from 'react';
-import { Receipt, ArrowLeft, CreditCard, Save, Upload, Camera, X, Loader2, Lock } from 'lucide-react';
+import { Receipt, ArrowLeft, CreditCard, Save, Upload, Camera, Loader2, Lock } from 'lucide-react';
 import { formatEmployeeName } from '../../../utils/FormatName.js';
 import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
 import CascadingPaymentSelector from '../../../components/CascadingPaymentSelector.jsx';
 import QcCameraModal from '../../../components/QcCameraModal.jsx';
 import { buildQcPhotoLines, burnQcPhoto } from '../../../utils/qcPhotoStamp.js';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
+import ProofFilePreview from '../../../components/ProofFilePreview.jsx';
+import { hasCustomerAddress } from '../../../utils/NormalizePhone.js';
+
+/** Merk / warna / material / ukuran yang benar-benar diisi (kosong atau "-" disembunyikan). */
+const itemSpecs = (item) => [item.brand, item.color, item.material, item.size]
+  .map((v) => String(v ?? '').trim())
+  .filter((v) => v && v !== '-');
 
 export default function Payment({
   setCurrentStep,
@@ -95,57 +102,46 @@ export default function Payment({
       <div className="lg:col-span-7 flex flex-col gap-5">
         <div className="bg-white border border-[#e0e0e0] rounded-3xl p-5 sm:p-6 shadow-xs flex flex-col gap-5">
           
-          <div className="flex items-start justify-between gap-3 pb-4 border-b border-[#e0e0e0]">
-            <div className="min-w-0">
-              <h2 className="text-base font-black text-[#5f1340] uppercase tracking-wider flex items-center gap-2">
-                <Receipt className="h-5 w-5 shrink-0" />
-                <span>Rincian Nota</span>
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">Periksa kembali data pelanggan dan rincian item cucian</p>
-            </div>
+          <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#e0e0e0]">
+            <h2 className="text-sm font-black text-[#5f1340] uppercase tracking-wider flex items-center gap-2 min-w-0">
+              <Receipt className="h-4 w-4 shrink-0" />
+              <span>Langkah 4 : Rincian Nota</span>
+            </h2>
             <button
               type="button"
               onClick={() => setCurrentStep(3)}
-              className="shrink-0 whitespace-nowrap px-3.5 py-2 bg-[#f8f8f8] hover:bg-[#e0e0e0] border border-[#e0e0e0] text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer"
+              className="shrink-0 whitespace-nowrap px-3 py-1.5 bg-[#f8f8f8] hover:bg-[#e0e0e0] border border-[#e0e0e0] text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer"
             >
               <ArrowLeft className="h-3.5 w-3.5 shrink-0" />
-              <span>Ubah Keranjang</span>
+              <span>Ubah</span>
             </button>
           </div>
 
           {/* Customer & Branch Overview Card */}
-          <div className="p-4 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-            <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Pelanggan:</span>
-              <div className="flex items-center gap-1.5 mt-0.5">
+          <div className="p-4 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl flex flex-col gap-3 text-xs">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="font-black text-sm text-[#313030]">{formatName(selectedCustomer?.name)}</span>
                 {renderTierBadge(selectedCustomer?.tier)}
               </div>
-              <span className="text-xs text-slate-500 font-medium block mt-0.5">{selectedCustomer?.phone}</span>
-              <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">{selectedCustomer?.address || 'Alamat belum diisi (Walk-in)'}</p>
+              <p className="text-[11px] text-slate-500 font-medium mt-0.5 break-words">
+                {[selectedCustomer?.phone, hasCustomerAddress(selectedCustomer) ? selectedCustomer.address : null].filter(Boolean).join(' · ')}
+              </p>
             </div>
-
-            <div className="sm:border-l sm:border-[#e0e0e0] sm:pl-4 space-y-1.5">
-              <div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Outlet Kasir:</span>
-                <span className="font-extrabold text-xs text-[#313030]">{activeOutletName}</span>
-              </div>
-              <div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Petugas Kasir:</span>
-                <span className="font-bold text-xs text-slate-700">{formatEmployeeName(userProfile?.fullName, 'Staff Kasir')}</span>
-              </div>
-              <div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Saldo Kartu Member:</span>
-                <span className="font-black text-xs text-emerald-700">Rp {(selectedCustomer?.memberBalance || 0).toLocaleString('id-ID')}</span>
-              </div>
+            <div className="pt-3 border-t border-[#e0e0e0] grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
+              <span className="text-slate-400 font-semibold">Outlet</span>
+              <span className="font-bold text-[#313030] text-right truncate">{activeOutletName}</span>
+              <span className="text-slate-400 font-semibold">Kasir</span>
+              <span className="font-bold text-[#313030] text-right truncate">{formatEmployeeName(userProfile?.fullName, 'Staff Kasir')}</span>
+              <span className="text-slate-400 font-semibold">Saldo Member</span>
+              <span className="font-black text-emerald-700 text-right">Rp {(selectedCustomer?.memberBalance || 0).toLocaleString('id-ID')}</span>
             </div>
           </div>
 
           {/* Ordered Items Detailed List */}
           <div>
-            <h3 className="text-xs font-black uppercase tracking-wider text-[#5f1340] mb-3 flex items-center justify-between">
-              <span>Daftar Item Layanan ({cartItems.length})</span>
-              <span className="text-[10px] font-bold text-slate-400">Harga Satuan & Subtotal</span>
+            <h3 className="text-xs font-black uppercase tracking-wider text-[#5f1340] mb-3">
+              Item ({cartItems.length})
             </h3>
 
             <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
@@ -174,16 +170,14 @@ export default function Payment({
                     </span>
                   </div>
 
-                  <div className="p-2 bg-[#f8f8f8] rounded-xl text-[10px] text-slate-600 grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                    <span>Merk: <b className="text-[#313030]">{item.brand}</b></span>
-                    <span>Warna: <b className="text-[#313030]">{item.color}</b></span>
-                    <span>Material: <b className="text-[#313030]">{item.material}</b></span>
-                    <span>Ukuran: <b className="text-[#313030]">{item.size}</b></span>
-                  </div>
+                  {/* Spesifikasi hanya ditampilkan yang diisi */}
+                  {itemSpecs(item).length > 0 && (
+                    <p className="text-[10px] text-slate-500 font-medium">{itemSpecs(item).join(' · ')}</p>
+                  )}
 
-                  {item.note !== '-' && (
+                  {item.note && item.note !== '-' && (
                     <div className="text-[10px] text-amber-900 bg-amber-50 p-1.5 rounded-lg font-semibold border border-amber-200">
-                      Catatan Item: {item.note}
+                      Catatan: {item.note}
                     </div>
                   )}
                 </div>
@@ -192,27 +186,27 @@ export default function Payment({
           </div>
 
           {/* Global Order Specs Recap */}
-          <div className="p-4 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-            <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Aroma Parfum:</span>
-              <span className="font-extrabold text-[#313030]">{selectedPerfume}</span>
+          <div className="p-3 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl grid grid-cols-3 gap-2 text-[11px]">
+            <div className="min-w-0">
+              <span className="text-[10px] font-semibold text-slate-400 block">Parfum</span>
+              <span className="font-bold text-[#313030] break-words">{selectedPerfume}</span>
             </div>
-            <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Kecepatan:</span>
-              <span className={`font-black ${isExpress ? 'text-amber-800' : 'text-[#313030]'}`}>
-                {isExpress ? 'Express (1x24 Jam)' : 'Reguler (2-3 Hari)'}
+            <div className="min-w-0">
+              <span className="text-[10px] font-semibold text-slate-400 block">Kecepatan</span>
+              <span className={`font-bold ${isExpress ? 'text-amber-800' : 'text-[#313030]'}`}>
+                {isExpress ? 'Express' : 'Reguler'}
               </span>
             </div>
-            <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Pengambilan:</span>
-              <span className={`font-black ${isDelivery ? 'text-indigo-700' : 'text-[#313030]'}`}>
-                {isDelivery ? 'Diantar (Delivery)' : 'Ambil di Toko'}
+            <div className="min-w-0">
+              <span className="text-[10px] font-semibold text-slate-400 block">Pengambilan</span>
+              <span className={`font-bold ${isDelivery ? 'text-indigo-700' : 'text-[#313030]'}`}>
+                {isDelivery ? 'Diantar' : 'Ambil di Toko'}
               </span>
             </div>
 
             {generalOrderNotes && (
               <div className="col-span-full pt-2 border-t border-[#e0e0e0] text-slate-600">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Catatan Nota Keseluruhan:</span>
+                <span className="text-[10px] font-semibold text-slate-400 block mb-0.5">Catatan Nota</span>
                 <p className="text-xs bg-white p-2.5 rounded-xl border border-[#e0e0e0] font-medium">{generalOrderNotes}</p>
               </div>
             )}
@@ -427,20 +421,7 @@ export default function Payment({
                       </span>
                     </button>
                   </div>
-                  {paymentProofFile && (
-                    <div className="mt-2 flex items-center justify-between gap-2 px-3 py-2 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl">
-                      <span className="text-[11px] font-bold text-slate-600 truncate">
-                        {paymentProofFile.name || 'Bukti bayar terpilih'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setPaymentProofFile(null)}
-                        className="text-[10px] font-bold text-rose-600 flex items-center gap-1 cursor-pointer shrink-0"
-                      >
-                        <X className="h-3 w-3" /> Hapus
-                      </button>
-                    </div>
-                  )}
+                  <ProofFilePreview file={paymentProofFile} onRemove={() => setPaymentProofFile(null)} />
                 </div>
                 )}
               </>

@@ -61,6 +61,8 @@ export default function DetailTransaction() {
   const { orderNo } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  // Shift belum dibuka → hanya lihat & cetak; pelunasan, bukti bayar, ubah status/pengambilan disembunyikan
+  const viewOnly = Boolean(useShiftOptional()?.viewOnly);
   const { showAlert, showConfirm } = useAppDialog();
 
   const [userProfile, setUserProfile] = useState(null);
@@ -698,7 +700,7 @@ export default function DetailTransaction() {
 
                 {/* Mobile: grid 2 kolom (tombol ganjil terakhir melebar penuh). sm+: baris rata kanan yang bisa wrap. */}
                 <div className="w-full lg:w-auto lg:max-w-[60%] grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end [&>*:last-child:nth-child(odd)]:col-span-2">
-                  {paymentStatus !== 'Lunas' && (
+                  {!viewOnly && paymentStatus !== 'Lunas' && (
                     <button
                       type="button"
                       onClick={openPaymentModal}
@@ -711,7 +713,7 @@ export default function DetailTransaction() {
                       <span className="text-left leading-tight">Update Pembayaran</span>
                     </button>
                   )}
-                  {unpaidCount >= 2 && (
+                  {!viewOnly && unpaidCount >= 2 && (
                     <button
                       type="button"
                       onClick={openCombinedPaymentModal}
@@ -780,14 +782,16 @@ export default function DetailTransaction() {
                       }`}>
                         {order.isDelivery ? 'Diantar' : 'Ambil di outlet'}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => setFulfillmentModalOpen(true)}
-                        className="text-[10px] font-black text-[#5f1340] hover:underline inline-flex items-center gap-1 cursor-pointer"
-                      >
-                        <Truck className="h-3 w-3" />
-                        Ubah pengambilan
-                      </button>
+                      {!viewOnly && (
+                        <button
+                          type="button"
+                          onClick={() => setFulfillmentModalOpen(true)}
+                          className="text-[10px] font-black text-[#5f1340] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <Truck className="h-3 w-3" />
+                          Ubah pengambilan
+                        </button>
+                      )}
                     </div>
                   </div>
                   <div className="p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl">
@@ -871,7 +875,7 @@ export default function DetailTransaction() {
               <div className={`mt-3 p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl ${proofBusy ? 'opacity-60 pointer-events-none' : ''}`}>
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <span className="text-[10px] font-bold text-slate-400 uppercase">Bukti Pembayaran</span>
-                  {order.paymentProofUrl && (
+                  {!viewOnly && order.paymentProofUrl && (
                     <button
                       type="button"
                       onClick={removeDetailProof}
@@ -890,12 +894,16 @@ export default function DetailTransaction() {
                     )}
                   </button>
                 )}
-                <PaymentProofFields
-                  orderNo={order.id}
-                  file={null}
-                  onFile={(file) => { if (file) saveDetailProof(file); }}
-                  label={order.paymentProofUrl ? 'Ganti foto / PDF' : 'Tambah foto / PDF'}
-                />
+                {viewOnly ? (
+                  !order.paymentProofUrl && <span className="text-xs text-slate-400">Belum ada bukti pembayaran</span>
+                ) : (
+                  <PaymentProofFields
+                    orderNo={order.id}
+                    file={null}
+                    onFile={(file) => { if (file) saveDetailProof(file); }}
+                    label={order.paymentProofUrl ? 'Ganti foto / PDF' : 'Tambah foto / PDF'}
+                  />
+                )}
               </div>
             </div>
 
@@ -976,7 +984,7 @@ export default function DetailTransaction() {
                         >
                           <select
                             value={it.status}
-                            disabled={updatingItemId === it.id}
+                            disabled={viewOnly || updatingItemId === it.id}
                             onChange={(e) => handleUpdateItemStatus(it, e.target.value)}
                             className={`w-full sm:w-auto min-w-[130px] px-3 py-1.5 rounded-full border text-[11px] font-black outline-none cursor-pointer disabled:opacity-60 ${meta.bg} ${meta.text}`}
                           >

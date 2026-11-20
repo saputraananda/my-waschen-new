@@ -164,6 +164,12 @@ export const savePrinterSettings = async (req, res) => {
     const savedCustomer = await upsert('customer', customer, DEFAULT_CUSTOMER_SETTINGS);
     const savedInternal = await upsert('internal', internal, DEFAULT_INTERNAL_SETTINGS);
 
+    // Simpan Default Global = berlaku untuk SEMUA outlet (sama dengan Alora SuperApp):
+    // pengaturan khusus outlet dihapus supaya semua outlet ikut Global.
+    if (outletId === 0) {
+      await myWaschenPool.query('DELETE FROM mst_thermal_nota_setting WHERE outlet_id <> 0');
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Setting printer berhasil disimpan',

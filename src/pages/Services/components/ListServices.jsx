@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const getCategoryBadge = (code) => {
   if (code === 'KILOAN') return 'bg-[#5f1340]/10 text-[#5f1340]';
@@ -37,37 +37,50 @@ function ServiceCard({ service }) {
   );
 }
 
-export default function ListServices({ servicesList, categories }) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategoryCode, setSelectedCategoryCode] = useState('Semua');
+/** Nomor halaman ringkas: 1 … 4 5 6 … 12 */
+function pageNumbers(current, total) {
+  const set = new Set([1, total, current - 1, current, current + 1]);
+  const nums = [...set].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
+  const out = [];
+  nums.forEach((n, i) => {
+    if (i > 0 && n - nums[i - 1] > 1) out.push(`gap-${n}`);
+    out.push(n);
+  });
+  return out;
+}
 
+export default function ListServices({
+  servicesList,
+  categories,
+  meta,
+  loading,
+  searchQuery,
+  onSearchChange,
+  categoryCode,
+  onCategoryChange,
+  page,
+  pageSize,
+  onPageChange
+}) {
   const activeCategories = useMemo(
     () => (categories || []).filter(c => c.is_active === 1 || c.is_active === true),
     [categories]
   );
+  const counts = meta?.counts || {};
+  const total = meta?.total || 0;
+  const totalPages = meta?.totalPages || 1;
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, total);
 
-  const countByCode = useMemo(() => {
-    const counts = {};
-    servicesList.forEach(s => {
-      const key = s.categoryCode || 'UNKNOWN';
-      counts[key] = (counts[key] || 0) + 1;
-    });
-    return counts;
-  }, [servicesList]);
-
-  const filteredServices = servicesList.filter(s => {
-    const q = searchQuery.toLowerCase();
-    const matchesSearch = !q ||
-      s.name.toLowerCase().includes(q) ||
-      s.desc.toLowerCase().includes(q) ||
-      (s.categoryName && s.categoryName.toLowerCase().includes(q)) ||
-      (s.categoryCode && s.categoryCode.toLowerCase().includes(q));
-    const matchesCategory = selectedCategoryCode === 'Semua' || s.categoryCode === selectedCategoryCode;
-    return matchesSearch && matchesCategory;
-  });
+  const chip = (active) => `px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+    active ? 'bg-[#5f1340] text-white shadow-xs' : 'bg-[#f8f8f8] text-slate-600 hover:bg-[#e0e0e0] border border-[#e0e0e0]'
+  }`;
+  const chipCount = (active) => `px-1.5 py-0.5 rounded-full text-[9px] font-black ${
+    active ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'
+  }`;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 sm:gap-6">
       <div className="bg-white border border-[#e0e0e0] rounded-2xl p-4 shadow-xs flex flex-col gap-4">
         <div className="relative w-full">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -75,65 +88,89 @@ export default function ListServices({ servicesList, categories }) {
             type="text"
             placeholder="Contoh : Kemeja / Bedcover"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => onSearchChange(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 border border-[#e0e0e0] rounded-xl text-xs font-bold outline-none focus:border-[#5f1340]"
           />
         </div>
 
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
-          <button
-            type="button"
-            onClick={() => setSelectedCategoryCode('Semua')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              selectedCategoryCode === 'Semua'
-                ? 'bg-[#5f1340] text-white shadow-xs'
-                : 'bg-[#f8f8f8] text-slate-600 hover:bg-[#e0e0e0] border border-[#e0e0e0]'
-            }`}
-          >
+          <button type="button" onClick={() => onCategoryChange('Semua')} className={chip(categoryCode === 'Semua')}>
             Semua Layanan
-            <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
-              selectedCategoryCode === 'Semua' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'
-            }`}>
-              {servicesList.length}
-            </span>
+            <span className={chipCount(categoryCode === 'Semua')}>{meta?.countAll ?? 0}</span>
           </button>
-
-          {activeCategories.map(cat => {
-            const count = countByCode[cat.code] || 0;
-            return (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setSelectedCategoryCode(cat.code)}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                  selectedCategoryCode === cat.code
-                    ? 'bg-[#5f1340] text-white shadow-xs'
-                    : 'bg-[#f8f8f8] text-slate-600 hover:bg-[#e0e0e0] border border-[#e0e0e0]'
-                }`}
-                title={cat.description || cat.name}
-              >
-                {cat.name}
-                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
-                  selectedCategoryCode === cat.code ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'
-                }`}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
+          {activeCategories.map(cat => (
+            <button
+              key={cat.id}
+              type="button"
+              onClick={() => onCategoryChange(cat.code)}
+              className={chip(categoryCode === cat.code)}
+              title={cat.description || cat.name}
+            >
+              {cat.name}
+              <span className={chipCount(categoryCode === cat.code)}>{counts[cat.code] || 0}</span>
+            </button>
+          ))}
         </div>
       </div>
 
-      {filteredServices.length === 0 ? (
+      {loading && servicesList.length === 0 ? (
+        <div className="bg-white border border-[#e0e0e0] rounded-3xl p-12 text-center text-slate-400 text-xs font-bold">
+          Memuat layanan...
+        </div>
+      ) : servicesList.length === 0 ? (
         <div className="bg-white border border-[#e0e0e0] rounded-3xl p-12 text-center text-slate-400">
           <p className="font-bold text-sm text-[#313030]">Tidak ada layanan yang sesuai filter</p>
-          <p className="text-xs mt-1">Coba ubah kata kunci pencarian atau kategori</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredServices.map(s => (
+        <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 transition-opacity ${loading ? 'opacity-50' : ''}`}>
+          {servicesList.map(s => (
             <ServiceCard key={s.id} service={s} />
           ))}
+        </div>
+      )}
+
+      {total > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white border border-[#e0e0e0] rounded-2xl px-4 py-3">
+          <span className="text-[11px] font-bold text-slate-500">
+            {start}–{end} dari {total.toLocaleString('id-ID')} layanan
+          </span>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                disabled={page <= 1 || loading}
+                onClick={() => onPageChange(page - 1)}
+                aria-label="Halaman sebelumnya"
+                className="h-8 w-8 rounded-lg bg-[#5f1340]/10 text-[#5f1340] hover:bg-[#5f1340]/20 grid place-items-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              {pageNumbers(page, totalPages).map((n) => (typeof n === 'string' ? (
+                <span key={n} className="px-1 text-slate-400 text-xs">…</span>
+              ) : (
+                <button
+                  key={n}
+                  type="button"
+                  disabled={loading}
+                  onClick={() => onPageChange(n)}
+                  className={`h-8 min-w-8 px-2 rounded-lg text-xs font-black cursor-pointer ${
+                    n === page ? 'bg-[#5f1340] text-white' : 'bg-[#f8f8f8] text-slate-600 hover:bg-[#e0e0e0] border border-[#e0e0e0]'
+                  }`}
+                >
+                  {n}
+                </button>
+              )))}
+              <button
+                type="button"
+                disabled={page >= totalPages || loading}
+                onClick={() => onPageChange(page + 1)}
+                aria-label="Halaman berikutnya"
+                className="h-8 w-8 rounded-lg bg-[#5f1340]/10 text-[#5f1340] hover:bg-[#5f1340]/20 grid place-items-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -128,7 +128,6 @@ export default function Customer() {
         <div className="flex flex-col xl:flex-row xl:justify-between xl:items-center gap-3 sm:gap-4 bg-white border border-[#e0e0e0] rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xs min-w-0">
           <div className="min-w-0">
             <h1 className="text-lg sm:text-2xl font-black text-[#313030] tracking-tight">Data Customer Waschen</h1>
-            <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">Kelola database member, tiering loyalty, dan pendaftaran new customer</p>
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 bg-[#f8f8f8] border border-[#e0e0e0] p-1 sm:p-1.5 rounded-2xl w-full xl:w-auto min-w-0">

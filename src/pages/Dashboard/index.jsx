@@ -66,7 +66,7 @@ export default function Dashboard() {
       return [];
     }
   });
-  const [monthlyTarget, setMonthlyTarget] = useState(50000000);
+  const [monthlyTarget, setMonthlyTarget] = useState(0);
 
   // Live orders state from database
   const [orders, setOrders] = useState([]);

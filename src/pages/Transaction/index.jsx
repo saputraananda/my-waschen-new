@@ -33,7 +33,6 @@ import {
 
 // Subcomponents
 import SelectCustomer from './components/SelectCustomer.jsx';
-import FillAddressModal from './components/FillAddressModal.jsx';
 import SelectServices from './components/SelectServices.jsx';
 import Cart from './components/Cart.jsx';
 import Payment from './components/Payment.jsx';
@@ -79,9 +78,40 @@ const mapCustomer = (c) => ({
   periodSpending: parseFloat(c.monthly_spending) || 0,
   yearSpending: parseFloat(c.spending_value_year) || 0,
   totalTrx: parseInt(c.total_orders, 10) || 0,
-  memberBalance: parseFloat(c.deposit_balance) || 0,
-  frequentServices: ['k1', 's1', 's2']
+  memberBalance: parseFloat(c.deposit_balance) || 0
 });
+
+const FAVORITE_LIMIT = 3;
+
+/**
+ * Draf order: isi transaksi yang sedang dibuat disimpan di browser supaya tidak hilang saat
+ * halaman ter-refresh. Per kasir + outlet, kedaluwarsa 12 jam, dihapus setelah order tersimpan.
+ * Bukti bayar (file) tidak ikut disimpan.
+ */
+const DRAFT_TTL_MS = 12 * 60 * 60 * 1000;
+const draftKey = () => `posOrderDraft:${localStorage.getItem('employeeId') || localStorage.getItem('fullName') || 'anon'}`;
+
+function readOrderDraft() {
+  try {
+    if (localStorage.getItem('autoSelectCustId')) return null; // pelanggan dipilih dari menu lain → mulai baru
+    const raw = localStorage.getItem(draftKey());
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    const fresh = Date.now() - Number(d.savedAt || 0) < DRAFT_TTL_MS;
+    const sameOutlet = String(d.outletId) === String(localStorage.getItem('activeOutletId') || '2');
+    if (!fresh || !sameOutlet || !d.selectedCustId) {
+      localStorage.removeItem(draftKey());
+      return null;
+    }
+    return d;
+  } catch {
+    return null;
+  }
+}
+
+function clearOrderDraft() {
+  try { localStorage.removeItem(draftKey()); } catch { /* abaikan */ }
+}
 
 export default function TransactionPage() {
   const navigate = useNavigate();
@@ -107,18 +137,23 @@ export default function TransactionPage() {
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [customerTiers, setCustomerTiers] = useState([]);
 
+  // Draf order sebelumnya (dibaca sekali saat halaman dibuka, mis. setelah refresh)
+  const draftRef = useRef(undefined);
+  if (draftRef.current === undefined) draftRef.current = readOrderDraft();
+  const draft = draftRef.current;
+  const [draftRestored, setDraftRestored] = useState(Boolean(draft));
+
   // STEP WIZARD STATE: 1: Customer -> 2: Layanan -> 3: Keranjang -> 4: Pembayaran
-  const [currentStep, setCurrentStep] = useState(1);
+  const [currentStep, setCurrentStep] = useState(draft?.currentStep || 1);
 
   // Step 1: Customer State (Pure live from database)
   const [customers, setCustomers] = useState([]);
   const [customersLoading, setCustomersLoading] = useState(true);
   const [customersError, setCustomersError] = useState('');
   const [customersTotal, setCustomersTotal] = useState(0);
-  const [selectedCustId, setSelectedCustId] = useState('');
+  const [selectedCustId, setSelectedCustId] = useState(draft?.selectedCustId || '');
   // Daftar hanya berisi satu halaman, jadi pelanggan terpilih disimpan terpisah
-  const [pickedCustomer, setPickedCustomer] = useState(null);
-  const [addressModalCustomer, setAddressModalCustomer] = useState(null);
+  const [pickedCustomer, setPickedCustomer] = useState(draft?.pickedCustomer || null);
   const [customerSearch, setCustomerSearch] = useState('');
   const [debouncedCustSearch, setDebouncedCustSearch] = useState('');
   const [selectedTierFilter, setSelectedTierFilter] = useState('Semua');
@@ -191,22 +226,22 @@ export default function TransactionPage() {
   const serviceItemsPerPage = 12;
 
   // Step 3: Keranjang State
-  const [cartItems, setCartItems] = useState([]);
-  const [selectedPerfume, setSelectedPerfume] = useState('');
-  const [selectedPerfumeId, setSelectedPerfumeId] = useState(null);
-  const [isExpress, setIsExpress] = useState(false);
-  const [selectedPromoCode, setSelectedPromoCode] = useState('NONE');
-  const [isDelivery, setIsDelivery] = useState(false);
-  const [generalOrderNotes, setGeneralOrderNotes] = useState('');
+  const [cartItems, setCartItems] = useState(draft?.cartItems ?? []);
+  const [selectedPerfume, setSelectedPerfume] = useState(draft?.selectedPerfume ?? '');
+  const [selectedPerfumeId, setSelectedPerfumeId] = useState(draft?.selectedPerfumeId ?? null);
+  const [isExpress, setIsExpress] = useState(draft?.isExpress ?? false);
+  const [selectedPromoCode, setSelectedPromoCode] = useState(draft?.selectedPromoCode ?? 'NONE');
+  const [isDelivery, setIsDelivery] = useState(draft?.isDelivery ?? false);
+  const [generalOrderNotes, setGeneralOrderNotes] = useState(draft?.generalOrderNotes ?? '');
 
   // Step 4: Pembayaran State
-  const [paymentStatus, setPaymentStatus] = useState('Lunas');
-  const [isOutstandingDropOff, setIsOutstandingDropOff] = useState(false);
-  const [mainCategory, setMainCategory] = useState('Tunai');
-  const [edcCardType, setEdcCardType] = useState('Debit Card');
-  const [isCrossTransfer, setIsCrossTransfer] = useState(false);
-  const [crossBankOutletId, setCrossBankOutletId] = useState(1);
-  const [paidAmountInput, setPaidAmountInput] = useState('');
+  const [paymentStatus, setPaymentStatus] = useState(draft?.paymentStatus ?? 'Lunas');
+  const [isOutstandingDropOff, setIsOutstandingDropOff] = useState(draft?.isOutstandingDropOff ?? false);
+  const [mainCategory, setMainCategory] = useState(draft?.mainCategory ?? 'Tunai');
+  const [edcCardType, setEdcCardType] = useState(draft?.edcCardType ?? 'Debit Card');
+  const [isCrossTransfer, setIsCrossTransfer] = useState(draft?.isCrossTransfer ?? false);
+  const [crossBankOutletId, setCrossBankOutletId] = useState(draft?.crossBankOutletId ?? 1);
+  const [paidAmountInput, setPaidAmountInput] = useState(draft?.paidAmountInput ?? '');
   const [paymentProofFile, setPaymentProofFile] = useState(null);
 
   // Item Config Modal
@@ -314,8 +349,9 @@ export default function TransactionPage() {
         if (res.data?.success && res.data.data?.length > 0) {
           setParfumes(res.data.data);
           const first = res.data.data[0];
-          setSelectedPerfume(first.name);
-          setSelectedPerfumeId(first.id);
+          // Jangan timpa parfum dari draf yang dipulihkan
+          setSelectedPerfume((prev) => prev || first.name);
+          setSelectedPerfumeId((prev) => prev ?? first.id);
         }
       })
       .catch(err => console.error('Gagal mengambil data parfum:', err));
@@ -370,10 +406,7 @@ export default function TransactionPage() {
   const handlePickCustomer = (customer) => {
     setPickedCustomer(customer);
     setSelectedCustId(customer.id);
-    if (!hasCustomerAddress(customer)) {
-      setAddressModalCustomer(customer);
-      return;
-    }
+    // Alamat tidak wajib: langsung lanjut pilih layanan
     setCurrentStep(2);
   };
 
@@ -395,17 +428,28 @@ export default function TransactionPage() {
     setCustCurrentPage(1);
   }, [debouncedCustSearch, selectedTierFilter, selectedBranchFilter]);
 
-  // Top 5 Recommendations for Selected Customer
-  const topRecommendedServices = useMemo(() => {
-    if (!servicesList || servicesList.length === 0) return [];
-    if (!selectedCustomer || !selectedCustomer.frequentServices || selectedCustomer.frequentServices.length === 0) {
-      return servicesList.slice(0, 5);
-    }
-    const recs = selectedCustomer.frequentServices
-      .map(id => servicesList.find(s => s.id === id))
-      .filter(Boolean);
-    return recs.length > 0 ? recs.slice(0, 5) : servicesList.slice(0, 5);
-  }, [selectedCustomer, servicesList]);
+  // Layanan favorit pelanggan terpilih (dari riwayat nota). Belum ada riwayat = kotak tidak tampil.
+  const [favoriteServiceIds, setFavoriteServiceIds] = useState([]);
+  const selectedCustomerDbId = selectedCustomer?.dbId;
+  useEffect(() => {
+    setFavoriteServiceIds([]);
+    if (!selectedCustomerDbId) return undefined;
+    let cancelled = false;
+    axios.get(`/api/customers/${encodeURIComponent(selectedCustomerDbId)}/favorite-services`, { params: { limit: 10 } })
+      .then((r) => {
+        if (!cancelled && r.data?.success) setFavoriteServiceIds((r.data.data || []).map((f) => Number(f.service_id)));
+      })
+      .catch((err) => console.error('Gagal memuat layanan favorit pelanggan:', err));
+    return () => { cancelled = true; };
+  }, [selectedCustomerDbId]);
+
+  // Ambil 10 dari server lalu saring yang tersedia di outlet aktif, tampilkan 3 teratas
+  const topRecommendedServices = useMemo(() => (
+    favoriteServiceIds
+      .map((id) => servicesList.find((s) => Number(s.dbId) === id))
+      .filter(Boolean)
+      .slice(0, FAVORITE_LIMIT)
+  ), [favoriteServiceIds, servicesList]);
 
   // Filtered Services List & Pagination
   const filteredServices = useMemo(() => {
@@ -694,6 +738,62 @@ export default function TransactionPage() {
     }
   }, [paymentStatus, calculations.grandTotal, isMemberBalanceMethod, isOutstandingDropOff]);
 
+  // Simpan draf setiap ada perubahan (hanya jika pelanggan sudah dipilih)
+  const orderDoneRef = useRef(false);
+  useEffect(() => {
+    if (isSavingOrder || orderDoneRef.current) return;
+    try {
+      if (!selectedCustId) {
+        clearOrderDraft();
+        return;
+      }
+      localStorage.setItem(draftKey(), JSON.stringify({
+        savedAt: Date.now(),
+        outletId: activeOutletId,
+        currentStep,
+        selectedCustId,
+        pickedCustomer: selectedCustomer || pickedCustomer,
+        cartItems,
+        selectedPerfume,
+        selectedPerfumeId,
+        isExpress,
+        selectedPromoCode,
+        isDelivery,
+        generalOrderNotes,
+        paymentStatus,
+        isOutstandingDropOff,
+        mainCategory,
+        edcCardType,
+        isCrossTransfer,
+        crossBankOutletId,
+        paidAmountInput
+      }));
+    } catch { /* storage penuh / diblokir: abaikan, transaksi tetap jalan */ }
+  }, [
+    isSavingOrder, activeOutletId, currentStep, selectedCustId, selectedCustomer, pickedCustomer, cartItems,
+    selectedPerfume, selectedPerfumeId, isExpress, selectedPromoCode, isDelivery, generalOrderNotes,
+    paymentStatus, isOutstandingDropOff, mainCategory, edcCardType, isCrossTransfer, crossBankOutletId, paidAmountInput
+  ]);
+
+  /** Buang draf & kembali ke awal (pilih pelanggan). */
+  const resetOrderDraft = () => {
+    clearOrderDraft();
+    setDraftRestored(false);
+    setCartItems([]);
+    setSelectedCustId('');
+    setPickedCustomer(null);
+    setIsExpress(false);
+    setSelectedPromoCode('NONE');
+    setIsDelivery(false);
+    setGeneralOrderNotes('');
+    setPaymentStatus('Lunas');
+    setIsOutstandingDropOff(false);
+    setMainCategory('Tunai');
+    setPaidAmountInput('');
+    setPaymentProofFile(null);
+    setCurrentStep(1);
+  };
+
   // Check if delivery can be enabled (requires non-empty customer address)
   const hasValidAddress = Boolean(selectedCustomer && hasCustomerAddress(selectedCustomer));
 
@@ -936,6 +1036,8 @@ export default function TransactionPage() {
       setPaymentProofFile(null);
       setIsOutstandingDropOff(false);
       setPaymentStatus('Lunas');
+      orderDoneRef.current = true;
+      clearOrderDraft(); // order tersimpan → draf tidak dipakai lagi
 
       navigate('/transaction/complete', { state: { receipt: receiptData }, replace: true });
     } catch (err) {
@@ -1003,6 +1105,27 @@ export default function TransactionPage() {
 
       {/* Main Workspace Layout */}
       <main className="max-w-[1600px] w-full mx-auto p-3 sm:p-5 lg:p-6 flex-grow flex flex-col gap-6">
+
+        {draftRestored && selectedCustId && (
+          <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5">
+            <span className="flex-1 min-w-0 text-xs font-bold text-emerald-800">Draf transaksi sebelumnya dipulihkan</span>
+            <button
+              type="button"
+              onClick={resetOrderDraft}
+              className="shrink-0 rounded-xl border border-emerald-300 bg-white px-3 py-1.5 text-[11px] font-black text-emerald-800 hover:bg-emerald-100 cursor-pointer"
+            >
+              Mulai Baru
+            </button>
+            <button
+              type="button"
+              onClick={() => setDraftRestored(false)}
+              aria-label="Tutup"
+              className="shrink-0 text-emerald-700 hover:text-emerald-900 text-lg leading-none px-1 cursor-pointer"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {/* STEP PROGRESS BAR HEADER */}
         <div className="bg-white border border-[#e0e0e0] rounded-3xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -1217,32 +1340,6 @@ export default function TransactionPage() {
 
       </main>
 
-      {addressModalCustomer && (
-        <FillAddressModal
-          customer={addressModalCustomer}
-          onClose={() => setAddressModalCustomer(null)}
-          onSaved={(updated) => {
-            const nextAddress = updated.full_address || updated.address || '-';
-            const applyAddress = (c) => (
-              c.dbId === updated.id
-                ? {
-                  ...c,
-                  address: nextAddress,
-                  street: updated.address || '',
-                  fullAddress: updated.full_address || '',
-                  block: updated.block || '',
-                  houseNumber: updated.house_number || '',
-                  notes: updated.notes || ''
-                }
-                : c
-            );
-            setCustomers((prev) => prev.map(applyAddress));
-            setPickedCustomer((prev) => (prev ? applyAddress(prev) : prev));
-            setAddressModalCustomer(null);
-            setCurrentStep(2);
-          }}
-        />
-      )}
 
       {showPinModal && (
         <PinVerifyModal

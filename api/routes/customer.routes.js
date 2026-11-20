@@ -5,13 +5,15 @@ import {
   getCustomerById,
   createCustomer,
   updateCustomer,
-  topupDeposit
+  topupDeposit,
+  getCustomerFavoriteServices
 } from '../controllers/customer.controller.js';
 
 const router = express.Router();
 
 router.get('/', getCustomers);
 router.get('/churn', getCustomerChurn);
+router.get('/:id/favorite-services', getCustomerFavoriteServices);
 router.get('/:id', getCustomerById);
 router.post('/', createCustomer);
 router.put('/:id', updateCustomer);

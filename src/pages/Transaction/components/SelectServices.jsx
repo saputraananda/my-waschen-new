@@ -31,20 +31,15 @@ export default function SelectServices({
   return (
     <div className="flex flex-col gap-6">
       
-      {/* Top 5 Layanan Favorit Pelanggan Ini (Only if customer has history) */}
+      {/* Layanan favorit pelanggan ini (hanya jika sudah ada riwayat nota) */}
       {topRecommendedServices.length > 0 && (
         <div className="bg-gradient-to-r from-[#5f1340]/[0.06] via-white to-amber-500/[0.04] border border-[#5f1340]/25 rounded-3xl p-5 shadow-xs flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-[#5f1340]">
-              <Sparkles className="h-4.5 w-4.5 text-amber-500" />
-              <h3 className="text-xs font-black uppercase tracking-wider">
-                Top 5 Layanan Favorit Pelanggan Ini ({selectedCustomer?.name})
-              </h3>
-            </div>
-            <span className="text-[10px] font-bold text-slate-400">Rekomendasi Cepat</span>
+          <div className="flex items-center gap-2 text-[#5f1340]">
+            <Sparkles className="h-4.5 w-4.5 text-amber-500 shrink-0" />
+            <h3 className="text-xs font-black uppercase tracking-wider">Layanan Favorit Customer</h3>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
             {topRecommendedServices.map(rec => {
               const isSelected = cartItems.some(item => item.serviceId === rec.id);
               const selectedCount = cartItems.filter(item => item.serviceId === rec.id).length;

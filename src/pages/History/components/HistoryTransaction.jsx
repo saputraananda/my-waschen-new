@@ -50,6 +50,8 @@ export default function HistoryTransaction({
   loadedWindow = null
 }) {
   const navigate = useNavigate();
+  // Shift belum dibuka → lihat & cetak saja (tanpa pelunasan, refund, hapus)
+  const viewOnly = Boolean(useShiftOptional()?.viewOnly);
   const { showAlert } = useAppDialog();
 
   // Search & Filter States
@@ -187,6 +189,7 @@ export default function HistoryTransaction({
 
   const openPaymentModal = async (order, e) => {
     if (e) e.stopPropagation();
+    if (viewOnly) return; // shift belum dibuka: status bayar hanya ditampilkan
     const initialBalance = parseFloat(
       order.memberBalance ?? order.member_balance ?? order.customerBalance ?? order.deposit_balance ?? order.customer_deposit_balance ?? 0
     ) || 0;
@@ -813,7 +816,7 @@ export default function HistoryTransaction({
                           <MessageCircle className="h-4 w-4" />
                         </button>
 
-                        {(() => {
+                        {!viewOnly && (() => {
                           const pendingRefunds = order.refundPendingCount || 0;
                           const unpaid = (order.paidAmount || 0) <= 0;
                           return (
@@ -841,19 +844,21 @@ export default function HistoryTransaction({
                           );
                         })()}
 
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteReason('');
-                            setDeleteAttachment(null);
-                            setDeleteModalOrder(order);
-                          }}
-                          className="p-2 rounded-xl border border-rose-200 bg-rose-50/80 hover:bg-rose-600 hover:text-white text-rose-700 transition-all cursor-pointer shadow-2xs inline-flex items-center justify-center group/del"
-                          title="Ajukan Hapus Nota (Request Delete)"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {!viewOnly && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteReason('');
+                              setDeleteAttachment(null);
+                              setDeleteModalOrder(order);
+                            }}
+                            className="p-2 rounded-xl border border-rose-200 bg-rose-50/80 hover:bg-rose-600 hover:text-white text-rose-700 transition-all cursor-pointer shadow-2xs inline-flex items-center justify-center group/del"
+                            title="Ajukan Hapus Nota (Request Delete)"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

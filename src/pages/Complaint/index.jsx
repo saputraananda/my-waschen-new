@@ -59,9 +59,6 @@ export default function ComplaintPage() {
               <MessageSquareWarning className="h-6 w-6 shrink-0 text-[#5f1340]" />
               <span>Komplain Outlet</span>
             </h1>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Pengajuan masuk sebagai Request. Admin Alsa yang menyetujui menjadi Open atau menolak menjadi Archive.
-            </p>
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 bg-[#f8f8f8] border border-[#e0e0e0] p-1.5 rounded-2xl w-full xl:w-auto min-w-0">

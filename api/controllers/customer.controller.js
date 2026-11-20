@@ -857,3 +857,42 @@ export const topupDeposit = async (req, res) => {
     connection.release();
   }
 };
+
+/**
+ * Layanan favorit pelanggan: layanan produksi yang paling sering dipakai di nota pelanggan ini
+ * (dihitung per nota, nota dibatalkan tidak dihitung). Biaya tambahan (non-produksi) tidak ikut.
+ */
+export const getCustomerFavoriteServices = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 3, 1), 10);
+    // Cari id dulu (pakai index PK / kode), supaya query riwayat lewat idx_order_customer
+    const [[cust]] = await myWaschenPool.query(
+      /^\d+$/.test(String(id))
+        ? 'SELECT id FROM mst_customer WHERE id = ? LIMIT 1'
+        : 'SELECT id FROM mst_customer WHERE customer_code = ? LIMIT 1',
+      [id]
+    );
+    if (!cust) return res.json({ success: true, data: [] });
+    const [rows] = await myWaschenPool.query(
+      `SELECT d.service_id, COUNT(DISTINCT d.transaction_id) AS order_count, MAX(t.order_date) AS last_used
+       FROM tr_transaction t
+       JOIN tr_transaction_detail d ON d.transaction_id = t.id
+       WHERE t.customer_id = ?
+         AND d.service_id IS NOT NULL
+         AND COALESCE(d.is_production, 1) = 1
+         AND COALESCE(t.work_status, '') <> 'Dibatalkan'
+       GROUP BY d.service_id
+       ORDER BY order_count DESC, last_used DESC
+       LIMIT ?`,
+      [cust.id, limit]
+    );
+    res.json({
+      success: true,
+      data: rows.map((r) => ({ service_id: Number(r.service_id), order_count: Number(r.order_count) })),
+    });
+  } catch (error) {
+    console.error('Error getCustomerFavoriteServices:', error);
+    res.status(500).json({ success: false, message: 'Gagal memuat layanan favorit pelanggan' });
+  }
+};

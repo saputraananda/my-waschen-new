@@ -1,28 +1,16 @@
 import React from 'react';
-import {
-  PlusCircle,
-  History,
-  Info,
-  Users,
-  CreditCard,
-  Wallet,
-  Package,
-  ClipboardCheck,
-  MessageSquareWarning,
-  Share2,
-  Banknote
-} from 'lucide-react';
 import { useShiftOptional } from '../../../context/ShiftContext.jsx';
 import { canUseDropPointDistribution } from '../../../utils/authSession.js';
+
+// Ikon 3D: 3dicons.co (CC0) — public/menu-icons. File WebP berlatar putih → mix-blend-multiply di kartu putih
+const ICON = (name) => `/menu-icons/${name}.webp`;
 
 const MENU_ITEMS = [
   {
     key: 'order',
     path: '/transaction',
     label: 'Order Baru',
-    hint: 'POS Laundry',
-    icon: PlusCircle,
-    iconWrap: 'bg-[#5f1340]/5 text-[#5f1340] group-hover:bg-[#5f1340]/10',
+    icon: ICON("order"),
     labelHover: 'group-hover:text-[#5f1340]',
     useOrderFlow: true
   },
@@ -30,94 +18,74 @@ const MENU_ITEMS = [
     key: 'history',
     path: '/riwayat',
     label: 'Riwayat',
-    hint: 'Semua Transaksi',
     shiftFree: true,
-    icon: History,
-    iconWrap: 'bg-rose-50 text-rose-700 group-hover:bg-rose-100/60',
+    icon: ICON("history"),
     labelHover: 'group-hover:text-rose-700'
   },
   {
     key: 'services',
     path: '/services',
     label: 'Layanan',
-    hint: 'Kilo & Satuan',
-    icon: Info,
-    iconWrap: 'bg-sky-50 text-sky-700 group-hover:bg-sky-100/60',
+    icon: ICON("services"),
     labelHover: 'group-hover:text-sky-700'
   },
   {
     key: 'customer',
     path: '/customer',
     label: 'Pelanggan',
-    hint: 'Data Member',
-    icon: Users,
-    iconWrap: 'bg-teal-50 text-teal-700 group-hover:bg-teal-100/60',
+    icon: ICON("customer"),
     labelHover: 'group-hover:text-teal-700'
   },
   {
     key: 'membership',
     path: '/membership',
     label: 'Membership',
-    hint: 'Saldo Kartu',
-    icon: CreditCard,
-    iconWrap: 'bg-indigo-50 text-indigo-700 group-hover:bg-indigo-100/60',
+    icon: ICON("membership"),
     labelHover: 'group-hover:text-indigo-700'
   },
   {
     key: 'petty-cash',
     path: '/petty-cash',
     label: 'Petty Cash',
-    hint: 'Kas Outlet',
-    icon: Wallet,
-    iconWrap: 'bg-amber-50 text-amber-700 group-hover:bg-amber-100/60',
+    icon: ICON("petty-cash"),
     labelHover: 'group-hover:text-amber-700'
   },
   {
     key: 'inventory',
     path: '/inventory',
     label: 'Inventory',
-    hint: 'Stok Warehouse',
-    icon: Package,
-    iconWrap: 'bg-emerald-50 text-emerald-700 group-hover:bg-emerald-100/60',
+    icon: ICON("inventory"),
     labelHover: 'group-hover:text-emerald-700'
   },
   {
     key: 'qc',
     path: '/qc',
     label: 'QC',
-    hint: 'Frontliner & Delivery',
-    icon: ClipboardCheck,
-    iconWrap: 'bg-fuchsia-50 text-[#5f1340] group-hover:bg-[#5f1340]/10',
+    icon: ICON("qc"),
     labelHover: 'group-hover:text-[#5f1340]'
   },
   {
     key: 'complaint',
     path: '/complaint',
     label: 'Komplain',
-    hint: 'Pengajuan Request',
-    icon: MessageSquareWarning,
-    iconWrap: 'bg-orange-50 text-orange-700 group-hover:bg-orange-100/70',
+    icon: ICON("complaint"),
     labelHover: 'group-hover:text-orange-700'
   },
   {
     key: 'deposit-report',
     path: '/deposit-report',
     label: 'Setoran Tunai',
-    hint: 'Bukti Setor Closing',
     noShiftGate: true,
-    icon: Banknote,
-    iconWrap: 'bg-lime-50 text-lime-700 group-hover:bg-lime-100/60',
+    icon: ICON("deposit"),
     labelHover: 'group-hover:text-lime-700'
   },
   {
     key: 'drop-point-distribusi',
     path: '/drop-point-distribusi',
     label: 'Distribusi Drop Point',
-    hint: 'Bagi ke Cabang',
     shiftFree: true,
     dropPointOnly: true,
-    icon: Share2,
-    iconWrap: 'bg-violet-50 text-violet-700 group-hover:bg-violet-100/60',
+    icon: ICON("drop-point"),
     labelHover: 'group-hover:text-violet-700'
   }
 ];
@@ -144,18 +112,13 @@ export default function Menu({ navigate, onOrderClick }) {
       return;
     }
 
-    // Halaman laporan (mis. Setoran Tunai) boleh dibuka tanpa shift terbuka
-    if (item.noShiftGate) {
+    // Tanpa shift: halaman lain tetap bisa dibuka dalam mode lihat saja (aksi dikunci di ShiftContext)
+    if (showShiftLock || typeof ensureShiftThenNavigate !== 'function') {
       navigate(item.path);
       return;
     }
 
-    if (typeof ensureShiftThenNavigate === 'function') {
-      ensureShiftThenNavigate(item.path);
-      return;
-    }
-
-    navigate(item.path);
+    ensureShiftThenNavigate(item.path);
   };
 
   return (
@@ -164,14 +127,14 @@ export default function Menu({ navigate, onOrderClick }) {
         <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Menu Cepat POS Laundry</h3>
         {showShiftLock && (
           <span className="text-[9px] font-extrabold uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg">
-            Buka shift dulu
+            Mode lihat saja
           </span>
         )}
       </div>
       <div className={`grid grid-cols-2 sm:grid-cols-3 gap-3.5 ${gridCols}`}>
         {visibleItems.map((item) => {
-          const Icon = item.icon;
-          const locked = showShiftLock && !item.noShiftGate;
+          // Hanya Order Baru yang butuh shift untuk dibuka
+          const locked = showShiftLock && item.useOrderFlow;
           return (
             <button
               key={item.key}
@@ -181,14 +144,11 @@ export default function Menu({ navigate, onOrderClick }) {
                 locked ? 'opacity-80' : ''
               }`}
             >
-              <div className={`p-3 rounded-2xl mb-2.5 group-hover:scale-110 transition-all duration-200 ${item.iconWrap}`}>
-                <Icon className="h-5 w-5" />
+              <div className="h-14 w-14 sm:h-16 sm:w-16 mb-2.5 grid place-items-center">
+                <img src={item.icon} alt="" aria-hidden="true" draggable="false" loading="lazy" className="h-full w-full object-contain mix-blend-multiply select-none transition-transform duration-200 group-hover:scale-110" />
               </div>
-              <span className={`text-xs font-bold text-[#313030] transition-colors ${item.labelHover}`}>
+              <span className={`text-sm sm:text-[15px] font-bold leading-snug text-[#313030] break-words transition-colors ${item.labelHover}`}>
                 {item.label}
-              </span>
-              <span className="text-[9px] text-slate-400 mt-1 hidden sm:inline">
-                {locked ? 'Perlu buka shift' : item.hint}
               </span>
             </button>
           );

@@ -121,47 +121,33 @@ export const getTargetRevenue = async (req, res) => {
     const currentMonth = bulan ? parseInt(bulan) : wibMonth;
 
     let targetNominal = 0;
-    const targetOutletId = outlet_id || (outlet && !isNaN(outlet) ? parseInt(outlet) : null);
+    let targetOutletId = outlet_id || (outlet && !isNaN(outlet) ? parseInt(outlet) : null);
 
-    if (targetOutletId) {
-      const [rows] = await myWaschenPool.query(
-        `SELECT nominal 
-         FROM mst_target_waschen 
-         WHERE outlet_id = ? 
-           AND tahun = ? 
-           AND bulan = ? 
-         LIMIT 1`,
-        [targetOutletId, currentYear, currentMonth]
-      );
-
-      if (rows && rows.length > 0) {
-        targetNominal = rows[0].nominal;
-      }
-    } else if (outlet) {
-      // Look up outlet ID by name from mst_outlet
+    if (!targetOutletId && outlet) {
       const [outletRows] = await myWaschenPool.query(
         `SELECT id FROM mst_outlet WHERE name LIKE ? OR full_name LIKE ? LIMIT 1`,
         [`%${outlet.trim()}%`, `%${outlet.trim()}%`]
       );
-      if (outletRows.length > 0) {
-        const foundId = outletRows[0].id;
-        const [rows] = await myWaschenPool.query(
-          `SELECT nominal 
-           FROM mst_target_waschen 
-           WHERE outlet_id = ? 
-             AND tahun = ? 
-             AND bulan = ? 
-           LIMIT 1`,
-          [foundId, currentYear, currentMonth]
-        );
-        if (rows && rows.length > 0) {
-          targetNominal = rows[0].nominal;
-        }
-      }
+      targetOutletId = outletRows[0]?.id || null;
     }
 
-    if (!targetNominal || targetNominal === 0) {
-      targetNominal = 50000000;
+    // Target bulan ini; kalau belum diisi, ikut target terakhir sebelumnya (sama dengan Alora SuperApp).
+    // Tidak ada angka karangan: belum pernah diisi sama sekali = 0 (belum diatur).
+    let isAuto = false;
+    if (targetOutletId) {
+      const [rows] = await myWaschenPool.query(
+        `SELECT nominal, tahun, bulan
+         FROM mst_target_waschen
+         WHERE outlet_id = ?
+           AND (tahun < ? OR (tahun = ? AND bulan <= ?))
+         ORDER BY tahun DESC, bulan DESC
+         LIMIT 1`,
+        [targetOutletId, currentYear, currentYear, currentMonth]
+      );
+      if (rows.length > 0) {
+        targetNominal = Number(rows[0].nominal) || 0;
+        isAuto = !(Number(rows[0].tahun) === currentYear && Number(rows[0].bulan) === currentMonth);
+      }
     }
 
     return res.status(200).json({
@@ -170,7 +156,8 @@ export const getTargetRevenue = async (req, res) => {
         outlet: outlet || targetOutletId,
         tahun: currentYear,
         bulan: currentMonth,
-        targetNominal
+        targetNominal,
+        isAuto
       }
     });
   } catch (error) {

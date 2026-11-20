@@ -129,9 +129,8 @@ export default function PettyCash() {
           <div className="min-w-0">
             <h1 className="text-lg sm:text-2xl font-black text-[#313030] tracking-tight flex items-center gap-2.5">
               <Wallet className="h-6 w-6 shrink-0 text-[#5f1340]" />
-              <span className="min-w-0">Pencatatan Petty Cash (Kas Laci Outlet)</span>
+              <span className="min-w-0">Petty Cash</span>
             </h1>
-            <p className="text-xs text-slate-400 mt-0.5">Pengajuan kas outlet — saldo berubah setelah disetujui</p>
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 bg-[#f8f8f8] border border-[#e0e0e0] p-1.5 rounded-2xl w-full xl:w-auto min-w-0">

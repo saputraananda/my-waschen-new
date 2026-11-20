@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import OpenShiftModal from '../pages/Shift/OpenShiftModal.jsx';
@@ -16,14 +16,37 @@ import {
 
 const ShiftContext = createContext(null);
 
-/** Path yang boleh diakses tanpa shift terbuka. Daily report tetap dibuka setelah close shift. */
-const SHIFT_FREE_PATHS = ['/login', '/', '/dashboard', '/daily-report', '/deposit-report', '/drop-point-distribusi'];
-
+/**
+ * Tanpa shift terbuka semua halaman tetap bisa DIBUKA (mode lihat saja), kecuali Order Baru.
+ * Aksi yang mengubah data dikunci oleh penjaga axios di bawah.
+ */
 function isShiftFreePath(pathname) {
   if (!pathname) return false;
-  if (SHIFT_FREE_PATHS.some((p) => pathname === p)) return true;
-  // Riwayat boleh dibuka tanpa shift. Pelunasan dikunci di halaman itu.
-  return pathname === '/riwayat' || pathname.startsWith('/riwayat/') || pathname.startsWith('/history/');
+  return !(pathname === '/transaction' || pathname.startsWith('/transaction/'));
+}
+
+/**
+ * Request ubah data yang tetap boleh tanpa shift:
+ * login/shift (buka, PIN, lanjut, tutup), Setoran Tunai (diunggah setelah close shift),
+ * link nota digital (hanya berbagi), pengaturan printer, Distribusi Drop Point (outlet tanpa shift).
+ */
+const VIEW_ONLY_ALLOWED_WRITES = [
+  /^\/api\/auth\//,
+  /^\/api\/shifts(\/|$)/,
+  /^\/api\/deposit-report(\/|$)/,
+  /^\/api\/transactions\/[^/]+\/digital-nota-access$/,
+  /^\/api\/printer-settings$/,
+  /^\/api\/drop-point(\/|$)/,
+];
+
+export const VIEW_ONLY_MESSAGE = 'Shift belum dibuka. Halaman ini hanya bisa dilihat — buka shift untuk melakukan aksi.';
+
+function isBlockedWrite(cfg) {
+  const method = String(cfg?.method || 'get').toLowerCase();
+  if (method === 'get' || method === 'head' || method === 'options') return false;
+  const url = String(cfg?.url || '').split('?')[0];
+  if (!url.startsWith('/api/')) return false;
+  return !VIEW_ONLY_ALLOWED_WRITES.some((re) => re.test(url));
 }
 
 /** Hydrate shift dari localStorage agar UI tidak flash "Belum Open" saat API masih loading. */
@@ -356,6 +379,26 @@ export function ShiftProvider({ children }) {
     shiftChecked
   ]);
 
+  /** Wajib shift tapi shift belum siap → semua halaman hanya bisa dilihat. */
+  const viewOnly = Boolean(!isLoginPage && hasToken && mustGateShift && shiftChecked && !(activeShift && sessionReady));
+  const viewOnlyRef = useRef(viewOnly);
+  viewOnlyRef.current = viewOnly;
+
+  // Penjaga global: tolak request ubah data selama mode lihat saja (berlaku di semua halaman).
+  useEffect(() => {
+    const id = axios.interceptors.request.use((cfg) => {
+      if (viewOnlyRef.current && isBlockedWrite(cfg)) {
+        const err = new Error(VIEW_ONLY_MESSAGE);
+        err.config = cfg;
+        err.isViewOnlyBlock = true;
+        err.response = { status: 423, data: { success: false, message: VIEW_ONLY_MESSAGE } };
+        return Promise.reject(err);
+      }
+      return cfg;
+    });
+    return () => axios.interceptors.request.eject(id);
+  }, []);
+
   const value = useMemo(() => ({
     activeShift,
     outletShift,
@@ -374,8 +417,10 @@ export function ShiftProvider({ children }) {
     cancelShiftGate,
     mustGateShift,
     isHq,
+    viewOnly,
     isShiftReady: !mustGateShift || (Boolean(activeShift) && sessionReady)
   }), [
+    viewOnly,
     activeShift,
     outletShift,
     applyOpenShift,
@@ -398,6 +443,24 @@ export function ShiftProvider({ children }) {
   return (
     <ShiftContext.Provider value={value}>
       {children}
+
+      {/* Penanda mode lihat saja di halaman selain dashboard */}
+      {viewOnly && !['/', '/dashboard'].includes(location.pathname) && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] w-[calc(100%-32px)] max-w-md">
+          <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50/95 backdrop-blur px-4 py-2.5 shadow-lg">
+            <span className="flex-1 min-w-0 text-[11px] sm:text-xs font-bold text-amber-800 leading-snug">
+              Mode lihat saja — shift belum dibuka
+            </span>
+            <button
+              type="button"
+              onClick={() => requestOpenShift()}
+              className="shrink-0 rounded-xl bg-[#5f1340] hover:bg-[#4d0f33] px-3 py-1.5 text-[11px] font-black text-white cursor-pointer"
+            >
+              Open Shift
+            </button>
+          </div>
+        </div>
+      )}
 
       {showShiftGate && isResumeModalOpen && activeShift && (
         <ResumeShiftModal

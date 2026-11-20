@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav';
@@ -19,14 +19,25 @@ export const mapServiceFromApi = (s) => ({
   isFeatured: s.is_featured === 1
 });
 
+const PAGE_SIZE = 24;
+
 export default function Services() {
   const navigate = useNavigate();
   const [userProfile, setUserProfile] = useState(null);
   const [activeOutletName, setActiveOutletName] = useState(localStorage.getItem('activeOutletName') || 'Waschen Laundry Raffles Hills');
   const [activeOutletId, setActiveOutletId] = useState(localStorage.getItem('activeOutletId') || '');
   const [outlets, setOutlets] = useState([]);
+
+  // Katalog berhalaman: data satu halaman dari server
   const [servicesList, setServicesList] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [meta, setMeta] = useState({ page: 1, totalPages: 1, total: 0, counts: {}, countAll: 0 });
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [categoryCode, setCategoryCode] = useState('Semua');
+  const fetchSeq = useRef(0);
 
   useEffect(() => {
     document.title = 'Katalog & Layanan | Waschen Laundry';
@@ -50,30 +61,43 @@ export default function Services() {
       .catch(err => console.error('Gagal mengambil data outlet:', err));
   }, [navigate]);
 
+  // Ketik → tunggu 350 ms sebelum cari ke server
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // Filter / outlet berubah → kembali ke halaman 1
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, categoryCode, activeOutletId]);
+
   // Katalog mengikuti outlet aktif di header (layanan per outlet dari mst_service_outlet, termasuk Drop Point)
   useEffect(() => {
-    fetchServices();
-  }, [activeOutletId]);
-
-  const fetchServices = async () => {
-    try {
-      const params = activeOutletId ? { outlet_id: activeOutletId } : undefined;
-      const res = await axios.get('/api/services', { params });
-      if (res.data && res.data.success) {
-        const activeCategories = (res.data.categories || []).filter(
-          c => c.is_active === 1 || c.is_active === true
-        );
-        setCategories(activeCategories);
-
-        if (res.data.data && res.data.data.length > 0) {
-          setServicesList(res.data.data.map(mapServiceFromApi));
-        } else {
-          setServicesList([]);
-        }
+    const seq = ++fetchSeq.current;
+    setLoading(true);
+    axios.get('/api/services', {
+      params: {
+        outlet_id: activeOutletId || undefined,
+        page,
+        limit: PAGE_SIZE,
+        category: categoryCode !== 'Semua' ? categoryCode : undefined,
+        search: debouncedSearch || undefined
       }
-    } catch (err) {
-      console.error('Gagal mengambil katalog layanan:', err);
-    }
+    })
+      .then((res) => {
+        if (seq !== fetchSeq.current || !res.data?.success) return;
+        setCategories((res.data.categories || []).filter((c) => c.is_active === 1 || c.is_active === true));
+        setServicesList((res.data.data || []).map(mapServiceFromApi));
+        setMeta(res.data.meta || { page: 1, totalPages: 1, total: 0, counts: {}, countAll: 0 });
+      })
+      .catch((err) => console.error('Gagal mengambil katalog layanan:', err))
+      .finally(() => { if (seq === fetchSeq.current) setLoading(false); });
+  }, [activeOutletId, page, categoryCode, debouncedSearch]);
+
+  const goToPage = (p) => {
+    setPage(p);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
@@ -87,15 +111,23 @@ export default function Services() {
         userProfile={userProfile}
       />
 
-      <main className="max-w-[1400px] w-full mx-auto p-4 sm:p-6 flex-grow flex flex-col gap-6">
-        <div className="bg-white border border-[#e0e0e0] rounded-3xl p-5 shadow-xs">
-          <h1 className="text-xl sm:text-2xl font-black text-[#313030] tracking-tight">Daftar Layanan Waschen Laundry 2026</h1>
-          <p className="text-xs text-slate-400 mt-0.5">Daftar Harga Resmi Waschen Laundry Seluruh Outlet</p>
+      <main className="max-w-[1500px] w-full min-w-0 mx-auto p-3 sm:p-6 flex-grow flex flex-col gap-4 sm:gap-6">
+        <div className="bg-white border border-[#e0e0e0] rounded-3xl p-4 sm:p-5">
+          <h1 className="text-lg sm:text-2xl font-black text-[#313030] tracking-tight">Daftar Layanan Waschen Laundry 2026</h1>
         </div>
 
         <ListServices
           servicesList={servicesList}
           categories={categories}
+          meta={meta}
+          loading={loading}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          categoryCode={categoryCode}
+          onCategoryChange={setCategoryCode}
+          page={page}
+          pageSize={PAGE_SIZE}
+          onPageChange={goToPage}
         />
       </main>
     </div>

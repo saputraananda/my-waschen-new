@@ -120,9 +120,6 @@ export default function AddComplaint({ meta, activeOutletId, activeOutletName, o
       <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#e0e0e0] pb-4 gap-3">
         <div>
           <h2 className="text-lg font-black text-[#313030]">Ajukan Komplain Pelanggan</h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            {activeOutletName ? `Cabang ${activeOutletName} · ` : ''}Status awal <span className="font-black text-orange-600">Request</span> — admin Alsa menyetujui jadi Open atau menolak jadi Archive
-          </p>
         </div>
         {message && (
           <span className="px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-black self-start sm:self-auto">

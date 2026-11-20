@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Upload, Camera, X } from 'lucide-react';
+import { Upload, Camera } from 'lucide-react';
+import ProofFilePreview from './ProofFilePreview.jsx';
 import QcCameraModal from './QcCameraModal.jsx';
 import { buildQcPhotoLines, burnQcPhoto } from '../utils/qcPhotoStamp.js';
 import { useAppDialog } from '../context/AppDialogContext.jsx';
@@ -66,14 +67,7 @@ export default function PaymentProofFields({
           <span className="text-[10px] font-bold text-slate-500 text-center">Ambil foto kamera</span>
         </button>
       </div>
-      {file && (
-        <div className="mt-2 flex items-center justify-between gap-2 px-3 py-2 bg-[#f8f8f8] border border-[#e0e0e0] rounded-xl">
-          <span className="text-[11px] font-bold text-slate-600 truncate">{file.name || 'Bukti bayar terpilih'}</span>
-          <button type="button" onClick={() => onFile(null)} className="text-[10px] font-bold text-rose-600 flex items-center gap-1 cursor-pointer shrink-0">
-            <X className="h-3 w-3" /> Hapus
-          </button>
-        </div>
-      )}
+      <ProofFilePreview file={file} onRemove={() => onFile(null)} />
       <QcCameraModal
         open={open}
         title={cameraTitle}

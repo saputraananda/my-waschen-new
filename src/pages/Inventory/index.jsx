@@ -165,9 +165,6 @@ export default function InventoryPage() {
               <Package className="h-6 w-6 shrink-0 text-[#5f1340]" />
               <span>Manajemen Inventory</span>
             </h1>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Opname stok per outlet — stok awal, pemakaian seharusnya (BOM), aktual harian, sisa & selisih
-            </p>
           </div>
 
           <div className="flex items-center gap-1.5 bg-[#f8f8f8] border border-[#e0e0e0] p-1.5 rounded-2xl w-full xl:w-auto min-w-0">

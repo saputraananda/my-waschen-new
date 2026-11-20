@@ -565,12 +565,8 @@ export default function AddCustomer({
       </div>
 
       {/* Full-width Footer Action Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between border-t border-[#e0e0e0] pt-5 gap-3 mt-1">
-        <span className="text-xs text-slate-400 font-medium text-center sm:text-left">
-          * Wajib: sapaan, nama, nomor HP. Data lain opsional dan bisa dilengkapi nanti.
-        </span>
-
-        <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+      <div className="flex items-center justify-end border-t border-[#e0e0e0] pt-5 mt-1">
+        <div className="grid grid-flow-col auto-cols-fr sm:flex items-stretch gap-3 w-full sm:w-auto">
           {!isEdit && (
             <button
               type="button"
@@ -582,9 +578,9 @@ export default function AddCustomer({
                   customerTierId: customerTiers.find((t) => t.code === 'ONE_TIME')?.id || ''
                 }));
               }}
-              className="flex-1 sm:flex-none px-4 py-3 bg-white border border-[#e0e0e0] hover:bg-slate-50 disabled:opacity-50 text-slate-700 font-bold rounded-xl text-xs cursor-pointer flex items-center justify-center gap-2 transition-colors"
+              className="min-h-11 px-4 py-3 bg-white border border-[#e0e0e0] hover:bg-slate-50 disabled:opacity-50 text-slate-700 font-bold rounded-xl text-xs cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap transition-colors"
             >
-              <RotateCcw className="h-4 w-4" />
+              <RotateCcw className="h-4 w-4 shrink-0" />
               <span>Reset Form</span>
             </button>
           )}
@@ -592,9 +588,9 @@ export default function AddCustomer({
           <button
             type="submit"
             disabled={isSubmitting}
-            className="flex-1 sm:flex-none px-6 py-3 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-colors"
+            className="min-h-11 px-4 sm:px-6 py-3 bg-[#5f1340] hover:bg-[#4d0f33] disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer shadow-xs transition-colors"
           >
-            <Save className="h-4 w-4" />
+            <Save className="h-4 w-4 shrink-0" />
             <span>
               {isSubmitting
                 ? 'Menyimpan...'
