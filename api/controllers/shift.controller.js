@@ -2,6 +2,7 @@ import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 import { getOutletFlags } from '../utils/dropPointOutlet.js';
 import { getEmployeeNames, formatEmployeeLabel } from '../utils/employeeNames.js';
+import { findEmployeeIdByPin } from '../utils/employeePin.js';
 import { todayWibISO, formatWibWeekdayUpper, formatWibDateLong } from '../utils/wib.js';
 
 const formatRp = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
@@ -810,59 +811,35 @@ export const getDailyReport = async (req, res) => {
 
 /**
  * POST /api/shifts/verify-pin
- * body: { codePin, outletId?, employeeId?, mode? }
+ * body: { codePin }
  *
- * mode:
- *  - 'pin' (default): identitas = pemilik PIN (atribusi kasir nota)
- *  - 'employee': cocokkan employeeId + PIN dulu, lalu fallback cari PIN
- *
- * Catatan: filter outlet hanya prioritas, BUKAN penolak — frontliner
- * boleh atribusi nota di outlet lain dengan PIN miliknya.
+ * PIN dibaca dari waschen.mst_employee_pin (4 digit, unik). Pemilik PIN = kasir nota,
+ * asalkan terdaftar di mst_role. Beda outlet tidak ditolak.
  */
 export const verifyPin = async (req, res) => {
   try {
-    const { employeeId, codePin, outletId } = req.body;
-    const mode = String(req.body.mode || 'pin').toLowerCase();
+    // employeeId/outletId/mode dari klien lama diabaikan: PIN unik, pemiliknya = kasir nota.
+    const { codePin } = req.body;
     const pin = String(codePin || '').trim().replace(/\D/g, '');
 
     if (pin.length !== 4) {
       return res.status(400).json({ success: false, message: 'PIN harus 4 digit' });
     }
 
-    const outletFilter = outletId != null && outletId !== '' && !Number.isNaN(Number(outletId))
-      ? Number(outletId)
-      : null;
+    // PIN unik per karyawan (mst_employee_pin, DB utama)
+    const ownerId = await findEmployeeIdByPin(pin);
     let rows = [];
-
-    // 1) Mode employee: coba cocokkan employeeId + PIN
-    if (mode === 'employee' && employeeId) {
-      const [matched] = await myWaschenPool.query(
-        `SELECT employee_id, employee_name, role, outlet_id, code_pin FROM mst_role
-         WHERE employee_id = ?
-           AND TRIM(CAST(code_pin AS CHAR)) = ?
-         LIMIT 1`,
-        [Number(employeeId), pin]
+    if (ownerId) {
+      // Hanya karyawan Waschen (punya mst_role) yang bisa jadi kasir nota
+      const [roleRows] = await myWaschenPool.query(
+        'SELECT employee_id, employee_name, role, outlet_id FROM mst_role WHERE employee_id = ? LIMIT 1',
+        [ownerId]
       );
-      rows = matched;
-    }
-
-    // 2) Resolve by PIN — utamakan outlet aktif, jangan tolak jika beda outlet
-    if (!rows.length) {
-      const [byPin] = await myWaschenPool.query(
-        `SELECT employee_id, employee_name, role, outlet_id, code_pin FROM mst_role
-         WHERE TRIM(CAST(code_pin AS CHAR)) = ?
-         ORDER BY
-           CASE
-             WHEN ? IS NOT NULL AND outlet_id = ? THEN 0
-             WHEN role = 'Frontliner' THEN 1
-             WHEN outlet_id IS NULL THEN 2
-             ELSE 3
-           END,
-           employee_id ASC
-         LIMIT 1`,
-        [pin, outletFilter, outletFilter]
-      );
-      rows = byPin;
+      rows = roleRows;
+      if (rows.length && !String(rows[0].employee_name || '').trim()) {
+        const names = await getEmployeeNames([ownerId]);
+        rows[0].employee_name = names.get(ownerId) || null;
+      }
     }
 
     if (!rows.length) {

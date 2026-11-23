@@ -81,7 +81,7 @@ export const loginUser = async (req, res) => {
 
     if (user.employee_id) {
       const [roleRows] = await myWaschenPool.query(
-        'SELECT role, outlet_id, code_pin, employee_name FROM mst_role WHERE employee_id = ? LIMIT 1',
+        'SELECT role, outlet_id, employee_name FROM mst_role WHERE employee_id = ? LIMIT 1',
         [user.employee_id]
       );
       if (roleRows.length > 0) {
