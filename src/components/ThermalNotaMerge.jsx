@@ -5,10 +5,12 @@ import { Printer, X, Bluetooth, BluetoothOff, Cable } from 'lucide-react';
 import { useAppDialog } from '../context/AppDialogContext.jsx';
 import { useThermalPrinter } from '../context/ThermalPrinterContext.jsx';
 import { buildMergeNotaModel } from '../utils/mergeNotaModel.js';
+import { buildEscPosMergeNota80, buildMergeNotaModel80, getNotaPaperSize, setNotaPaperSize } from '../utils/escpos80.js';
+import { isPrinterConnected, writeToThermalPrinter } from '../utils/thermalPrinter.js';
 import ThermalNotaBody from './ThermalNotaBody.jsx';
 
 /**
- * Modal cetak thermal 58mm untuk Struk Pelunasan Gabungan (Merged Nota).
+ * Modal cetak thermal 58mm (bawaan) / 80mm (pilihan) untuk Struk Pelunasan Gabungan (Merged Nota).
  * Dipakai setelah Proses & Cetak Nota Gabungan berhasil.
  */
 export default function ThermalNotaMerge({
@@ -28,15 +30,22 @@ export default function ThermalNotaMerge({
     printMergeNota
   } = useThermalPrinter();
   const [printing, setPrinting] = useState(false);
+  // Ukuran kertas: '58' (bawaan, alur lama) atau '80'. Diingat per perangkat.
+  const [paper, setPaper] = useState(getNotaPaperSize);
+  const is80 = paper === '80';
+  const choosePaper = (size) => {
+    setPaper(size);
+    setNotaPaperSize(size);
+  };
 
   const rows = useMemo(() => {
     if (!batchData) return [];
-    return buildMergeNotaModel(batchData, {
+    return (is80 ? buildMergeNotaModel80 : buildMergeNotaModel)(batchData, {
       outletName,
       customerName,
       customerPhone
     });
-  }, [batchData, outletName, customerName, customerPhone]);
+  }, [batchData, outletName, customerName, customerPhone, is80]);
 
   useEffect(() => {
     if (!batchData) return undefined;
@@ -82,11 +91,16 @@ export default function ThermalNotaMerge({
     }
     setPrinting(true);
     try {
-      await printMergeNota(batchData, {
-        outletName,
-        customerName,
-        customerPhone
-      });
+      if (is80) {
+        if (!isPrinterConnected()) throw new Error('Printer belum terhubung. Buka Setting Printer → Hubungkan Printer.');
+        await writeToThermalPrinter(await buildEscPosMergeNota80(batchData, { outletName, customerName, customerPhone }));
+      } else {
+        await printMergeNota(batchData, {
+          outletName,
+          customerName,
+          customerPhone
+        });
+      }
     } catch (err) {
       await showAlert({
         title: 'Gagal Cetak',
@@ -106,14 +120,14 @@ export default function ThermalNotaMerge({
     >
       <div className="flex min-h-full items-center justify-center p-4 sm:p-6">
         <div
-          className="bg-white rounded-3xl border border-[#e0e0e0] w-full max-w-md shadow-2xl flex flex-col max-h-[90vh] animate-fade-in min-w-0"
+          className={`bg-white rounded-3xl border border-[#e0e0e0] w-full ${is80 ? 'max-w-lg' : 'max-w-md'} shadow-2xl flex flex-col max-h-[90vh] animate-fade-in min-w-0`}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="shrink-0 p-4 border-b border-[#e0e0e0] flex justify-between items-center bg-[#f8f8f8] rounded-t-3xl">
             <div className="flex items-center gap-2 min-w-0">
               <Printer className="h-5 w-5 text-[#5f1340] shrink-0" />
               <div className="min-w-0">
-                <h3 className="text-sm font-black text-[#313030]">Cetak Nota Gabungan Thermal 58mm</h3>
+                <h3 className="text-sm font-black text-[#313030]">Cetak Nota Gabungan Thermal {paper}mm</h3>
                 <p className="text-[10px] text-slate-500 font-bold truncate">
                   {batchNo} · {itemCount} nota dilunasi
                 </p>
@@ -126,6 +140,25 @@ export default function ThermalNotaMerge({
             >
               <X className="h-5 w-5" />
             </button>
+          </div>
+
+          <div className="shrink-0 px-4 py-2.5 border-b border-[#e0e0e0] bg-white flex items-center justify-between gap-3">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Ukuran kertas</span>
+            <div className="inline-flex rounded-xl bg-slate-100 p-1 gap-1">
+              {['58', '80'].map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  onClick={() => choosePaper(size)}
+                  disabled={printing}
+                  className={`px-3.5 py-1.5 rounded-lg text-[11px] font-black cursor-pointer transition-colors disabled:cursor-not-allowed ${
+                    paper === size ? 'bg-[#5f1340] text-white shadow-xs' : 'text-slate-600 hover:bg-white'
+                  }`}
+                >
+                  {size} mm
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className={`shrink-0 px-4 py-2.5 border-b flex flex-wrap items-center justify-between gap-2 ${
@@ -167,11 +200,11 @@ export default function ThermalNotaMerge({
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain bg-[#ece9e4] py-5 px-4 sm:px-6">
-            <div className="w-full max-w-[280px] mx-auto flex flex-col items-center gap-2">
+            <div className={`w-full ${is80 ? 'max-w-[420px]' : 'max-w-[280px]'} mx-auto flex flex-col items-center gap-2`}>
               <span className="text-[10px] font-black uppercase tracking-wider text-[#5f1340] bg-white/80 px-2.5 py-1 rounded-lg border border-[#5f1340]/15">
                 Struk Pelunasan Gabungan
               </span>
-              <ThermalNotaBody rows={rows} />
+              <ThermalNotaBody rows={rows} paper={paper} />
             </div>
           </div>
 

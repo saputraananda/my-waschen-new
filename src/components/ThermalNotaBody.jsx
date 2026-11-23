@@ -1,6 +1,7 @@
 import React from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { buildNotaModel, NOTA_DASH } from '../utils/notaModel.js';
+import { buildNotaModel80 } from '../utils/escpos80.js';
 
 /**
  * Preview = sumber kebenaran layout (QR kiri besar + teks kanan).
@@ -11,19 +12,26 @@ export default function ThermalNotaBody({
   settings,
   variant = 'customer',
   compact = false,
-  rows: rowsOverride = null
+  rows: rowsOverride = null,
+  // '58' (bawaan) atau '80' — pratinjau kertas 80mm
+  paper = '58'
 }) {
   if (!rowsOverride && (!receipt || !settings)) return null;
 
-  const rows = rowsOverride || buildNotaModel(receipt, settings, variant);
+  const is80 = paper === '80';
+  const rows = rowsOverride || (is80 ? buildNotaModel80 : buildNotaModel)(receipt, settings, variant);
   const pad = compact ? 'px-2 py-2.5' : 'px-2.5 py-3 sm:px-3 sm:py-4';
+  // 80mm: ukuran huruf mengikuti lebar kertas supaya 48 karakter tepat satu baris penuh (sama seperti cetakan)
+  // Header 80mm: ukuran huruf = px di raster cetak (lebar 576 dots)
+  const dots80 = (px) => (is80 ? { fontSize: `calc(100cqw * ${px} / 576)`, lineHeight: 1.2 } : undefined);
+  const fit80 = (chars) => (is80 ? { fontSize: `calc(100cqw / ${(chars * 0.6).toFixed(1)})`, whiteSpace: 'pre-wrap' } : undefined);
 
   return (
-    <div className="w-full max-w-[300px] mx-auto min-w-0">
+    <div className={`w-full ${is80 ? 'max-w-[420px]' : 'max-w-[300px]'} mx-auto min-w-0`}>
       <div
         className={`w-full min-w-0 bg-[#fffefb] shadow-sm border border-slate-200/80 ${pad} font-mono text-[9px] sm:text-[10px] leading-[1.35] text-slate-800`}
       >
-        <div className="space-y-0 min-w-0">
+        <div className="space-y-0 min-w-0" style={is80 ? { containerType: 'inline-size' } : undefined}>
           {rows.map((row, idx) => {
             if (row.type === 'blank') {
               return <div key={idx} className="h-1.5 sm:h-2" />;
@@ -31,8 +39,8 @@ export default function ThermalNotaBody({
 
             if (row.type === 'dash') {
               return (
-                <p key={idx} className="whitespace-pre overflow-hidden text-ellipsis">
-                  {NOTA_DASH}
+                <p key={idx} className="whitespace-pre overflow-hidden text-ellipsis" style={fit80(48)}>
+                  {row.text || NOTA_DASH}
                 </p>
               );
             }
@@ -42,7 +50,7 @@ export default function ThermalNotaBody({
                 <div key={idx} className="flex gap-1.5 items-start mb-1.5 min-w-0">
                   {row.qr && (
                     // Proporsi sama dengan cetakan (QR 200 dari 384 dots ~ 52%) agar kolom teks cukup lebar
-                    <div className="shrink-0 w-[52%] bg-white leading-none">
+                    <div className={`shrink-0 ${is80 ? 'w-[49%]' : 'w-[52%]'} bg-white leading-none`}>
                       <QRCodeSVG
                         value={row.qr}
                         size={168}
@@ -54,11 +62,12 @@ export default function ThermalNotaBody({
                   )}
                   <div className="min-w-0 flex-1 pt-0.5 space-y-0.5">
                     {row.title && (
-                      <p className="break-words font-black text-[13px] sm:text-[15px] leading-tight">{row.title}</p>
+                      <p className="break-words font-black text-[13px] sm:text-[15px] leading-tight" style={dots80(30)}>{row.title}</p>
                     )}
                     {(row.lines || []).map((l, i) => (
                       <p
                         key={i}
+                        style={dots80(row.size === 'large' ? (i === 0 && !row.title ? 36 : 30) : (i === 0 && !row.title ? 25 : 22))}
                         className={`${row.size === 'large' && ((row.nowrap || []).includes(i) || !String(l).trim().includes(' ')) ? 'whitespace-nowrap' : 'break-words'} ${
                           i === 0 && !row.title
                             ? (row.size === 'large' ? 'font-bold text-[15px] sm:text-[16px] leading-tight' : 'font-bold text-[10px] sm:text-[11px]')
@@ -90,6 +99,7 @@ export default function ThermalNotaBody({
               <p
                 key={idx}
                 className={`min-w-0 ${align} ${weight} ${size}`}
+                style={fit80(row.size === 'huge' ? 24 : 48)}
               >
                 {row.boldTail && String(row.text || '').endsWith(row.boldTail) ? (
                   <>

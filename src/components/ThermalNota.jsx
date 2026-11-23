@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Printer, X, Bluetooth, BluetoothOff, Cable, Receipt, Layers, Smartphone } from 'lucide-react';
-import { isIosDevice, makeIosPrintFile, shareIosPrintFile } from '../utils/thermalPrinter.js';
+import { isIosDevice, makeIosPrintFile, shareIosPrintFile, isPrinterConnected, writeToThermalPrinter } from '../utils/thermalPrinter.js';
 import { buildEscPosNota, buildEscPosMergeNota } from '../utils/escpos.js';
 import { useAppDialog } from '../context/AppDialogContext.jsx';
 import { useThermalPrinter } from '../context/ThermalPrinterContext.jsx';
@@ -13,10 +13,17 @@ import {
   fetchPrinterSettings
 } from '../utils/printerSettings.js';
 import { buildMergeNotaModel } from '../utils/mergeNotaModel.js';
+import {
+  buildEscPosNota80,
+  buildEscPosMergeNota80,
+  buildMergeNotaModel80,
+  getNotaPaperSize,
+  setNotaPaperSize
+} from '../utils/escpos80.js';
 import ThermalNotaBody from './ThermalNotaBody.jsx';
 
 /**
- * Modal cetak thermal 58mm.
+ * Modal cetak thermal 58mm (bawaan) atau 80mm (pilihan, escpos80.js).
  * - Default: Nota Internal + Nota Customer (per nota individu)
  * - Jika transaksi punya paymentBatchNo (pelunasan gabungan):
  *   ada pilihan Cetak Nota Gabungan vs Cetak Nota Individu
@@ -46,6 +53,13 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
   const ios = useMemo(() => isIosDevice(), []);
   // File cetak disiapkan lebih dulu supaya tap langsung membuka Share Sheet (tanpa await di antaranya)
   const [iosFiles, setIosFiles] = useState({ internal: null, customer: null, merge: null });
+  // Ukuran kertas: '58' (bawaan, alur lama) atau '80'. Diingat per perangkat.
+  const [paper, setPaper] = useState(getNotaPaperSize);
+  const is80 = paper === '80';
+  const choosePaper = (size) => {
+    setPaper(size);
+    setNotaPaperSize(size);
+  };
 
   const batchNo =
     createdOrderReceipt?.paymentBatchNo ||
@@ -134,9 +148,10 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
     (async () => {
       try {
         const id = createdOrderReceipt.id || 'nota';
+        const build = is80 ? buildEscPosNota80 : buildEscPosNota;
         const [bi, bc] = await Promise.all([
-          buildEscPosNota(createdOrderReceipt, settings.internal, 'internal'),
-          buildEscPosNota(createdOrderReceipt, settings.customer, 'customer')
+          build(createdOrderReceipt, settings.internal, 'internal'),
+          build(createdOrderReceipt, settings.customer, 'customer')
         ]);
         if (cancelled) return;
         setIosFiles((p) => ({
@@ -149,7 +164,7 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [ios, createdOrderReceipt, loadingSettings, settings]);
+  }, [ios, createdOrderReceipt, loadingSettings, settings, is80]);
 
   // iOS: file nota gabungan
   useEffect(() => {
@@ -157,7 +172,7 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
     let cancelled = false;
     (async () => {
       try {
-        const bytes = await buildEscPosMergeNota(batchData, {
+        const bytes = await (is80 ? buildEscPosMergeNota80 : buildEscPosMergeNota)(batchData, {
           outletName: batchData.outletName || createdOrderReceipt.branch,
           customerName: batchData.customerName || createdOrderReceipt.customerName,
           customerPhone: batchData.customerPhone || createdOrderReceipt.customerPhone
@@ -169,16 +184,16 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [ios, createdOrderReceipt, batchData, batchNo]);
+  }, [ios, createdOrderReceipt, batchData, batchNo, is80]);
 
   const mergeRows = useMemo(() => {
     if (!batchData) return [];
-    return buildMergeNotaModel(batchData, {
+    return (is80 ? buildMergeNotaModel80 : buildMergeNotaModel)(batchData, {
       outletName: batchData.outletName || createdOrderReceipt?.branch,
       customerName: batchData.customerName || createdOrderReceipt?.customerName,
       customerPhone: batchData.customerPhone || createdOrderReceipt?.customerPhone
     });
-  }, [batchData, createdOrderReceipt]);
+  }, [batchData, createdOrderReceipt, is80]);
 
   if (!createdOrderReceipt) return null;
 
@@ -218,7 +233,12 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
     setPrinting(variant);
     try {
       const variantSettings = variant === 'internal' ? settings.internal : settings.customer;
-      await printNota(createdOrderReceipt, variantSettings, variant);
+      if (is80) {
+        if (!isPrinterConnected()) throw new Error('Printer belum terhubung. Buka Setting Printer → Hubungkan Printer.');
+        await writeToThermalPrinter(await buildEscPosNota80(createdOrderReceipt, variantSettings, variant));
+      } else {
+        await printNota(createdOrderReceipt, variantSettings, variant);
+      }
     } catch (err) {
       await showAlert({
         title: 'Gagal Cetak',
@@ -244,11 +264,17 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
     }
     setPrinting('merge');
     try {
-      await printMergeNota(batchData, {
+      const mergeOptions = {
         outletName: batchData.outletName || createdOrderReceipt.branch,
         customerName: batchData.customerName || createdOrderReceipt.customerName,
         customerPhone: batchData.customerPhone || createdOrderReceipt.customerPhone
-      });
+      };
+      if (is80) {
+        if (!isPrinterConnected()) throw new Error('Printer belum terhubung. Buka Setting Printer → Hubungkan Printer.');
+        await writeToThermalPrinter(await buildEscPosMergeNota80(batchData, mergeOptions));
+      } else {
+        await printMergeNota(batchData, mergeOptions);
+      }
     } catch (err) {
       await showAlert({
         title: 'Gagal Cetak',
@@ -299,7 +325,7 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
             <div className="flex items-center gap-2 min-w-0">
               <Printer className="h-5 w-5 text-[#5f1340] shrink-0" />
               <div className="min-w-0">
-                <h3 className="text-sm font-black text-[#313030]">Cetak Nota Thermal 58mm</h3>
+                <h3 className="text-sm font-black text-[#313030]">Cetak Nota Thermal {paper}mm</h3>
                 <p className="text-[10px] text-slate-500 font-bold truncate">
                   {hasMergedBatch
                     ? `Nota ini bagian pelunasan gabungan (${batchLabel})`
@@ -314,6 +340,25 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
             >
               <X className="h-5 w-5" />
             </button>
+          </div>
+
+          <div className="shrink-0 px-4 py-2.5 border-b border-[#e0e0e0] bg-white flex items-center justify-between gap-3">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Ukuran kertas</span>
+            <div className="inline-flex rounded-xl bg-slate-100 p-1 gap-1">
+              {['58', '80'].map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  onClick={() => choosePaper(size)}
+                  disabled={Boolean(printing)}
+                  className={`px-3.5 py-1.5 rounded-lg text-[11px] font-black cursor-pointer transition-colors disabled:cursor-not-allowed ${
+                    paper === size ? 'bg-[#5f1340] text-white shadow-xs' : 'text-slate-600 hover:bg-white'
+                  }`}
+                >
+                  {size} mm
+                </button>
+              ))}
+            </div>
           </div>
 
           {hasMergedBatch && (
@@ -407,16 +452,16 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
               ) : batchError ? (
                 <p className="text-center text-xs text-rose-600 font-bold py-10">{batchError}</p>
               ) : (
-                <div className="w-full max-w-[280px] mx-auto flex flex-col items-center gap-2">
+                <div className={`w-full ${is80 ? 'max-w-[420px]' : 'max-w-[280px]'} mx-auto flex flex-col items-center gap-2`}>
                   <span className="text-[10px] font-black uppercase tracking-wider text-[#5f1340] bg-white/80 px-2.5 py-1 rounded-lg border border-[#5f1340]/15">
                     Struk Pelunasan Gabungan · {itemCount || '-'} nota
                   </span>
-                  <ThermalNotaBody rows={mergeRows} />
+                  <ThermalNotaBody rows={mergeRows} paper={paper} />
                 </div>
               )
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 justify-items-center min-w-0">
-                <div className="w-full max-w-[280px] min-w-0 flex flex-col items-center gap-2">
+              <div className={`grid grid-cols-1 ${is80 ? '' : 'sm:grid-cols-2'} gap-4 sm:gap-5 justify-items-center min-w-0`}>
+                <div className={`w-full ${is80 ? 'max-w-[420px]' : 'max-w-[280px]'} min-w-0 flex flex-col items-center gap-2`}>
                   <span className="text-[10px] font-black uppercase tracking-wider text-[#5f1340] bg-white/80 px-2.5 py-1 rounded-lg border border-[#5f1340]/15">
                     Nota Internal
                   </span>
@@ -424,9 +469,10 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
                     receipt={createdOrderReceipt}
                     settings={settings.internal}
                     variant="internal"
+                    paper={paper}
                   />
                 </div>
-                <div className="w-full max-w-[280px] min-w-0 flex flex-col items-center gap-2">
+                <div className={`w-full ${is80 ? 'max-w-[420px]' : 'max-w-[280px]'} min-w-0 flex flex-col items-center gap-2`}>
                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-600 bg-white/80 px-2.5 py-1 rounded-lg border border-slate-200">
                     Nota Customer
                   </span>
@@ -434,6 +480,7 @@ export default function ThermalNota({ createdOrderReceipt, onClose }) {
                     receipt={createdOrderReceipt}
                     settings={settings.customer}
                     variant="customer"
+                    paper={paper}
                   />
                 </div>
               </div>
