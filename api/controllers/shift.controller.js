@@ -2,7 +2,7 @@ import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 import { getOutletFlags } from '../utils/dropPointOutlet.js';
 import { getEmployeeNames, formatEmployeeLabel } from '../utils/employeeNames.js';
-import { findEmployeeIdByPin } from '../utils/employeePin.js';
+import { findEmployeeIdByPin, getManagementEmployee } from '../utils/employeePin.js';
 import { todayWibISO, formatWibWeekdayUpper, formatWibDateLong } from '../utils/wib.js';
 
 const formatRp = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
@@ -830,12 +830,18 @@ export const verifyPin = async (req, res) => {
     const ownerId = await findEmployeeIdByPin(pin);
     let rows = [];
     if (ownerId) {
-      // Hanya karyawan Waschen (punya mst_role) yang bisa jadi kasir nota
+      // Kasir nota: staf Waschen (punya mst_role) atau Manajemen (company_id = 1)
       const [roleRows] = await myWaschenPool.query(
         'SELECT employee_id, employee_name, role, outlet_id FROM mst_role WHERE employee_id = ? LIMIT 1',
         [ownerId]
       );
       rows = roleRows;
+      if (!rows.length) {
+        const mgmt = await getManagementEmployee(ownerId);
+        if (mgmt) {
+          rows = [{ employee_id: mgmt.employee_id, employee_name: mgmt.full_name, role: 'Management', outlet_id: null }];
+        }
+      }
       if (rows.length && !String(rows[0].employee_name || '').trim()) {
         const names = await getEmployeeNames([ownerId]);
         rows[0].employee_name = names.get(ownerId) || null;

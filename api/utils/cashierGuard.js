@@ -1,4 +1,5 @@
 import { mainPool } from '../db/pool.js';
+import { getManagementEmployee } from './employeePin.js';
 
 /**
  * Kasir yang dicatat harus karyawan yang sah. Alur PIN memang boleh mengganti kasir di
@@ -15,7 +16,9 @@ export async function resolveValidCashier(connection, req, cashierEmployeeId) {
     'SELECT employee_id FROM mst_role WHERE employee_id = ? LIMIT 1',
     [requested]
   );
-  return rows.length ? requested : null;
+  if (rows.length) return requested;
+  // Manajemen (company_id = 1) juga boleh jadi kasir lewat PIN
+  return (await getManagementEmployee(requested)) ? requested : null;
 }
 
 /** Perusahaan HQ (company_id = 1) = penyetuju kas kecil. Token lama tanpa companyId dicek ke DB. */

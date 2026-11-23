@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
 import { Lock, X } from 'lucide-react';
 
@@ -17,27 +17,14 @@ export default function PinVerifyModal({
   onCancel,
   onVerified,
   title = 'Konfirmasi PIN Kasir',
-  description = 'Masukkan PIN 4 digit frontliner untuk atribusi kasir.',
+  description = 'Masukkan PIN 4 digit Anda untuk atribusi kasir.',
   submitLabel = 'Lanjut Simpan Nota'
 }) {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Manajemen (company_id = 1) tidak ada di mst_role dan tanpa PIN: identitas = akun yang login.
-  const mgmtEmployeeId = parseInt(localStorage.getItem('employeeId') || '', 10) || null;
-  const isManagementNoPin = localStorage.getItem('companyId') === '1' && Boolean(mgmtEmployeeId);
-  const autoVerifiedRef = useRef(false);
-  useEffect(() => {
-    if (!isManagementNoPin || autoVerifiedRef.current) return;
-    autoVerifiedRef.current = true;
-    onVerified({
-      employeeId: mgmtEmployeeId,
-      role: 'Management',
-      fullName: localStorage.getItem('fullName') || null,
-      outletId: null
-    });
-  }, [isManagementNoPin, mgmtEmployeeId, onVerified]);
+  // Semua karyawan termasuk Manajemen wajib PIN (waschen.mst_employee_pin).
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -90,7 +77,6 @@ export default function PinVerifyModal({
     }
   };
 
-  if (isManagementNoPin) return null;
 
   return (
     <div className="fixed inset-0 z-[130] bg-[#313030]/70 backdrop-blur-sm flex justify-center items-center p-4">
