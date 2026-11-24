@@ -127,10 +127,14 @@ export default function LoginPage() {
                 localStorage.setItem('outlets', JSON.stringify(outlets));
                 const dropPointOutlets = Array.isArray(response.data.dropPointOutlets) ? response.data.dropPointOutlets : [];
                 localStorage.setItem('dropPointOutlets', JSON.stringify(dropPointOutlets));
+                // Outlet Event: stand event yang bisa dipilih semua staf di pilihan outlet
+                const eventOutlets = Array.isArray(response.data.eventOutlets) ? response.data.eventOutlets : [];
+                localStorage.setItem('eventStandOutlets', JSON.stringify(eventOutlets));
                 // Flag per outlet (is_drop_point, is_active, requires_shift) untuk gerbang shift saat ganti outlet
                 storeOutletFlags({
                     outlets,
                     dropPointOutlets,
+                    eventOutlets,
                     assignedOutletId: user.assignedOutletId,
                     assignedOutletFlags: user.assignedOutletFlags
                 });

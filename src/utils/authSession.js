@@ -10,6 +10,7 @@ const AUTH_KEYS = [
   'activeOutletId',
   'activeOutletName',
   'dropPointOutlets',
+  'eventStandOutlets',
   'outletFlags',
   // Kunci lama sebelum rename Event -> Drop Point, tetap dibersihkan saat logout
   'eventOutlet',
@@ -106,9 +107,20 @@ export function requiresShiftGate() {
   return localStorage.getItem('companyId') === '5' && !isDeliveryStaff() && activeOutletRequiresShift();
 }
 
+/**
+ * Delivery & Manajemen tidak wajib shift, tapi tetap melihat badge shift dan BOLEH open/close shift
+ * (sebagian kurir memang bisa menjalankan shift). Daily Worker tidak termasuk — dia wajib shift.
+ */
+export function allowsOptionalShift() {
+  const companyId = localStorage.getItem('companyId');
+  const optionalRole = companyId === '1' || (companyId === '5' && isDeliveryStaff());
+  return optionalRole && activeOutletRequiresShift();
+}
+
 function normalizeFlags(o) {
   return {
     is_drop_point: Number(o?.is_drop_point) === 1 ? 1 : 0,
+    is_event: Number(o?.is_event) === 1 ? 1 : 0,
     is_active: o?.is_active === undefined ? (o?.active === false ? 0 : 1) : (Number(o.is_active) === 1 ? 1 : 0),
     requires_shift: o?.requires_shift === undefined || o?.requires_shift === null ? 1 : (Number(o.requires_shift) === 1 ? 1 : 0)
   };
@@ -118,15 +130,65 @@ function normalizeFlags(o) {
  * Simpan flag outlet dari respons login: map { [outletId]: { is_drop_point, is_active, requires_shift } }
  * dari daftar outlets, dropPointOutlets, dan outlet asal staf.
  */
-export function storeOutletFlags({ outlets = [], dropPointOutlets = [], assignedOutletId = null, assignedOutletFlags = null } = {}) {
+export function storeOutletFlags({ outlets = [], dropPointOutlets = [], eventOutlets = [], assignedOutletId = null, assignedOutletFlags = null } = {}) {
   const map = {};
-  [...(Array.isArray(outlets) ? outlets : []), ...(Array.isArray(dropPointOutlets) ? dropPointOutlets : [])].forEach((o) => {
+  [
+    ...(Array.isArray(outlets) ? outlets : []),
+    ...(Array.isArray(dropPointOutlets) ? dropPointOutlets : []),
+    ...(Array.isArray(eventOutlets) ? eventOutlets : [])
+  ].forEach((o) => {
     if (o && o.id) map[String(o.id)] = normalizeFlags(o);
   });
   if (assignedOutletId && assignedOutletFlags) {
     map[String(assignedOutletId)] = normalizeFlags(assignedOutletFlags);
   }
   localStorage.setItem('outletFlags', JSON.stringify(map));
+}
+
+/**
+ * Terapkan perubahan outlet dari Super App (event socket 'outlet:updated') ke data sesi:
+ * peta outletFlags + daftar Drop Point (status aktif / wajib shift). Mengembalikan true
+ * bila outlet itu relevan untuk sesi ini (outlet aktif, asal, atau drop point yang dikenal).
+ */
+export function applyOutletUpdate(outlet) {
+  if (!outlet || !outlet.id) return false;
+  const key = String(outlet.id);
+  const flags = normalizeFlags(outlet);
+  let map = {};
+  try { map = JSON.parse(localStorage.getItem('outletFlags') || '{}') || {}; } catch { map = {}; }
+  const known = Boolean(map[key]);
+  map[key] = flags;
+  localStorage.setItem('outletFlags', JSON.stringify(map));
+
+  let inDropPoints = false;
+  try {
+    const raw = JSON.parse(localStorage.getItem('dropPointOutlets') || 'null');
+    if (Array.isArray(raw)) {
+      const next = raw.map((dp) => {
+        if (String(dp?.id) !== key) return dp;
+        inDropPoints = true;
+        return { ...dp, active: flags.is_active === 1, requires_shift: flags.requires_shift, is_active: flags.is_active };
+      });
+      if (inDropPoints) localStorage.setItem('dropPointOutlets', JSON.stringify(next));
+    }
+  } catch { /* abaikan */ }
+
+  // Daftar outlet event (pilihan outlet staf): tambah / hapus / perbarui sesuai is_event
+  let inEvents = false;
+  try {
+    const list = getEventOutlets();
+    inEvents = list.some((o) => String(o.id) === key);
+    const rest = list.filter((o) => String(o.id) !== key);
+    const next = flags.is_event === 1
+      ? [...rest, { id: outlet.id, name: outlet.name, full_name: outlet.full_name, ...flags, active: flags.is_active === 1 }]
+      : rest;
+    localStorage.setItem('eventStandOutlets', JSON.stringify(next));
+    inEvents = inEvents || flags.is_event === 1;
+  } catch { /* abaikan */ }
+
+  return known || inDropPoints || inEvents
+    || key === String(localStorage.getItem('activeOutletId'))
+    || key === String(localStorage.getItem('homeOutletId'));
 }
 
 /** Flag outlet tertentu, atau null bila tidak diketahui. */
@@ -168,7 +230,22 @@ export function getDropPointOutlets() {
   }
 }
 
-/** Drop Point yang sedang aktif — pilihan outlet kerja staf di header. */
+/** Outlet Event (mst_outlet.is_event) dari login — stand event yang boleh dipilih semua staf. */
+export function getEventOutlets() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('eventStandOutlets') || '[]');
+    return Array.isArray(raw) ? raw.filter((o) => o && o.id) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Outlet Event yang aktif — pilihan outlet kerja staf di header (selain outlet asal). */
+export function getActiveEventOutlets() {
+  return getEventOutlets().filter((o) => o.active !== false && Number(o.is_active) !== 0);
+}
+
+/** Drop Point yang sedang aktif. */
 export function getActiveDropPointOutlets() {
   return getDropPointOutlets().filter((dp) => dp.active !== false);
 }

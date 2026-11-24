@@ -49,7 +49,10 @@ const addShiftSummary = (ws, shift) => {
     ['Cash Modal Open', shift.initial_cash],
     ['Petty Open', shift.initial_petty_cash],
     ['Cash Aktual Close', shift.actual_cash],
-    ['Revenue', shift.declared_revenue]
+    ['Revenue Tunai', shift.revenue_tunai],
+    ['Revenue Non Tunai', shift.revenue_non_tunai],
+    ['Revenue Total', shift.revenue_total],
+    ['Revenue Dilaporkan (closing)', shift.declared_revenue]
   ];
   money.forEach(([k, v]) => {
     const r = ws.addRow([k, Number(v) || 0]);

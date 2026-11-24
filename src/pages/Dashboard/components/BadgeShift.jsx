@@ -36,7 +36,9 @@ export default function BadgeShift({
   shiftChecked = true,
   currentEmployeeId,
   onOpenClose,
-  onOpenShift
+  onOpenShift,
+  /** Delivery & Manajemen: shift tidak wajib — badge tetap tampil, open/close boleh dipakai */
+  optional = false
 }) {
   const [minutes, setMinutes] = useState(getMinutesNow);
   const [shiftsCfg, setShiftsCfg] = useState(FALLBACK_SHIFTS);
@@ -70,7 +72,7 @@ export default function BadgeShift({
 
   const shift1 = shiftsCfg.find((s) => Number(s.shift_number) === 1) || FALLBACK_SHIFTS[0];
   const openRemindMin = timeToMin(shift1.open_time) ?? 8 * 60;
-  const afterOpenReminder = Number(shift1.remind_open) !== 0 && minutes >= openRemindMin;
+  const afterOpenReminder = !optional && Number(shift1.remind_open) !== 0 && minutes >= openRemindMin;
   const isOpen = shift && shift.status === 'Open';
 
   if (!shiftChecked && !isOpen) {
@@ -107,7 +109,9 @@ export default function BadgeShift({
             </span>
             <span className={`text-[10px] font-medium flex items-center gap-1 mt-0.5 ${afterOpenReminder ? 'text-sky-700' : 'text-amber-700'}`}>
               <Clock className="h-3 w-3" />
-              Klik Order Baru atau badge ini untuk membuka sesi kas
+              {optional
+                ? 'Opsional — nota tetap bisa dibuat tanpa shift'
+                : 'Klik Order Baru atau badge ini untuk membuka sesi kas'}
             </span>
           </div>
         </div>

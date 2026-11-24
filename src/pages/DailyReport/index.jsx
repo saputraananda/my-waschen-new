@@ -203,12 +203,25 @@ export default function DailyReport() {
                 </div>
 
                 {/* Angka utama */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5">
                   <Stat label="Modal Cash" value={s.initial_cash} />
                   <Stat label="Petty Cash Awal" value={s.initial_petty_cash} />
                   <Stat label="Cash Aktual Tutup" value={s.actual_cash} />
-                  <Stat label="Revenue" value={s.declared_revenue} highlight />
                 </div>
+
+                {/* Revenue = uang masuk dari pembayaran nota di shift ini (bukan nota outstanding) */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <Stat label="Revenue Tunai" value={s.revenue_tunai} />
+                  <Stat label="Revenue Non Tunai" value={s.revenue_non_tunai} />
+                  <Stat label="Revenue Total" value={s.revenue_total} highlight />
+                </div>
+                {s.status === 'Closed' && s.declared_revenue != null
+                  && Math.round(Number(s.declared_revenue)) !== Math.round(Number(s.revenue_total || 0)) && (
+                  <p className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900">
+                    Revenue yang dilaporkan saat closing <strong>Rp {Number(s.declared_revenue).toLocaleString('id-ID')}</strong> berbeda
+                    dengan pembayaran tercatat <strong>Rp {Number(s.revenue_total || 0).toLocaleString('id-ID')}</strong>.
+                  </p>
+                )}
 
                 {s.open_imbalance_reason && (
                   <p className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900">

@@ -2,6 +2,7 @@ import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 import { getOutletFlags } from '../utils/dropPointOutlet.js';
 import { getEmployeeNames, formatEmployeeLabel } from '../utils/employeeNames.js';
+import { getShiftRevenue } from '../utils/revenue.js';
 import { findEmployeeIdByPin, getManagementEmployee } from '../utils/employeePin.js';
 import { todayWibISO, formatWibWeekdayUpper, formatWibDateLong } from '../utils/wib.js';
 
@@ -30,7 +31,7 @@ const enrichShiftRow = async (row) => {
   };
 };
 
-const buildReportText = async ({ outletId, shift, transactions, pettyExpenses, salesCashExpenses, declaredTunai, declaredNonTunai }) => {
+const buildReportText = async ({ outletId, shift, revenue, pettyExpenses, salesCashExpenses, declaredTunai, declaredNonTunai }) => {
   let outletName = `Outlet #${outletId}`;
   try {
     const [rows] = await myWaschenPool.query(
@@ -44,21 +45,16 @@ const buildReportText = async ({ outletId, shift, transactions, pettyExpenses, s
   const hari = formatWibWeekdayUpper(closedAt);
   const tanggal = formatWibDateLong(closedAt);
 
+  // Revenue = uang yang masuk di shift ini (log pembayaran DP/Lunas/Pelunasan), bukan nota yang dibuat.
+  const split = revenue || { tunai: 0, nonTunai: 0, total: 0, byMethod: {} };
   const byMethod = {};
-  let tunai = 0;
-  let nonTunai = 0;
-  let total = 0;
-
-  for (const t of transactions) {
-    if (t.payment_status !== 'Lunas') continue;
-    const amt = parseFloat(t.grand_total) || 0;
-    total += amt;
-    const method = (t.payment_method || 'Lainnya').trim();
-    const key = method.toUpperCase();
-    byMethod[key] = (byMethod[key] || 0) + amt;
-    if (/tunai|cash/i.test(method)) tunai += amt;
-    else nonTunai += amt;
+  for (const [method, amt] of Object.entries(split.byMethod || {})) {
+    const key = String(method || 'Lainnya').trim().toUpperCase();
+    byMethod[key] = (byMethod[key] || 0) + (Number(amt) || 0);
   }
+  let tunai = split.tunai;
+  let nonTunai = split.nonTunai;
+  let total = split.total;
 
   if (declaredTunai != null && declaredNonTunai != null) {
     tunai = declaredTunai;
@@ -504,13 +500,16 @@ export const getShiftTransactions = async (req, res) => {
       cashier_role: roleMap[Number(t.cashier_employee_id)] || ''
     }));
 
+    // Rincian revenue per pembayaran (satu nota bisa DP tunai + pelunasan non tunai)
+    const rev = await getShiftRevenue(shift);
     return res.status(200).json({
       success: true,
       data: enriched,
       meta: {
         shiftId,
         total: enriched.length,
-        verified: enriched.filter((t) => t.is_verified).length
+        verified: enriched.filter((t) => t.is_verified).length,
+        revenue: { tunai: rev.tunai, nonTunai: rev.nonTunai, total: rev.total }
       }
     });
   } catch (error) {
@@ -632,15 +631,6 @@ export const closeShift = async (req, res) => {
       }
     } catch (_) { /* tabel master opsional */ }
 
-    // Nota milik shift ini. Nota delivery sudah diklaim saat open shift
-    // (lihat adoptOrphanTransactions), jadi cukup filter shift_id.
-    const [txns] = await myWaschenPool.query(
-      `SELECT t.* FROM tr_transaction t
-       WHERE t.shift_id = ?
-         AND t.is_delete_requested = 0`,
-      [shiftId]
-    );
-
     const paidTxns = await getShiftPaidTxns(shift);
     const unverified = paidTxns.filter((t) => Number(t.is_verified) !== 1);
     if (paidTxns.length > 0 && unverified.length > 0) {
@@ -667,9 +657,9 @@ export const closeShift = async (req, res) => {
       });
     }
 
-    const systemRevenue = txns
-      .filter((t) => t.payment_status === 'Lunas')
-      .reduce((s, t) => s + (parseFloat(t.grand_total) || 0), 0);
+    // Revenue sistem = pembayaran yang masuk selama shift (DP/Lunas/Pelunasan), dipisah tunai / non tunai
+    const shiftRevenue = await getShiftRevenue({ ...shift, closed_at: null });
+    const systemRevenue = shiftRevenue.total;
 
     // Pengeluaran petty cash — hanya untuk report, TIDAK mengurangi cash modal.
     // Cash modal (kembalian) dan petty cash (belanja outlet) adalah dua laci terpisah.
@@ -698,7 +688,7 @@ export const closeShift = async (req, res) => {
     const reportText = await buildReportText({
       outletId: shift.outlet_id,
       shift: closedShiftPreview,
-      transactions: txns,
+      revenue: shiftRevenue,
       pettyExpenses: pettyOut,
       salesCashExpenses: 0,
       declaredTunai: hasSplit ? revenueTunai : undefined,
@@ -792,8 +782,14 @@ export const getDailyReport = async (req, res) => {
         cashier_name: formatEmployeeLabel(t.cashier_employee_id, nameMap)
       }));
       const enriched = await enrichShiftRow(s);
+      // Revenue = uang masuk di shift (dihitung ulang, jadi selalu konsisten dengan daftar nota dibayar)
+      const rev = await getShiftRevenue(s);
       result.push({
         ...enriched,
+        revenue_tunai: rev.tunai,
+        revenue_non_tunai: rev.nonTunai,
+        revenue_total: rev.total,
+        revenue_by_method: rev.byMethod,
         transactions
       });
     }

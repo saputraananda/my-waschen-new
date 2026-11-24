@@ -1,5 +1,6 @@
 import { myWaschenPool, mainPool } from '../db/pool.js';
 import { getWibYearMonth, todayWibISO } from '../utils/wib.js';
+import { REVENUE_PAYMENTS_SQL, revenuePaymentParams, TUNAI_SQL } from '../utils/revenue.js';
 
 /**
  * GET /api/dashboard/stats
@@ -17,14 +18,14 @@ export const getDashboardStats = async (req, res) => {
       params.push(outlet_id);
     }
 
-    // 1. Today Revenue: nota Lunas yang dibayar hari ini (kalender WIB, sesuai paid_at)
+    // 1. Today Revenue: uang masuk hari ini dari pembayaran nota (DP/Lunas/Pelunasan), lihat utils/revenue.js
     const today = todayWibISO();
     const [revRows] = await myWaschenPool.query(
-      `SELECT COALESCE(SUM(grand_total), 0) as todayRevenue
-       FROM tr_transaction
-       WHERE payment_status = 'Lunas'
-         AND paid_at >= ? AND paid_at <= ? ${outletFilter}`,
-      [`${today} 00:00:00`, `${today} 23:59:59`, ...params]
+      `SELECT COALESCE(SUM(rp.amount), 0) as todayRevenue
+       FROM (${REVENUE_PAYMENTS_SQL}) rp
+       JOIN tr_transaction t ON t.id = rp.transaction_id
+       WHERE t.is_delete_requested = 0${outlet_id && outlet_id !== 'Semua' ? ' AND t.outlet_id = ?' : ''}`,
+      [...revenuePaymentParams(`${today} 00:00:00`, `${today} 23:59:59`), ...params]
     );
     const todayRevenue = parseFloat(revRows[0]?.todayRevenue || 0);
 
@@ -108,5 +109,56 @@ export const getDashboardStats = async (req, res) => {
       message: 'Gagal mengambil statistik dashboard',
       error: error.message
     });
+  }
+};
+
+/**
+ * GET /api/dashboard/revenue?outlet_id=&start=YYYY-MM-DD&end=YYYY-MM-DD
+ * Revenue berbasis pembayaran (uang masuk), per hari WIB: tunai / non tunai / total + jumlah nota dibayar.
+ */
+export const getRevenueSummary = async (req, res) => {
+  try {
+    const outletId = req.query.outlet_id && req.query.outlet_id !== 'Semua' ? Number(req.query.outlet_id) : null;
+    const start = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.start || '')) ? req.query.start : todayWibISO();
+    const end = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.end || '')) ? req.query.end : start;
+    const [rows] = await myWaschenPool.query(
+      `SELECT DATE(rp.paid_at) AS day,
+              SUM(CASE WHEN ${TUNAI_SQL('rp.method')} THEN rp.amount ELSE 0 END) AS tunai,
+              SUM(CASE WHEN ${TUNAI_SQL('rp.method')} THEN 0 ELSE rp.amount END) AS non_tunai,
+              COUNT(DISTINCT rp.transaction_id) AS nota_count
+       FROM (${REVENUE_PAYMENTS_SQL}) rp
+       JOIN tr_transaction t ON t.id = rp.transaction_id
+       WHERE t.is_delete_requested = 0${outletId ? ' AND t.outlet_id = ?' : ''}
+       GROUP BY DATE(rp.paid_at)
+       ORDER BY day ASC`,
+      [...revenuePaymentParams(`${start} 00:00:00`, `${end} 23:59:59`), ...(outletId ? [outletId] : [])]
+    );
+    const [[cnt]] = await myWaschenPool.query(
+      `SELECT COUNT(DISTINCT rp.transaction_id) AS n
+       FROM (${REVENUE_PAYMENTS_SQL}) rp
+       JOIN tr_transaction t ON t.id = rp.transaction_id
+       WHERE t.is_delete_requested = 0${outletId ? ' AND t.outlet_id = ?' : ''}`,
+      [...revenuePaymentParams(`${start} 00:00:00`, `${end} 23:59:59`), ...(outletId ? [outletId] : [])]
+    );
+    const byDay = {};
+    let tunai = 0;
+    let nonTunai = 0;
+    for (const r of rows) {
+      const key = r.day instanceof Date
+        ? `${r.day.getFullYear()}-${String(r.day.getMonth() + 1).padStart(2, '0')}-${String(r.day.getDate()).padStart(2, '0')}`
+        : String(r.day).slice(0, 10);
+      const t = Number(r.tunai) || 0;
+      const n = Number(r.non_tunai) || 0;
+      byDay[key] = { tunai: t, nonTunai: n, total: t + n, notaCount: Number(r.nota_count) || 0 };
+      tunai += t;
+      nonTunai += n;
+    }
+    return res.json({
+      success: true,
+      data: { start, end, tunai, nonTunai, total: tunai + nonTunai, notaCount: Number(cnt?.n) || 0, byDay }
+    });
+  } catch (error) {
+    console.error('getRevenueSummary:', error);
+    return res.status(500).json({ success: false, message: 'Gagal memuat revenue' });
   }
 };

@@ -93,12 +93,17 @@ export default function CloseShiftModal({
       const res = await axios.get(`/api/shifts/${shiftId}/transactions`);
       if (res.data?.success) {
         setTxns(res.data.data || []);
-        let tunai = 0;
-        let nonTunai = 0;
-        for (const t of res.data.data || []) {
-          const amt = parseFloat(t.paid_here) || 0;
-          if (/tunai|cash/i.test(t.payment_method || '')) tunai += amt;
-          else nonTunai += amt;
+        // Revenue = pembayaran yang masuk di shift ini, dipisah per pembayaran oleh server
+        let tunai = Number(res.data.meta?.revenue?.tunai);
+        let nonTunai = Number(res.data.meta?.revenue?.nonTunai);
+        if (!Number.isFinite(tunai) || !Number.isFinite(nonTunai)) {
+          tunai = 0;
+          nonTunai = 0;
+          for (const t of res.data.data || []) {
+            const amt = parseFloat(t.paid_here) || 0;
+            if (/tunai|cash/i.test(t.payment_method || '')) tunai += amt;
+            else nonTunai += amt;
+          }
         }
         setRevenueTunai(formatRupiah(String(Math.round(tunai))));
         setRevenueNonTunai(formatRupiah(String(Math.round(nonTunai))));

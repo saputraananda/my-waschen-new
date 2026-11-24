@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import HeaderNav from '../../components/HeaderNav.jsx';
 import { getSocket, joinOutletRoom } from '../../utils/socket.js';
+import AppFooter from '../../components/AppFooter.jsx';
 import { useAppDialog } from '../../context/AppDialogContext.jsx';
 
 // Layout Subcomponents
@@ -26,7 +27,7 @@ const SHOW_TRACKING_SERVICE = false;
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { activeShift, shiftChecked, openCloseModal, startOrderFlow, requestOpenShift, mustGateShift } = useShift();
+  const { activeShift, shiftChecked, openCloseModal, startOrderFlow, requestOpenShift, mustGateShift, optionalShift } = useShift();
   const { showAlert } = useAppDialog();
   const [userProfile, setUserProfile] = useState(null);
   const refreshTimerRef = useRef(null);
@@ -391,8 +392,9 @@ export default function Dashboard() {
       <main className="relative z-10 max-w-[1600px] w-full mx-auto p-3 sm:p-4 lg:p-6 flex-grow flex flex-col gap-5 lg:gap-6">
 
         <div className="flex flex-col gap-5 lg:gap-6">
-          {mustGateShift && (
+          {(mustGateShift || optionalShift) && (
             <BadgeShift
+              optional={!mustGateShift && optionalShift}
               shift={activeShift}
               shiftChecked={shiftChecked}
               currentEmployeeId={localStorage.getItem('employeeId')}
@@ -456,6 +458,8 @@ export default function Dashboard() {
         )}
 
       </main>
+
+      <AppFooter />
 
       {/* Modal Lacak Nota Interaktif */}
       <ModalLacakNota

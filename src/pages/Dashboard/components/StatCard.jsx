@@ -1,16 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { getCutoffMonthKey, getOrderDateKey } from '../../../utils/dateCutoffFilter.js';
+import { getCutoffMonthKey } from '../../../utils/dateCutoffFilter.js';
 import {
-  buildPaidRevenueByDay,
   computeCarryDailyTarget,
-  countPaidNota,
   filterOrdersByDateMode,
   listDateKeysInclusive,
   resolveAsOfDateKey,
   resolveStatDateRange,
-  summarizePiutang,
-  sumPaidRevenue
+  summarizePiutang
 } from '../../../utils/dailyTargetCarry.js';
 
 export default function StatCard({
@@ -69,23 +66,40 @@ export default function StatCard({
     [orders, resolvedFilter]
   );
 
-  const paidCount = countPaidNota(filteredOrders);
-  const paidRevenue = sumPaidRevenue(filteredOrders);
+  // Revenue = uang masuk dari pembayaran nota (DP/Lunas/Pelunasan) pada tanggal bayar — dari server,
+  // sama dengan Daily Report & SuperApp. Nota outstanding tidak dihitung.
+  const [revenue, setRevenue] = useState({ total: 0, tunai: 0, nonTunai: 0, notaCount: 0, byDay: {} });
+  useEffect(() => {
+    if (!range.start || !range.end) return undefined;
+    let cancelled = false;
+    axios.get('/api/dashboard/revenue', {
+      params: {
+        outlet_id: activeOutletId || localStorage.getItem('activeOutletId') || undefined,
+        start: range.start,
+        end: range.end
+      }
+    })
+      .then((res) => { if (!cancelled && res.data?.success) setRevenue(res.data.data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+    // orders ikut jadi pemicu: dashboard memuat ulang orders saat ada pembayaran baru (realtime)
+  }, [range.start, range.end, activeOutletId, orders]);
+
+  const paidCount = revenue.notaCount || 0;
+  const paidRevenue = revenue.total || 0;
   const piutang = summarizePiutang(filteredOrders);
   const periodPct = periodTarget > 0 ? Math.min(999, (paidRevenue / periodTarget) * 100) : 0;
 
-  const revenueByDay = useMemo(() => buildPaidRevenueByDay(orders), [orders]);
+  const revenueByDay = useMemo(() => Object.fromEntries(
+    Object.entries(revenue.byDay || {}).map(([day, v]) => [day, Number(v?.total) || 0])
+  ), [revenue.byDay]);
   const daily = useMemo(
     () => computeCarryDailyTarget(periodTarget, dayKeys, revenueByDay, asOfKey),
     [periodTarget, dayKeys, revenueByDay, asOfKey]
   );
 
-  const todayNotaCount = useMemo(() => (
-    (orders || []).filter((o) => {
-      if ((o.paymentStatus || o.payment_status) !== 'Lunas') return false;
-      return getOrderDateKey(o) === asOfKey;
-    }).length
-  ), [orders, asOfKey]);
+  const todayRev = revenue.byDay?.[asOfKey] || { tunai: 0, nonTunai: 0, notaCount: 0 };
+  const todayNotaCount = todayRev.notaCount || 0;
 
   const todayPemasukan = daily.today.actual;
   const todayTarget = daily.today.effectiveTarget;
@@ -95,8 +109,6 @@ export default function StatCard({
     if (setActiveFilterTab) setActiveFilterTab(tab);
     document.getElementById('tracking-service-section')?.scrollIntoView({ behavior: 'smooth' });
   };
-
-  const piutangAvg = piutang.count > 0 ? Math.round(piutang.amount / piutang.count) : 0;
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -108,7 +120,8 @@ export default function StatCard({
         <SummaryCard
           label="Revenue Bulan Ini"
           amount={paidRevenue}
-          sub={`${paidCount.toLocaleString('id-ID')} nota lunas`}
+          sub={`${paidCount.toLocaleString('id-ID')} nota dibayar`}
+          note={`Tunai ${fmtRp(revenue.tunai)} · Non tunai ${fmtRp(revenue.nonTunai)}`}
           footLabel="Target"
           footValue={periodTarget > 0 ? `Rp ${periodTarget.toLocaleString('id-ID')}` : 'belum diatur'}
           aside={<ProgressRing pct={periodPct} tone="brand" />}
@@ -117,7 +130,8 @@ export default function StatCard({
         <SummaryCard
           label="Hari Ini"
           amount={todayPemasukan}
-          sub={`${todayNotaCount.toLocaleString('id-ID')} nota lunas`}
+          sub={`${todayNotaCount.toLocaleString('id-ID')} nota dibayar`}
+          note={`Tunai ${fmtRp(todayRev.tunai)} · Non tunai ${fmtRp(todayRev.nonTunai)}`}
           footLabel="Target"
           footValue={todayTarget > 0 ? `Rp ${todayTarget.toLocaleString('id-ID')}` : 'belum diatur'}
           title={`Target harian termasuk sisa kemarin jika ada · ${asOfKey}`}
@@ -128,9 +142,6 @@ export default function StatCard({
           label="Piutang"
           amount={piutang.amount}
           sub="belum lunas"
-          footLabel="Rata-rata"
-          footValue={`Rp ${piutangAvg.toLocaleString('id-ID')}`}
-          footSuffix="/nota"
           className="sm:col-span-2 lg:col-span-1"
           aside={(
             <div className="h-16 w-16 sm:h-[72px] sm:w-[72px] rounded-full bg-rose-50 flex flex-col items-center justify-center shrink-0">
@@ -181,7 +192,9 @@ function ProgressRing({ pct = 0, tone = 'brand' }) {
 }
 
 /** Kartu ringkasan: teks di kiri, indikator (ring / jumlah) di kanan. */
-function SummaryCard({ label, amount, sub, footLabel, footValue, footSuffix = '', aside, title, className = '', onClick }) {
+const fmtRp = (v) => `Rp ${Number(v || 0).toLocaleString('id-ID')}`;
+
+function SummaryCard({ label, amount, sub, note, footLabel, footValue, footSuffix = '', aside, title, className = '', onClick }) {
   return (
     <button
       type="button"
@@ -195,9 +208,12 @@ function SummaryCard({ label, amount, sub, footLabel, footValue, footSuffix = ''
           Rp {Number(amount || 0).toLocaleString('id-ID')}
         </p>
         <p className="text-[11px] font-medium text-slate-500 mt-0.5">{sub}</p>
-        <p className="text-[11px] font-medium text-slate-500 mt-0.5 truncate">
-          {footLabel} <span className="font-black text-[#313030] tabular-nums">{footValue}</span>{footSuffix}
-        </p>
+        {note && <p className="text-[11px] font-medium text-slate-500 mt-0.5 truncate" title={note}>{note}</p>}
+        {footLabel && (
+          <p className="text-[11px] font-medium text-slate-500 mt-0.5 truncate">
+            {footLabel} <span className="font-black text-[#313030] tabular-nums">{footValue}</span>{footSuffix}
+          </p>
+        )}
       </div>
       {aside}
     </button>

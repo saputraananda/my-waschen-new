@@ -45,14 +45,14 @@ export function usePagination(items, resetKey, initialSize = 10) {
 }
 
 /** Footer tabel: ringkasan baris, pilih baris/halaman, tombol halaman. */
-export default function TablePagination({ pagination, accent = 'bg-[#5f1340]', accentSoft = 'bg-[#5f1340]/10 text-[#5f1340] hover:bg-[#5f1340]/20' }) {
+export default function TablePagination({ pagination, accent = 'bg-[#5f1340]', accentSoft = 'bg-[#5f1340]/10 text-[#5f1340] hover:bg-[#5f1340]/20', unit = 'pengajuan' }) {
   const { total, start, end, currentPage, totalPages, pageSize, setPage, setPageSize } = pagination;
   const pageNumbers = buildPageNumbers(currentPage, totalPages);
 
   return (
     <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-3 border-t border-[#e0e0e0]/70 pt-4 text-[11px] text-slate-500 font-bold">
       <span>
-        Menampilkan {total === 0 ? 0 : start + 1}–{end} dari {total} pengajuan
+        Menampilkan {total === 0 ? 0 : start + 1}–{end} dari {total} {unit}
       </span>
       <div className="flex flex-wrap items-center gap-1.5">
         <label className="flex items-center gap-1.5 mr-2">

@@ -71,7 +71,7 @@ function DropPointBadge({ name }) {
       className="shrink-0 bg-sky-50 text-sky-700 border border-sky-200 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md truncate max-w-[10rem]"
       title={`Nota dari outlet Drop Point ${name}`}
     >
-      Drop Point · {name}
+      {name}
     </span>
   );
 }

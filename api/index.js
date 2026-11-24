@@ -20,6 +20,7 @@ import inventoryRoutes from './routes/inventory.routes.js';
 import qcRoutes from './routes/qc.routes.js';
 import complaintRoutes from './routes/complaint.routes.js';
 import complaintInternalRoutes from './routes/complaintInternal.routes.js';
+import outletInternalRoutes from './routes/outletInternal.routes.js';
 import deleteRequestInternalRoutes from './routes/deleteRequestInternal.routes.js';
 import refundApprovalInternalRoutes from './routes/refundApprovalInternal.routes.js';
 import dropPointRoutes from './routes/dropPoint.routes.js';
@@ -79,6 +80,8 @@ app.get('/api/health', async (req, res) => {
 app.use('/api/auth', authRoutes);
 // Upload server-ke-server dari Super App (token sync sendiri, bukan JWT POS)
 app.use('/api/internal/complaint-docs', complaintInternalRoutes);
+// Super App → POS: perubahan outlet (Wajib Shift dll.) disiarkan realtime
+app.use('/api/internal', outletInternalRoutes);
 app.use('/api/internal/delete-request-docs', deleteRequestInternalRoutes);
 app.use('/api/internal/refund-approval-docs', refundApprovalInternalRoutes);
 

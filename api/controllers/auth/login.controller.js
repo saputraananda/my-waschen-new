@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getSessionSecret } from '../../utils/sessionSecret.js';
 import { mainPool, myWaschenPool } from '../../db/pool.js';
-import { listDropPointOutlets } from '../../utils/dropPointOutlet.js';
+import { listDropPointOutlets, listEventOutlets } from '../../utils/dropPointOutlet.js';
 
 export const loginUser = async (req, res) => {
   const { username, password } = req.body;
@@ -95,6 +95,7 @@ export const loginUser = async (req, res) => {
           const [outletRows] = await myWaschenPool.query(
             `SELECT name, full_name,
                     COALESCE(is_drop_point, 0) AS is_drop_point,
+                    COALESCE(is_event, 0) AS is_event,
                     COALESCE(is_active, 0) AS is_active,
                     COALESCE(requires_shift, 1) AS requires_shift
              FROM mst_outlet WHERE id = ? LIMIT 1`,
@@ -104,6 +105,7 @@ export const loginUser = async (req, res) => {
             assignedOutletName = outletRows[0].full_name || outletRows[0].name;
             assignedOutletFlags = {
               is_drop_point: Number(outletRows[0].is_drop_point),
+              is_event: Number(outletRows[0].is_event),
               is_active: Number(outletRows[0].is_active),
               requires_shift: Number(outletRows[0].requires_shift)
             };
@@ -118,6 +120,7 @@ export const loginUser = async (req, res) => {
       const [outletRows] = await myWaschenPool.query(
         `SELECT id, name, full_name,
                 COALESCE(is_drop_point, 0) AS is_drop_point,
+                COALESCE(is_event, 0) AS is_event,
                 COALESCE(is_active, 0) AS is_active,
                 COALESCE(requires_shift, 1) AS requires_shift
          FROM mst_outlet ORDER BY name ASC`
@@ -125,6 +128,7 @@ export const loginUser = async (req, res) => {
       outlets = outletRows.map((o) => ({
         ...o,
         is_drop_point: Number(o.is_drop_point),
+        is_event: Number(o.is_event),
         is_active: Number(o.is_active),
         requires_shift: Number(o.requires_shift)
       }));
@@ -133,6 +137,8 @@ export const loginUser = async (req, res) => {
     // Outlet Drop Point (bisa lebih dari satu). Staf outlet boleh memilih outlet sendiri
     // atau salah satu drop point yang sedang aktif (active); drop point nonaktif tetap dikirim untuk audit.
     const dropPointOutlets = await listDropPointOutlets();
+    // Outlet Event (is_event): stand event yang bisa dipilih semua staf di pilihan outlet POS
+    const eventOutlets = await listEventOutlets();
 
     // Return success response with user and employee info
     return res.status(200).json({
@@ -158,7 +164,8 @@ export const loginUser = async (req, res) => {
         assignedOutletFlags
       },
       outlets,
-      dropPointOutlets
+      dropPointOutlets,
+      eventOutlets
     });
 
   } catch (error) {

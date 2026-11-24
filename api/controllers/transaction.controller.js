@@ -17,6 +17,7 @@ import { safeUnlinkUploadUrl, replaceUploadUrl, safeUnlinkAbsPath, buildUploadPu
 import { REFUND_TYPES, findPendingRefund, insertRefundRequest, REFUND_SUMMARY_COLUMNS } from '../utils/transactionRefund.js';
 import { toWibYmdCompact, formatWibTime } from '../utils/wib.js';
 import { resolveValidCashier } from '../utils/cashierGuard.js';
+import { getManagementEmployee } from '../utils/employeePin.js';
 import { auditOrderPricing, priceCheckMode } from '../utils/priceAudit.js';
 import { AVAILABLE_SQL, EFFECTIVE_CATEGORY_ID_SQL } from '../utils/serviceOutlet.js';
 import { insertCleanoxItemsForDetail, getCleanoxItemsByTransaction, attachCleanoxHoldCount } from '../utils/cleanoxItems.js';
@@ -184,6 +185,9 @@ export const createTransaction = async (req, res) => {
       [resolvedCashierId]
     );
     const isDeliveryStaff = roleRows[0]?.role === 'Delivery Staff';
+    // Manajemen (company_id = 1, tanpa mst_role) kedudukannya sama dengan Delivery: shift opsional
+    const isManagementCashier = !roleRows.length && Boolean(await getManagementEmployee(resolvedCashierId));
+    const shiftOptional = isDeliveryStaff || isManagementCashier;
     // Semua outlet (biasa maupun Drop Point) harus aktif untuk membuat nota baru.
     const outletFlags = await getOutletFlags(resolvedOutletId, connection);
     if (outletFlags.is_active !== 1) {
@@ -196,20 +200,24 @@ export const createTransaction = async (req, res) => {
 
     // Shift wajib hanya bila outlet diset requires_shift = 1 (diatur admin di SuperApp).
     let resolvedShiftId = null;
-    if (!isDeliveryStaff && outletFlags.requires_shift === 1) {
+    if (outletFlags.requires_shift === 1) {
       const [openShiftRows] = await connection.query(
         `SELECT id FROM tr_cashier_shift WHERE outlet_id = ? AND status = 'Open' ORDER BY id DESC LIMIT 1`,
         [resolvedOutletId]
       );
-      if (!openShiftRows.length) {
+      // Delivery & Manajemen: shift opsional — ikut shift yang sedang terbuka bila ada, bila tidak notanya yatim
+      if (shiftOptional) {
+        resolvedShiftId = openShiftRows[0]?.id || null;
+      } else if (!openShiftRows.length) {
         await connection.rollback();
         return res.status(409).json({
           success: false,
           message: 'Belum ada shift yang dibuka di outlet ini. Buka shift dulu sebelum membuat transaksi.',
           requireOpenShift: true
         });
+      } else {
+        resolvedShiftId = openShiftRows[0].id;
       }
-      resolvedShiftId = openShiftRows[0].id;
     }
 
     const cashierNameResolved = await resolveCashierName(resolvedCashierId);

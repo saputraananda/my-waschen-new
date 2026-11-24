@@ -46,6 +46,29 @@ export async function getOutletFlags(outletId, conn = myWaschenPool) {
 }
 
 /**
+ * Outlet Event (mst_outlet.is_event = 1): stand event yang boleh dipilih SEMUA staf Waschen
+ * di pilihan outlet POS. Terpisah dari Drop Point. Yang nonaktif ikut dikirim (active=false).
+ */
+export async function listEventOutlets(conn = myWaschenPool) {
+  const [rows] = await conn.query(
+    `SELECT id, name, full_name,
+            COALESCE(is_drop_point, 0) AS is_drop_point,
+            COALESCE(is_event, 0) AS is_event,
+            COALESCE(is_active, 0) AS is_active,
+            COALESCE(requires_shift, 1) AS requires_shift
+     FROM mst_outlet WHERE is_event = 1 ORDER BY is_active DESC, id DESC`
+  );
+  return rows.map((r) => ({
+    ...r,
+    active: Number(r.is_active) === 1,
+    is_drop_point: Number(r.is_drop_point),
+    is_event: Number(r.is_event),
+    is_active: Number(r.is_active),
+    requires_shift: Number(r.requires_shift)
+  }));
+}
+
+/**
  * Semua outlet Drop Point (aktif dulu, terbaru dulu) beserta flag `active` (dari is_active)
  * dan is_drop_point / is_active / requires_shift. Beberapa Drop Point boleh aktif bersamaan.
  */

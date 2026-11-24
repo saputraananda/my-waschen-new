@@ -1,6 +1,9 @@
-import { myWaschenPool } from '../db/pool.js';
+import { mainPool, myWaschenPool } from '../db/pool.js';
 
-/** Peta employee_id → nama (dari mst_role). Kunci number dan string sama-sama terisi. */
+/**
+ * Peta employee_id → nama. Utamakan mst_role (staf Waschen); id yang tidak ada di sana
+ * (mis. Manajemen yang buka shift) diambil dari mst_employee. Kunci number dan string sama-sama terisi.
+ */
 export const getEmployeeNames = async (employeeIds = []) => {
   const ids = [...new Set(employeeIds.filter(Boolean).map(Number))];
   if (!ids.length) return {};
@@ -16,6 +19,24 @@ export const getEmployeeNames = async (employeeIds = []) => {
       const id = Number(r.employee_id);
       map[id] = r.employee_name;
       map[String(id)] = r.employee_name;
+    }
+    const missing = ids.filter((id) => !map[id]);
+    if (missing.length) {
+      try {
+        const [empRows] = await mainPool.query(
+          'SELECT employee_id, full_name FROM mst_employee WHERE employee_id IN (?)',
+          [missing]
+        );
+        for (const r of empRows) {
+          const name = String(r.full_name || '').trim();
+          if (!name) continue;
+          const id = Number(r.employee_id);
+          map[id] = name;
+          map[String(id)] = name;
+        }
+      } catch (err) {
+        console.error('getEmployeeNames (mst_employee):', err.message);
+      }
     }
     return map;
   } catch (err) {

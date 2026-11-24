@@ -3,7 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import waschenLogo from '../assets/images/waschen.webp';
 import { formatEmployeeName } from '../utils/FormatName.js';
-import { logoutSession, getActiveDropPointOutlets } from '../utils/authSession.js';
+import { logoutSession, getActiveEventOutlets, getOutletFlags } from '../utils/authSession.js';
+import OutletSwitchModal from './OutletSwitchModal.jsx';
 import { useShiftOptional } from '../context/ShiftContext.jsx';
 import { usePWA } from '../context/PWAContext.jsx';
 import {
@@ -34,6 +35,49 @@ export default function HeaderNav({
   const activeShift = activeShiftProp ?? shiftCtx?.activeShift ?? shiftCtx?.outletShift;
   const onRequestCloseShift = onCloseProp ?? shiftCtx?.openCloseModal;
   const { promptInstall, isInstalled } = usePWA();
+
+  // Outlet diubah admin (realtime): gambar ulang pilihan outlet. Staf yang sedang di outlet event
+  // yang sudah dinonaktifkan / bukan event lagi dikembalikan ke outlet asalnya.
+  const [, setOutletEpoch] = useState(0);
+  useEffect(() => {
+    const onFlags = () => {
+      setOutletEpoch((n) => n + 1);
+      if (localStorage.getItem('companyId') === '1') return;
+      const homeId = localStorage.getItem('homeOutletId');
+      const activeId = localStorage.getItem('activeOutletId');
+      if (!homeId || !activeId || String(activeId) === String(homeId)) return;
+      if (getActiveEventOutlets().some((o) => String(o.id) === String(activeId))) return;
+      const homeName = localStorage.getItem('homeOutletName') || 'Outlet Saya';
+      localStorage.setItem('activeOutletId', homeId);
+      localStorage.setItem('activeOutletName', homeName);
+      if (setActiveOutletId) setActiveOutletId(homeId);
+      if (setActiveOutletName) setActiveOutletName(homeName);
+      if (shiftCtx?.setOutletId) shiftCtx.setOutletId(homeId);
+      window.dispatchEvent(new Event('waschen:outlet-changed'));
+      window.dispatchEvent(new Event('waschen:auth-changed'));
+    };
+    window.addEventListener('waschen:outlet-flags-changed', onFlags);
+    return () => window.removeEventListener('waschen:outlet-flags-changed', onFlags);
+  }, [setActiveOutletId, setActiveOutletName, shiftCtx]);
+
+  // Pindah outlet wajib diverifikasi lewat modal dulu
+  const [pendingOutlet, setPendingOutlet] = useState(null);
+  const currentOutletId = String(activeOutletId || localStorage.getItem('activeOutletId') || '');
+  const currentOutletName = activeOutletName || localStorage.getItem('activeOutletName') || 'Outlet saat ini';
+
+  const applyOutletSwitch = (outlet) => {
+    const selectedId = String(outlet.id);
+    const outletName = outlet.full_name || outlet.name || 'Waschen Laundry Citra Gran';
+    localStorage.setItem('activeOutletId', selectedId);
+    localStorage.setItem('activeOutletName', outletName);
+    if (setActiveOutletId) setActiveOutletId(selectedId);
+    if (setActiveOutletName) setActiveOutletName(outletName);
+    if (shiftCtx?.setOutletId) shiftCtx.setOutletId(selectedId);
+    if (shiftCtx?.refreshShift) shiftCtx.refreshShift();
+    window.dispatchEvent(new Event('waschen:outlet-changed'));
+    // Hitung ulang gate shift (flag requires_shift outlet baru, dari localStorage 'outletFlags')
+    window.dispatchEvent(new Event('waschen:auth-changed'));
+  };
 
   const handleLogout = () => {
     logoutSession();
@@ -119,15 +163,26 @@ export default function HeaderNav({
     }
   }
 
-  // Staf outlet (bukan Management) boleh berpindah antara outlet sendiri dan drop point yang sedang aktif.
-  const activeDropPoints = getActiveDropPointOutlets();
+  // Staf outlet (bukan Management) boleh berpindah antara outlet sendiri dan outlet EVENT yang aktif
+  // (mst_outlet.is_event). Drop point biasa tidak muncul — hanya untuk staf outletnya sendiri.
+  const activeEvents = getActiveEventOutlets();
   const homeOutletId = localStorage.getItem('homeOutletId');
-  const isStaffSwitchable = !isManagement && activeDropPoints.length > 0 && Boolean(homeOutletId);
+  const isStaffSwitchable = !isManagement && activeEvents.length > 0 && Boolean(homeOutletId);
   if (isStaffSwitchable) {
     outletOptions = [
       { id: homeOutletId, name: localStorage.getItem('homeOutletName') || 'Outlet Saya', full_name: localStorage.getItem('homeOutletName') || 'Outlet Saya' },
-      ...activeDropPoints
+      ...activeEvents
     ];
+  }
+  // Satu outlet satu pilihan: outlet asal yang juga drop point (atau data login ganda) tidak tampil dobel
+  {
+    const seen = new Set();
+    outletOptions = outletOptions.filter((o) => {
+      const key = String(o?.id ?? '');
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   const shiftLabel = (() => {
@@ -177,25 +232,18 @@ export default function HeaderNav({
           <div className="h-4 sm:h-5 w-[1px] bg-[#e0e0e0] shrink-0 hidden xs:block" />
 
           {/* Management (company_id=1): pilih outlet yang diaudit. Staff tetap terkunci di outlet sendiri. */}
-          {(isManagement || isStaffSwitchable) && outletOptions.length > 0 ? (
+          {(isManagement && outletOptions.length > 0) || (isStaffSwitchable && outletOptions.length > 1) ? (
             <div className="relative min-w-0 flex-1 max-w-[220px] sm:max-w-[280px]">
               <select
                 aria-label={isStaffSwitchable ? 'Pilih outlet kerja' : 'Pilih outlet untuk diaudit'}
                 title={isStaffSwitchable ? 'Pilih outlet kerja' : 'Pilih outlet untuk diaudit'}
                 value={String(activeOutletId || localStorage.getItem('activeOutletId') || '')}
                 onChange={(e) => {
+                  // Select terkontrol: nilai belum berubah sampai pindah outlet dikonfirmasi di modal
                   const selectedId = e.target.value;
                   const outlet = outletOptions.find(o => String(o.id) === String(selectedId));
-                  const outletName = outlet ? (outlet.full_name || outlet.name) : 'Waschen Laundry Citra Gran';
-                  localStorage.setItem('activeOutletId', selectedId);
-                  localStorage.setItem('activeOutletName', outletName);
-                  if (setActiveOutletId) setActiveOutletId(selectedId);
-                  if (setActiveOutletName) setActiveOutletName(outletName);
-                  if (shiftCtx?.setOutletId) shiftCtx.setOutletId(selectedId);
-                  if (shiftCtx?.refreshShift) shiftCtx.refreshShift();
-                  window.dispatchEvent(new Event('waschen:outlet-changed'));
-                  // Hitung ulang gate shift (flag requires_shift outlet baru, dari localStorage 'outletFlags')
-                  window.dispatchEvent(new Event('waschen:auth-changed'));
+                  if (!outlet || String(selectedId) === String(currentOutletId)) return;
+                  setPendingOutlet(outlet);
                 }}
                 className="w-full bg-[#f8f8f8] hover:bg-white border border-[#e0e0e0] hover:border-[#5f1340]/40 rounded-xl pl-2.5 pr-7 py-1.5 text-xs md:text-sm font-extrabold text-[#313030] outline-none cursor-pointer appearance-none transition-colors truncate"
               >
@@ -321,6 +369,27 @@ export default function HeaderNav({
           )}
         </div>
       </div>
+
+      {pendingOutlet && (() => {
+        const flags = getOutletFlags(pendingOutlet.id);
+        return (
+          <OutletSwitchModal
+            from={{ name: currentOutletName }}
+            to={{
+              name: pendingOutlet.full_name || pendingOutlet.name,
+              requiresShift: flags ? flags.requires_shift === 1 : Number(pendingOutlet.requires_shift ?? 1) === 1,
+              isEvent: (flags ? flags.is_event : Number(pendingOutlet.is_event)) === 1
+            }}
+            hasOpenShift={Boolean(shiftCtx?.activeShift)}
+            onCancel={() => setPendingOutlet(null)}
+            onConfirm={() => {
+              const target = pendingOutlet;
+              setPendingOutlet(null);
+              applyOutletSwitch(target);
+            }}
+          />
+        );
+      })()}
     </header>
   );
 }

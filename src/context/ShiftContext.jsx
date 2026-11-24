@@ -4,7 +4,10 @@ import axios from 'axios';
 import OpenShiftModal from '../pages/Shift/OpenShiftModal.jsx';
 import CloseShiftModal from '../pages/Shift/CloseShiftModal.jsx';
 import ResumeShiftModal from '../pages/Shift/ResumeShiftModal.jsx';
+import { getSocket } from '../utils/socket.js';
 import {
+  allowsOptionalShift,
+  applyOutletUpdate,
   clearShiftFromStorage,
   getLoggedInEmployeeId,
   isHqUser,
@@ -89,6 +92,8 @@ export function ShiftProvider({ children }) {
   const [outletId, setOutletId] = useState(localStorage.getItem('activeOutletId') || '2');
   /** Reactive auth flags — di-sync setelah login / ganti route (localStorage tidak trigger re-render) */
   const [mustGateShift, setMustGateShift] = useState(() => requiresShiftGate());
+  /** Delivery: shift opsional — badge & modal open/close tampil, tapi tidak mengunci apa pun. */
+  const [optionalShift, setOptionalShift] = useState(() => allowsOptionalShift());
   const [hasToken, setHasToken] = useState(() => !!localStorage.getItem('token'));
   const [authEpoch, setAuthEpoch] = useState(0);
 
@@ -97,10 +102,12 @@ export function ShiftProvider({ children }) {
 
   const syncAuthFlags = useCallback((options = {}) => {
     const nextGate = requiresShiftGate();
+    const nextOptional = allowsOptionalShift();
     const nextToken = !!localStorage.getItem('token');
     const oid = localStorage.getItem('activeOutletId');
 
     setMustGateShift((prev) => (prev === nextGate ? prev : nextGate));
+    setOptionalShift((prev) => (prev === nextOptional ? prev : nextOptional));
     setHasToken((prev) => (prev === nextToken ? prev : nextToken));
     if (oid) {
       setOutletId((prev) => (String(prev) === String(oid) ? prev : oid));
@@ -135,7 +142,8 @@ export function ShiftProvider({ children }) {
    */
   const fetchCurrentShift = useCallback(async (oid = outletId, options = {}) => {
     const soft = options.soft !== false; // default soft
-    const gated = requiresShiftGate();
+    // Delivery (shift opsional) ikut melacak shift outlet seperti yang wajib, tanpa gerbang
+    const gated = requiresShiftGate() || allowsOptionalShift();
     const token = !!localStorage.getItem('token');
 
     if (isLoginPage) {
@@ -249,6 +257,19 @@ export function ShiftProvider({ children }) {
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [fetchCurrentShift, isLoginPage, outletId, syncAuthFlags]);
+
+  // Admin ubah outlet di Super App (Wajib Shift / Aktif) → gerbang & badge shift menyesuaikan seketika
+  useEffect(() => {
+    if (isLoginPage || !hasToken) return undefined;
+    const socket = getSocket();
+    const onOutletUpdated = (payload) => {
+      if (!applyOutletUpdate(payload?.outlet)) return;
+      syncAuthFlags({ authChanged: true });
+      window.dispatchEvent(new Event('waschen:outlet-flags-changed'));
+    };
+    socket.on('outlet:updated', onOutletUpdated);
+    return () => socket.off('outlet:updated', onOutletUpdated);
+  }, [hasToken, isLoginPage, syncAuthFlags]);
 
   const confirmResume = useCallback(async () => {
     if (!activeShift?.id || !employeeId) return;
@@ -416,10 +437,12 @@ export function ShiftProvider({ children }) {
     requestOpenShift,
     cancelShiftGate,
     mustGateShift,
+    optionalShift,
     isHq,
     viewOnly,
     isShiftReady: !mustGateShift || (Boolean(activeShift) && sessionReady)
   }), [
+    optionalShift,
     viewOnly,
     activeShift,
     outletShift,
@@ -438,7 +461,7 @@ export function ShiftProvider({ children }) {
     startOrderFlow
   ]);
 
-  const showShiftGate = !isLoginPage && hasToken && mustGateShift && shiftChecked;
+  const showShiftGate = !isLoginPage && hasToken && (mustGateShift || optionalShift) && shiftChecked;
 
   return (
     <ShiftContext.Provider value={value}>
