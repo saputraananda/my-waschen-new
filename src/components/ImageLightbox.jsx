@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
+import { ImageOff, X } from 'lucide-react';
 
 /**
  * Pengganti <a target="_blank"> untuk bukti/lampiran: gambar → lightbox, PDF → tab baru
@@ -31,6 +31,8 @@ export function ProofLink({ url, title, className, children }) {
  * terpotong modal induk; Esc / klik latar untuk menutup.
  */
 export default function ImageLightbox({ src, alt = 'Gambar', title, onClose }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [src]);
   useEffect(() => {
     if (!src) return undefined;
     const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
@@ -57,11 +59,20 @@ export default function ImageLightbox({ src, alt = 'Gambar', title, onClose }) {
             <X className="h-5 w-5" />
           </button>
         </div>
-        <img
-          src={src}
-          alt={alt}
-          className="max-w-full max-h-[82vh] object-contain rounded-2xl bg-white shadow-2xl"
-        />
+        {failed ? (
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl px-6 py-10 flex flex-col items-center gap-2 text-center">
+            <ImageOff className="h-8 w-8 text-slate-300" />
+            <p className="text-sm font-black text-[#313030]">Gambar tidak dapat dimuat</p>
+            <p className="text-xs font-medium text-slate-400">File bukti tidak ditemukan di server.</p>
+          </div>
+        ) : (
+          <img
+            src={src}
+            alt={alt}
+            onError={() => setFailed(true)}
+            className="max-w-full max-h-[82vh] object-contain rounded-2xl bg-white shadow-2xl"
+          />
+        )}
       </div>
     </div>,
     document.body

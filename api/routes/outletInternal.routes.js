@@ -1,6 +1,6 @@
 import express from 'express';
 import { myWaschenPool } from '../db/pool.js';
-import { getIO } from '../socket.js';
+import { getIO, emitDashboardRefresh } from '../socket.js';
 import { requireSyncToken } from './complaintInternal.routes.js';
 
 const router = express.Router();
@@ -34,6 +34,32 @@ router.post('/outlet-updated', requireSyncToken, async (req, res) => {
   } catch (err) {
     console.error('[outlet-updated]', err);
     return res.status(500).json({ success: false, message: 'Gagal menyiarkan perubahan outlet' });
+  }
+});
+
+/**
+ * POST /api/internal/petty-cash-updated  { id }
+ * Dipanggil Super App setelah admin menyetujui / menolak / mengubah / menghapus pengajuan petty cash.
+ * POS menyiarkan 'petty-cash:updated' agar halaman Petty Cash & Dashboard langsung menghitung ulang
+ * (mis. pengajuan ditolak → uang tunai di laci otomatis kembali).
+ */
+router.post('/petty-cash-updated', requireSyncToken, async (req, res) => {
+  const id = Number(req.body?.id) || 0;
+  let outletId = Number(req.body?.outletId) || null;
+  let status = null;
+  try {
+    if (id) {
+      const [[row]] = await myWaschenPool.query('SELECT outlet_id, status FROM tr_petty_cash WHERE id = ? LIMIT 1', [id]);
+      if (row) {
+        outletId = Number(row.outlet_id) || outletId;
+        status = row.status;
+      }
+    }
+    emitDashboardRefresh('petty-cash:updated', { id: id || null, outletId, status, source: 'superapp' });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[petty-cash-updated]', err);
+    return res.status(500).json({ success: false, message: 'Gagal menyiarkan perubahan petty cash' });
   }
 });
 

@@ -21,7 +21,9 @@ import {
   Wallet,
   History,
   QrCode,
-  MessageCircle
+  MessageCircle,
+  ChevronDown,
+  Store
 } from 'lucide-react';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import PaymentProofFields from '../../../components/PaymentProofFields.jsx';
@@ -41,6 +43,9 @@ import { mapDbTransactionToReceipt } from '../../../utils/printerSettings.js';
 import RefundRequestModal from './RefundRequestModal.jsx';
 import { ProofLink } from '../../../components/ImageLightbox.jsx';
 
+/** Tab antrean (Proses/Selesai · bayar) — disembunyikan sementara atas permintaan user. */
+const SHOW_QUEUE_TABS = false;
+
 export default function HistoryTransaction({
   transactions,
   transactionsLoading = false,
@@ -57,7 +62,7 @@ export default function HistoryTransaction({
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState('');
   const [isLacakModalOpen, setIsLacakModalOpen] = useState(false);
-  const [paymentFilter, setPaymentFilter] = useState('Semua'); // Semua | Lunas | DP | Outstanding | Sisa Tagihan
+  const [paymentFilter, setPaymentFilter] = useState('Semua'); // Semua | Lunas | DP | Outstanding (= enum payment_status)
   const [activeFilterTab, setActiveFilterTab] = useState('Semua'); // Kategori antrean nota (NOTA_QUEUE_TABS)
   const [selectedBranchFilter, setSelectedBranchFilter] = useState(localStorage.getItem('activeOutletName') || 'Semua');
   const [dateMode, setDateMode] = useState('cutoff'); // 'cutoff' | 'range'
@@ -140,7 +145,6 @@ export default function HistoryTransaction({
     if (paymentFilter === 'Lunas') return ps === 'Lunas';
     if (paymentFilter === 'DP') return ps === 'DP';
     if (paymentFilter === 'Outstanding') return ps === 'Outstanding';
-    if (paymentFilter === 'Sisa Tagihan') return ps !== 'Lunas';
     return true;
   };
 
@@ -496,188 +500,9 @@ export default function HistoryTransaction({
     return baseList.filter((o) => matchesNotaQueueTab(toQueueOrder(o), tabName)).length;
   };
 
-  return (
-    <div id="tracking-service-section" className="bg-white border border-[#e0e0e0]/70 rounded-3xl shadow-xs flex flex-col overflow-hidden transition-all duration-300">
-      {/* Header: judul + toolbar yang wrap natural */}
-      <div className="p-4 sm:p-5 border-b border-[#e0e0e0]/70 bg-slate-50/50 flex flex-col gap-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-base font-extrabold text-[#313030] tracking-tight">Riwayat Transaksi</h3>
-              <span className="px-2.5 py-0.5 rounded-full bg-[#5f1340]/10 text-[#5f1340] text-[10px] font-black border border-[#5f1340]/15">
-                {displayOrders.length} Order
-              </span>
-            </div>
-          </div>
-
-          {((dateMode === 'range' && (rangeStart || rangeEnd)) || cutoffMonth !== getCutoffMonthKey() || paymentFilter !== 'Semua' || selectedBranchFilter !== 'Semua' || activeFilterTab !== 'Semua' || searchQuery) && (
-            <button
-              type="button"
-              onClick={() => {
-                setDateMode('cutoff');
-                setRangeStart('');
-                setRangeEnd('');
-                setCutoffMonth(getCutoffMonthKey());
-                setPaymentFilter('Semua');
-                setSelectedBranchFilter('Semua');
-                setActiveFilterTab('Semua');
-                setSearchQuery('');
-              }}
-              className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-[#e0e0e0] hover:bg-slate-100 text-slate-600 rounded-xl text-[11px] font-bold transition-all cursor-pointer"
-              title="Reset Semua Filter"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Reset</span>
-            </button>
-          )}
-        </div>
-
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-          <div className="relative w-full sm:flex-1 sm:min-w-[14rem] sm:max-w-xs">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Contoh : WS-0826001 / Budi"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-7 py-1.5 border border-[#e0e0e0] rounded-xl text-xs bg-white focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340] outline-none font-medium text-[#313030]"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold leading-none"
-              >
-                &times;
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar sm:overflow-visible sm:ml-auto">
-            <button
-              type="button"
-              onClick={() => setIsLacakModalOpen(true)}
-              className="shrink-0 px-3 py-1.5 bg-white border border-[#e0e0e0] hover:border-[#5f1340] text-[#5f1340] font-black rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-              title="Scan Barcode / QR Kamera untuk lacak nota"
-            >
-              <QrCode className="h-3.5 w-3.5" />
-              <span>Scan</span>
-            </button>
-
-            <select
-              value={selectedBranchFilter}
-              onChange={(e) => setSelectedBranchFilter(e.target.value)}
-              className="shrink-0 min-w-0 max-w-[10rem] sm:max-w-[13rem] px-2.5 py-1.5 border border-[#e0e0e0] bg-white rounded-xl outline-none focus:border-[#5f1340] text-xs font-bold text-[#313030] cursor-pointer"
-              title="Filter cabang"
-            >
-              <option value="Semua">Semua Cabang</option>
-              {outlets.map((o) => (
-                <option key={o.id} value={o.full_name || o.name}>{o.full_name || o.name}</option>
-              ))}
-            </select>
-
-            <select
-              value={paymentFilter}
-              onChange={(e) => setPaymentFilter(e.target.value)}
-              className="shrink-0 min-w-0 px-2.5 py-1.5 border border-[#e0e0e0] bg-white rounded-xl outline-none focus:border-[#5f1340] text-xs font-bold text-[#313030] cursor-pointer"
-              title="Filter status bayar"
-            >
-              <option value="Semua">Semua Bayar</option>
-              <option value="Lunas">Lunas Only</option>
-              <option value="DP">DP Only</option>
-              <option value="Outstanding">Outstanding Only</option>
-              <option value="Sisa Tagihan">Sisa Tagihan</option>
-            </select>
-
-            <DateModeFilter
-              mode={dateMode}
-              onModeChange={setDateMode}
-              rangeStart={rangeStart}
-              rangeEnd={rangeEnd}
-              onRangeStartChange={setRangeStart}
-              onRangeEndChange={setRangeEnd}
-              cutoffMonth={cutoffMonth}
-              onCutoffMonthChange={setCutoffMonth}
-              className="shrink-0 flex-nowrap"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Filter Tabs — satu baris, geser horizontal di layar sempit */}
-      <div className="px-4 sm:px-5 border-b border-[#e0e0e0]/60 flex items-center gap-1.5 py-2.5 bg-slate-50/30 overflow-x-auto no-scrollbar">
-        {['Semua', ...NOTA_QUEUE_TABS.map((t) => t.key)].map((tab) => {
-          const active = activeFilterTab === tab;
-          const count = getTabCount(tab);
-          const label = tab === 'Semua' ? 'Semua' : (NOTA_QUEUE_TABS.find((t) => t.key === tab)?.label || tab);
-          const [head, ...rest] = label.split(' · ');
-
-          return (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setActiveFilterTab(tab)}
-              title={label}
-              className={`shrink-0 px-3 py-1.5 rounded-xl text-[11px] transition-all duration-200 cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                active
-                  ? 'bg-[#5f1340] text-white shadow-2xs'
-                  : 'bg-white border border-[#e0e0e0]/70 text-slate-600 hover:border-[#5f1340]/40 hover:text-[#5f1340]'
-              }`}
-            >
-              <span className="font-extrabold">{head}</span>
-              {rest.length > 0 && (
-                <span className={`font-bold ${active ? 'text-white/70' : 'text-slate-400'}`}>
-                  {rest.join(' · ')}
-                </span>
-              )}
-              <span className={`px-1.5 rounded-full text-[9px] font-black ${
-                active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
-              }`}>
-                {count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Table / empty state ringkas */}
-      {displayOrders.length === 0 ? (
-        <div className="px-5 py-6 text-center text-xs text-slate-400 font-semibold">
-          {transactionsLoading ? 'Memuat riwayat transaksi…' : 'Tidak ada data riwayat transaksi yang sesuai dengan filter.'}
-        </div>
-      ) : (
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b border-[#e0e0e0]/70 text-[10px] uppercase font-extrabold text-slate-400 tracking-wider bg-slate-50/70">
-              <th className="py-3.5 px-6">No. Struk Nota</th>
-              <th className="py-3.5 px-6">Buat Nota</th>
-              <th className="py-3.5 px-6 text-center">Pelanggan</th>
-              <th className="py-3.5 px-6 text-center">No. WhatsApp</th>
-              <th className="py-3.5 px-6 text-center">Status Pengerjaan</th>
-              <th className="py-3.5 px-6">Tagihan</th>
-              <th className="py-3.5 px-6 text-center">Status Bayar</th>
-              <th className="py-3.5 px-6">Pelunasan</th>
-              <th className="py-3.5 px-6 text-center">Aksi</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#e0e0e0]/40 text-xs font-medium">
-              {displayOrders.slice(pageStart, pageStart + pageSize).map((order) => {
-                const workStatus = order.progressStatus || order.workStatus || 'Antrean';
-                const workPct = getWorkPercentage(workStatus);
-                const pctTone = percentageTone(workPct);
-
-                return (
-                  <tr
-                    key={order.id}
-                    onClick={() => navigate(`/riwayat/${order.id}`, { state: { from: '/riwayat' } })}
-                    className="hover:bg-[#5f1340]/[0.03] cursor-pointer transition-colors group"
-                    title="Klik untuk membuka halaman rincian transaksi"
-                  >
-                    {/* No Struk */}
-                    <td className="py-3.5 px-6 font-mono font-black text-[#5f1340] whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm tracking-tight group-hover:underline">{order.id}</span>
+  // Dipakai bersama oleh tabel (desktop) dan kartu (HP/tablet)
+  const renderOrderBadges = (order) => (
+    <>
                         {order.isDelivery && (
                           <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[8px] font-extrabold px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
                             <Truck className="h-2.5 w-2.5" /> Delivery
@@ -699,57 +524,10 @@ export default function HistoryTransaction({
                             Cleanox Hold ({order.cleanoxHoldCount})
                           </span>
                         )}
-                      </div>
-                    </td>
+    </>
+  );
 
-                    <td className="py-3.5 px-6 whitespace-nowrap">
-                      {renderWhen(order.rawDate)}
-                    </td>
-
-                    {/* Pelanggan */}
-                    <td className="py-3.5 px-6 text-center">
-                      <div className="mx-auto min-w-[160px] max-w-[260px]">
-                        <span className="block text-sm sm:text-[15px] font-black text-[#313030] leading-tight break-words">
-                          {formatName(order.customerName)}
-                        </span>
-                        {order.customerAddress && order.customerAddress !== '-' && (
-                          <span
-                            className="mt-1 block text-[11px] font-medium text-slate-500 leading-snug line-clamp-2 break-words"
-                            title={order.customerAddress}
-                          >
-                            {order.customerAddress}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-
-                    {/* No. WhatsApp (Clickable — buka chat WA langsung) */}
-                    <td className="py-3.5 px-6 text-center whitespace-nowrap">
-                      {order.customerPhone && order.customerPhone !== '-' ? (
-                        <span className="text-xs text-slate-600 font-mono font-bold">{order.customerPhone}</span>
-                      ) : (
-                        <span className="text-slate-300 font-bold">—</span>
-                      )}
-                    </td>
-
-                    {/* Status Pengerjaan (Center Aligned, Badge ONLY) */}
-                    <td className="py-3.5 px-6 text-center whitespace-nowrap">
-                      <span
-                        title={workStatus}
-                        className={`inline-flex items-center justify-center min-w-[52px] px-3 py-1 rounded-full border text-xs font-black shadow-2xs ${pctTone.bg} ${pctTone.text}`}
-                      >
-                        {formatWorkPercentage(workStatus)}
-                      </span>
-                    </td>
-
-                    {/* Tagihan (Single Line) */}
-                    <td className="py-3.5 px-6 font-black text-[#313030] text-sm whitespace-nowrap">
-                      Rp {(order.grandTotal || order.totalAmount || 0).toLocaleString('id-ID')}
-                    </td>
-
-                    {/* Status Bayar (Center Aligned, Single Line) */}
-                    <td className="py-3.5 px-6 text-center whitespace-nowrap">
-                      {(() => {
+  const renderPaymentBadge = (order) => {
                         const ps = normalizePaymentStatus(order.paymentStatus);
                         if (ps === 'Lunas') {
                           return (
@@ -786,15 +564,9 @@ export default function HistoryTransaction({
                             <span>Outstanding</span>
                           </button>
                         );
-                      })()}
-                    </td>
+  };
 
-                    <td className="py-3.5 px-6 whitespace-nowrap">
-                      {renderWhen(order.settledAt || (normalizePaymentStatus(order.paymentStatus) === 'Lunas' ? order.paidAt : null))}
-                    </td>
-
-                    {/* Aksi Kasir (Center Aligned, Print & Delete Request Icon Buttons) */}
-                    <td className="py-3.5 px-6 text-center whitespace-nowrap">
+  const renderRowActions = (order) => (
                       <div className="inline-flex items-center gap-1.5">
                         <button
                           type="button"
@@ -860,6 +632,345 @@ export default function HistoryTransaction({
                           </button>
                         )}
                       </div>
+  );
+
+  return (
+    <div id="tracking-service-section" className="bg-white border border-[#e0e0e0]/70 rounded-3xl shadow-xs flex flex-col overflow-hidden transition-all duration-300">
+      {/* Header: judul + toolbar yang wrap natural */}
+      <div className="p-4 sm:p-5 border-b border-[#e0e0e0]/70 bg-slate-50/50 flex flex-col gap-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-base font-extrabold text-[#313030] tracking-tight">Riwayat Transaksi</h3>
+              <span className="px-2.5 py-0.5 rounded-full bg-[#5f1340]/10 text-[#5f1340] text-[10px] font-black border border-[#5f1340]/15">
+                {displayOrders.length} Order
+              </span>
+            </div>
+          </div>
+
+          {((dateMode === 'range' && (rangeStart || rangeEnd)) || cutoffMonth !== getCutoffMonthKey() || paymentFilter !== 'Semua' || selectedBranchFilter !== 'Semua' || activeFilterTab !== 'Semua' || searchQuery) && (
+            <button
+              type="button"
+              onClick={() => {
+                setDateMode('cutoff');
+                setRangeStart('');
+                setRangeEnd('');
+                setCutoffMonth(getCutoffMonthKey());
+                setPaymentFilter('Semua');
+                setSelectedBranchFilter('Semua');
+                setActiveFilterTab('Semua');
+                setSearchQuery('');
+              }}
+              className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-[#e0e0e0] hover:bg-slate-100 text-slate-600 rounded-xl text-[11px] font-bold transition-all cursor-pointer"
+              title="Reset Semua Filter"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Reset</span>
+            </button>
+          )}
+        </div>
+
+        {/* Toolbar: HP = bertumpuk rapi (tanpa geser ke samping); desktop = satu baris */}
+        <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
+          {/* Cari + Scan */}
+          <div className="flex items-center gap-2 xl:flex-1 xl:min-w-[16rem]">
+            <div className="relative flex-1 min-w-0">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Cari no. nota / nama / no. WA"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full h-10 pl-9 pr-9 border border-[#e0e0e0] rounded-xl text-sm bg-white focus:border-[#5f1340] focus:ring-1 focus:ring-[#5f1340] outline-none font-medium text-[#313030] placeholder:text-slate-400"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  aria-label="Hapus pencarian"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 grid place-items-center rounded-full text-slate-400 hover:bg-slate-100 cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsLacakModalOpen(true)}
+              className="shrink-0 h-10 px-3 bg-white border border-[#e0e0e0] hover:border-[#5f1340] text-[#5f1340] font-black rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+              title="Scan Barcode / QR Kamera untuk lacak nota"
+            >
+              <QrCode className="h-4 w-4" />
+              <span className="hidden sm:inline">Scan</span>
+            </button>
+          </div>
+
+          {/* Cabang + Bayar: dua kolom sama lebar di HP */}
+          <div className="grid grid-cols-2 gap-2 xl:flex xl:shrink-0">
+            <label className="relative min-w-0 xl:w-52">
+              <span className="sr-only">Filter cabang</span>
+              <Store className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+              <select
+                value={selectedBranchFilter}
+                onChange={(e) => setSelectedBranchFilter(e.target.value)}
+                className={`appearance-none w-full h-10 pl-8 pr-8 border rounded-xl outline-none focus:border-[#5f1340] text-xs font-bold cursor-pointer truncate ${
+                  selectedBranchFilter !== 'Semua' ? 'border-[#5f1340]/40 bg-[#5f1340]/5 text-[#5f1340]' : 'border-[#e0e0e0] bg-white text-[#313030]'
+                }`}
+                title="Filter cabang"
+              >
+                <option value="Semua">Semua Cabang</option>
+                {outlets.map((o) => (
+                  <option key={o.id} value={o.full_name || o.name}>{o.full_name || o.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+            </label>
+
+            <label className="relative min-w-0 xl:w-44">
+              <span className="sr-only">Filter status bayar</span>
+              <Wallet className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+              <select
+                value={paymentFilter}
+                onChange={(e) => setPaymentFilter(e.target.value)}
+                className={`appearance-none w-full h-10 pl-8 pr-8 border rounded-xl outline-none focus:border-[#5f1340] text-xs font-bold cursor-pointer truncate ${
+                  paymentFilter !== 'Semua' ? 'border-[#5f1340]/40 bg-[#5f1340]/5 text-[#5f1340]' : 'border-[#e0e0e0] bg-white text-[#313030]'
+                }`}
+                title="Filter status bayar"
+              >
+                <option value="Semua">Semua Bayar</option>
+                <option value="Lunas">Lunas</option>
+                <option value="DP">DP</option>
+                <option value="Outstanding">Outstanding</option>
+              </select>
+              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+            </label>
+          </div>
+
+          {/* Periode */}
+          <div className="xl:shrink-0">
+            <DateModeFilter
+              mode={dateMode}
+              onModeChange={setDateMode}
+              rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
+              onRangeStartChange={setRangeStart}
+              onRangeEndChange={setRangeEnd}
+              cutoffMonth={cutoffMonth}
+              onCutoffMonthChange={setCutoffMonth}
+              className="w-full max-sm:[&>span]:hidden"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Tab antrean — DISEMBUNYIKAN sementara di semua layar (permintaan user). Ubah SHOW_QUEUE_TABS untuk menampilkan lagi. */}
+      {SHOW_QUEUE_TABS && (
+      <div className="hidden sm:grid px-5 border-b border-[#e0e0e0]/60 py-2.5 bg-slate-50/30 grid-cols-3 gap-1.5 xl:flex xl:flex-wrap">
+        {['Semua', ...NOTA_QUEUE_TABS.map((t) => t.key)].map((tab) => {
+          const active = activeFilterTab === tab;
+          const count = getTabCount(tab);
+          const label = tab === 'Semua' ? 'Semua' : (NOTA_QUEUE_TABS.find((t) => t.key === tab)?.label || tab);
+          const [head, ...rest] = label.split(' · ');
+
+          return (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveFilterTab(tab)}
+              title={label}
+              aria-pressed={active}
+              className={`min-w-0 px-3 py-2 xl:py-1.5 rounded-xl text-[11px] transition-all duration-200 cursor-pointer flex items-center justify-between xl:justify-start gap-1.5 text-left ${
+                active
+                  ? 'bg-[#5f1340] text-white shadow-2xs'
+                  : 'bg-white border border-[#e0e0e0]/70 text-slate-600 hover:border-[#5f1340]/40 hover:text-[#5f1340]'
+              }`}
+            >
+              <span className="min-w-0 leading-tight xl:whitespace-nowrap">
+                <span className="font-extrabold">{head}</span>
+                {rest.length > 0 && (
+                  <span className={`block xl:inline xl:ml-1 font-bold truncate ${active ? 'text-white/70' : 'text-slate-400'}`}>
+                    {rest.join(' · ')}
+                  </span>
+                )}
+              </span>
+              <span className={`shrink-0 px-1.5 rounded-full text-[9px] font-black ${
+                active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      )}
+
+      {/* Table / empty state ringkas */}
+      {displayOrders.length === 0 ? (
+        <div className="px-5 py-6 text-center text-xs text-slate-400 font-semibold">
+          {transactionsLoading ? 'Memuat riwayat transaksi…' : 'Tidak ada data riwayat transaksi yang sesuai dengan filter.'}
+        </div>
+      ) : (
+      <>
+      <div className="lg:hidden grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50/40">
+        {displayOrders.slice(pageStart, pageStart + pageSize).map((order) => {
+          const workStatus = order.progressStatus || order.workStatus || 'Antrean';
+          const pctTone = percentageTone(getWorkPercentage(workStatus));
+          const openDetail = () => navigate(`/riwayat/${order.id}`, { state: { from: '/riwayat' } });
+          const hasPhone = order.customerPhone && order.customerPhone !== '-';
+          const hasAddress = order.customerAddress && order.customerAddress !== '-';
+          return (
+            <div
+              key={order.id}
+              role="button"
+              tabIndex={0}
+              onClick={openDetail}
+              onKeyDown={(e) => { if (e.key === 'Enter') openDetail(); }}
+              className="bg-white border border-[#e0e0e0]/80 rounded-2xl p-4 shadow-2xs flex flex-col gap-3 cursor-pointer transition-colors hover:border-[#5f1340]/30 active:bg-[#5f1340]/[0.03]"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-mono font-black text-[#5f1340] text-sm tracking-tight break-all">{order.id}</p>
+                  <div className="mt-1 flex flex-wrap gap-1 empty:hidden">{renderOrderBadges(order)}</div>
+                </div>
+                <span
+                  title={workStatus}
+                  className={`shrink-0 inline-flex items-center justify-center min-w-[52px] px-3 py-1 rounded-full border text-xs font-black shadow-2xs ${pctTone.bg} ${pctTone.text}`}
+                >
+                  {formatWorkPercentage(workStatus)}
+                </span>
+              </div>
+
+              <div className="min-w-0">
+                <p className="text-[15px] font-black text-[#313030] leading-tight break-words">{formatName(order.customerName)}</p>
+                {hasAddress && (
+                  <p className="mt-1 text-[11px] font-medium text-slate-500 leading-snug line-clamp-2 break-words" title={order.customerAddress}>
+                    {order.customerAddress}
+                  </p>
+                )}
+                {hasPhone && (
+                  <p className="mt-1 text-xs text-slate-600 font-mono font-bold">{order.customerPhone}</p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 px-3 py-2.5 text-xs">
+                <div>
+                  <p className="text-[9px] uppercase font-extrabold text-slate-400 tracking-wider mb-0.5">Buat Nota</p>
+                  {renderWhen(order.rawDate)}
+                </div>
+                <div>
+                  <p className="text-[9px] uppercase font-extrabold text-slate-400 tracking-wider mb-0.5">Pelunasan</p>
+                  {renderWhen(order.settledAt || (normalizePaymentStatus(order.paymentStatus) === 'Lunas' ? order.paidAt : null))}
+                </div>
+              </div>
+
+              <div className="flex items-end justify-between gap-2">
+                <div>
+                  <p className="text-[9px] uppercase font-extrabold text-slate-400 tracking-wider">Tagihan</p>
+                  <p className="text-base font-black text-[#313030]">Rp {(order.grandTotal || order.totalAmount || 0).toLocaleString('id-ID')}</p>
+                </div>
+                {renderPaymentBadge(order)}
+              </div>
+
+              <div className="pt-3 border-t border-[#e0e0e0]/60 flex justify-end" onClick={(e) => e.stopPropagation()}>
+                {renderRowActions(order)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="hidden lg:block overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="border-b border-[#e0e0e0]/70 text-[10px] uppercase font-extrabold text-slate-400 tracking-wider bg-slate-50/70">
+              <th className="py-3.5 px-6">No. Struk Nota</th>
+              <th className="py-3.5 px-6">Buat Nota</th>
+              <th className="py-3.5 px-6 text-center">Pelanggan</th>
+              <th className="py-3.5 px-6 text-center">No. WhatsApp</th>
+              <th className="py-3.5 px-6 text-center">Status Pengerjaan</th>
+              <th className="py-3.5 px-6">Tagihan</th>
+              <th className="py-3.5 px-6 text-center">Status Bayar</th>
+              <th className="py-3.5 px-6">Pelunasan</th>
+              <th className="py-3.5 px-6 text-center">Aksi</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#e0e0e0]/40 text-xs font-medium">
+              {displayOrders.slice(pageStart, pageStart + pageSize).map((order) => {
+                const workStatus = order.progressStatus || order.workStatus || 'Antrean';
+                const workPct = getWorkPercentage(workStatus);
+                const pctTone = percentageTone(workPct);
+
+                return (
+                  <tr
+                    key={order.id}
+                    onClick={() => navigate(`/riwayat/${order.id}`, { state: { from: '/riwayat' } })}
+                    className="hover:bg-[#5f1340]/[0.03] cursor-pointer transition-colors group"
+                    title="Klik untuk membuka halaman rincian transaksi"
+                  >
+                    {/* No Struk */}
+                    <td className="py-3.5 px-6 font-mono font-black text-[#5f1340] whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm tracking-tight group-hover:underline">{order.id}</span>
+                        {renderOrderBadges(order)}
+                      </div>
+                    </td>
+
+                    <td className="py-3.5 px-6 whitespace-nowrap">
+                      {renderWhen(order.rawDate)}
+                    </td>
+
+                    {/* Pelanggan */}
+                    <td className="py-3.5 px-6 text-center">
+                      <div className="mx-auto min-w-[160px] max-w-[260px]">
+                        <span className="block text-sm sm:text-[15px] font-black text-[#313030] leading-tight break-words">
+                          {formatName(order.customerName)}
+                        </span>
+                        {order.customerAddress && order.customerAddress !== '-' && (
+                          <span
+                            className="mt-1 block text-[11px] font-medium text-slate-500 leading-snug line-clamp-2 break-words"
+                            title={order.customerAddress}
+                          >
+                            {order.customerAddress}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* No. WhatsApp (Clickable — buka chat WA langsung) */}
+                    <td className="py-3.5 px-6 text-center whitespace-nowrap">
+                      {order.customerPhone && order.customerPhone !== '-' ? (
+                        <span className="text-xs text-slate-600 font-mono font-bold">{order.customerPhone}</span>
+                      ) : (
+                        <span className="text-slate-300 font-bold">—</span>
+                      )}
+                    </td>
+
+                    {/* Status Pengerjaan (Center Aligned, Badge ONLY) */}
+                    <td className="py-3.5 px-6 text-center whitespace-nowrap">
+                      <span
+                        title={workStatus}
+                        className={`inline-flex items-center justify-center min-w-[52px] px-3 py-1 rounded-full border text-xs font-black shadow-2xs ${pctTone.bg} ${pctTone.text}`}
+                      >
+                        {formatWorkPercentage(workStatus)}
+                      </span>
+                    </td>
+
+                    {/* Tagihan (Single Line) */}
+                    <td className="py-3.5 px-6 font-black text-[#313030] text-sm whitespace-nowrap">
+                      Rp {(order.grandTotal || order.totalAmount || 0).toLocaleString('id-ID')}
+                    </td>
+
+                    {/* Status Bayar (Center Aligned, Single Line) */}
+                    <td className="py-3.5 px-6 text-center whitespace-nowrap">
+                      {renderPaymentBadge(order)}
+                    </td>
+
+                    <td className="py-3.5 px-6 whitespace-nowrap">
+                      {renderWhen(order.settledAt || (normalizePaymentStatus(order.paymentStatus) === 'Lunas' ? order.paidAt : null))}
+                    </td>
+
+                    {/* Aksi Kasir (Center Aligned, Print & Delete Request Icon Buttons) */}
+                    <td className="py-3.5 px-6 text-center whitespace-nowrap">
+                      {renderRowActions(order)}
                     </td>
                   </tr>
                 );
@@ -868,6 +979,7 @@ export default function HistoryTransaction({
           </tbody>
         </table>
       </div>
+      </>
       )}
 
       {/* Table footer */}

@@ -75,6 +75,7 @@ export default function Dashboard() {
 
   // Live cash logs & float from database (initial_petty_cash, bukan initial_cash)
   const [cashLogs, setCashLogs] = useState([]);
+  const [pettyDrawer, setPettyDrawer] = useState(null);
   const [initialPettyCashFloat, setInitialPettyCashFloat] = useState(0);
 
   // Active Tab for Antrean Table Filtering
@@ -213,7 +214,12 @@ export default function Dashboard() {
         if (!pettyRes.data?.success) return;
         if (pettyRes.data.data) {
           const mappedLogs = pettyRes.data.data
-            .filter((p) => (p.status || 'Disetujui') === 'Disetujui')
+            // Sama dengan halaman Petty Cash: Masuk dihitung setelah disetujui, Keluar sejak Pengajuan
+            // (uang sudah keluar dari laci). Ditolak tidak dihitung → saldo otomatis kembali.
+            .filter((p) => {
+              const st = p.status || 'Disetujui';
+              return st === 'Disetujui' || (st === 'Pengajuan' && p.type === 'Keluar');
+            })
             .map(p => ({
               id: p.id,
               type: p.type,
@@ -227,6 +233,14 @@ export default function Dashboard() {
         }
         if (typeof pettyRes.data.initialPettyCash === 'number' || typeof pettyRes.data.initialFloat === 'number') {
           setInitialPettyCashFloat(pettyRes.data.initialPettyCash ?? pettyRes.data.initialFloat);
+        }
+        // Saldo laci shift yang sedang buka (server): Keluar sejak Pengajuan, Ditolak tidak dihitung.
+        const meta = pettyRes.data.meta || {};
+        if (typeof pettyRes.data.currentBalance === 'number') {
+          setPettyDrawer({
+            balance: pettyRes.data.currentBalance,
+            cashOut: Number(meta.cashOut ?? ((Number(meta.approvedOut) || 0) + (Number(meta.pendingOut) || 0))) || 0
+          });
         }
       })
       .catch((err) => {
@@ -343,7 +357,8 @@ export default function Dashboard() {
   const balanceLogs = cashLogs.filter((c) => c.isPettyCash !== false);
   const totalCashIn = balanceLogs.filter(c => c.type === 'Masuk').reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
   const totalCashOut = balanceLogs.filter(c => c.type === 'Keluar').reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
-  const netCashInDrawer = initialPettyCashFloat + totalCashIn - totalCashOut;
+  const netCashInDrawer = pettyDrawer ? pettyDrawer.balance : initialPettyCashFloat + totalCashIn - totalCashOut;
+  const drawerCashOut = pettyDrawer ? pettyDrawer.cashOut : totalCashOut;
 
   const outletOrders = orders.filter((order) => {
     if (order.outletId == null || order.outletId === '') return true;
@@ -364,7 +379,7 @@ export default function Dashboard() {
     <PettyCashCard
       netCashInDrawer={netCashInDrawer}
       initialPettyCashFloat={initialPettyCashFloat}
-      totalCashOut={totalCashOut}
+      totalCashOut={drawerCashOut}
       navigate={navigate}
     />
   );

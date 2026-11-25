@@ -121,6 +121,18 @@ export default function CloseShiftModal({
       setActualCash(formatRupiah(String(Math.round(parseFloat(shift.initial_cash) || 0))));
       setActualPetty(formatRupiah(String(Math.round(parseFloat(shift.initial_petty_cash) || 0))));
       setCloseType(Number(shift.shift_number) === 1 ? 'Handover' : 'Final');
+      // Usulan petty cash aktual = uang di laci shift ini (modal awal − pengeluaran, termasuk yang masih
+      // Pengajuan). Kasir tetap bisa mengubahnya sesuai hitungan fisik.
+      if (shift.outlet_id) {
+        axios.get('/api/petty-cash', { params: { outlet_id: shift.outlet_id } })
+          .then((res) => {
+            const meta = res.data?.meta || {};
+            if (!res.data?.success || Number(meta.shiftId) !== Number(shiftId)) return;
+            const bal = Number(res.data.currentBalance);
+            if (Number.isFinite(bal)) setActualPetty(formatRupiah(String(Math.max(0, Math.round(bal)))));
+          })
+          .catch(() => {});
+      }
     }
   }, [shiftId]);
 

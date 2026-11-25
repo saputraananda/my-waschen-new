@@ -5,6 +5,7 @@ import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import WaschenMemberCard from '../../../components/WaschenMemberCard.jsx';
 import PaymentProofFields from '../../../components/PaymentProofFields.jsx';
+import { ProofLink } from '../../../components/ImageLightbox.jsx';
 import {
   CreditCard,
   Users,
@@ -832,12 +833,10 @@ export default function ListMember({
                           </span>
                         </div>
                         {proofUrl && (
-                          <a
-                            href={proofUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="ml-11 flex items-center gap-2.5 p-1.5 pr-3 bg-white border border-[#e0e0e0] rounded-lg hover:border-[#5f1340]/40 self-start"
-                            title="Lihat bukti pembayaran"
+                          <ProofLink
+                            url={proofUrl}
+                            title="Bukti pembayaran"
+                            className="ml-11 flex items-center gap-2.5 p-1.5 pr-3 bg-white border border-[#e0e0e0] rounded-lg hover:border-[#5f1340]/40 self-start cursor-pointer text-left"
                           >
                             {isPdfProof ? (
                               <div className="w-10 h-10 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
@@ -847,7 +846,7 @@ export default function ListMember({
                               <img src={proofUrl} alt="Bukti pembayaran" className="w-10 h-10 rounded-md object-cover shrink-0" />
                             )}
                             <span className="text-[10px] font-bold text-[#5f1340]">Lihat Bukti Pembayaran</span>
-                          </a>
+                          </ProofLink>
                         )}
                       </div>
                     );

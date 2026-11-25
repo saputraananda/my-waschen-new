@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { getSocket } from '../../utils/socket.js';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { useNetworkRestored } from '../../hooks/useNetworkRestored.js';
@@ -22,6 +23,9 @@ export const mapCashLogFromApi = (p) => ({
   status: p.status || 'Disetujui',
   isPettyCash: Number(p.is_petty_cash ?? p.isPettyCash ?? 1) !== 0,
   receiptPhotoUrl: p.receipt_photo_url || null,
+  rejectedReason: p.rejected_reason || null,
+  requesterName: p.cashier_name || null,
+  reviewerName: p.reviewer_name || null,
   date: new Date(p.transaction_date).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
   createdBy: 'Staff Kasir'
 });
@@ -38,6 +42,7 @@ export default function PettyCash() {
   const [cashLogs, setCashLogs] = useState([]);
   const [initialPettyCashFloat, setInitialPettyCashFloat] = useState(0);
   const [currentBalance, setCurrentBalance] = useState(0);
+  const [drawerMeta, setDrawerMeta] = useState({ approvedIn: 0, approvedOut: 0, pendingOut: 0 });
   const [pendingCount, setPendingCount] = useState(0);
   const isApprover = isHqUser();
 
@@ -88,10 +93,15 @@ export default function PettyCash() {
         const floatVal = res.data.initialPettyCash ?? res.data.initialFloat;
         if (typeof floatVal === 'number') setInitialPettyCashFloat(floatVal);
         const logs = (res.data.data || []).map(mapCashLogFromApi);
-        const approved = logs.filter((l) => l.status === 'Disetujui' && l.isPettyCash);
-        const inSum = approved.filter((l) => l.type === 'Masuk').reduce((s, l) => s + l.amount, 0);
-        const outSum = approved.filter((l) => l.type === 'Keluar').reduce((s, l) => s + l.amount, 0);
-        setCurrentBalance((floatVal || 0) + inSum - outSum);
+        // Saldo laci dihitung server untuk shift yang sedang buka: Keluar yang masih Pengajuan ikut
+        // mengurangi; Ditolak tidak dihitung → saldo otomatis kembali.
+        const meta = res.data.meta || {};
+        setDrawerMeta({
+          approvedIn: Number(meta.approvedIn) || 0,
+          approvedOut: Number(meta.approvedOut) || 0,
+          pendingOut: Number(meta.pendingOut) || 0
+        });
+        setCurrentBalance(Number(res.data.currentBalance) || 0);
         setPendingCount(res.data.pendingCount || logs.filter((l) => l.status === 'Pengajuan').length);
         setCashLogs(logs);
       }
@@ -102,6 +112,20 @@ export default function PettyCash() {
 
   useEffect(() => {
     if (activeOutletId) fetchPettyCash();
+  }, [activeOutletId]);
+
+  // Update otomatis: approve / tolak / edit / hapus (dari POS atau Alora SuperApp) → hitung ulang saldo laci.
+  const fetchRef = useRef(fetchPettyCash);
+  fetchRef.current = fetchPettyCash;
+  useEffect(() => {
+    const socket = getSocket();
+    const onUpdated = (payload = {}) => {
+      const current = localStorage.getItem('activeOutletId') || activeOutletId;
+      if (payload.outletId != null && current && String(payload.outletId) !== String(current)) return;
+      fetchRef.current();
+    };
+    socket.on('petty-cash:updated', onUpdated);
+    return () => socket.off('petty-cash:updated', onUpdated);
   }, [activeOutletId]);
 
   const handleCashLogCreated = (newLog) => {
@@ -162,6 +186,7 @@ export default function PettyCash() {
             cashLogs={cashLogs}
             initialPettyCashFloat={initialPettyCashFloat}
             currentBalance={currentBalance}
+            drawerMeta={drawerMeta}
             pendingCount={pendingCount}
             activeOutletName={activeOutletName}
             isApprover={isApprover}

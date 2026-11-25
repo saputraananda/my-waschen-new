@@ -3,6 +3,18 @@ import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 import { isHqApprover } from '../utils/cashierGuard.js';
 import { buildUploadPublicUrl, PETTY_CASH_EVIDENCE_SUBDIR, safeUnlinkAbsPath, safeUnlinkUploadUrl } from '../middleware/upload.js';
+import { getEmployeeNames } from '../utils/employeeNames.js';
+
+/** Tambah nama pengaju (cashier_name) & peninjau (reviewer_name) ke tiap baris. */
+async function attachPettyNames(rows) {
+  const ids = rows.flatMap((r) => [r.cashier_employee_id, r.approved_by_employee_id]).filter(Boolean);
+  const names = ids.length ? await getEmployeeNames(ids) : {};
+  return rows.map((r) => ({
+    ...r,
+    cashier_name: names[Number(r.cashier_employee_id)] || null,
+    reviewer_name: names[Number(r.approved_by_employee_id)] || null
+  }));
+}
 
 const APPROVED_STATUS = 'Disetujui';
 const PENDING_STATUS = 'Pengajuan';
@@ -68,28 +80,47 @@ const getOpenShiftPettyFloat = async (outletId) => {
   };
 };
 
-/** Saldo efektif = modal awal + kas masuk disetujui − kas keluar disetujui */
-async function getApprovedBalance(outletId, connection = myWaschenPool) {
+/**
+ * Ringkasan laci petty cash untuk SHIFT YANG SEDANG BUKA di outlet ini.
+ * Modal awal shift sudah membawa sisa aktual shift sebelumnya, jadi hanya mutasi shift ini yang dihitung
+ * (mutasi shift lama tidak dipotong dua kali). Outlet tanpa shift terbuka: mutasi tanpa shift_id.
+ * - Masuk: dihitung setelah Disetujui.
+ * - Keluar: dihitung sejak Pengajuan (uang sudah keluar dari laci); Ditolak tidak dihitung → saldo kembali.
+ */
+async function getDrawerSummary(outletId, connection = myWaschenPool) {
   const oid = parseInt(outletId, 10);
-  if (!oid) return 0;
+  const empty = { shiftId: null, initialPettyCash: 0, approvedIn: 0, approvedOut: 0, pendingOut: 0, approvedBalance: 0, drawerBalance: 0 };
+  if (!oid) return empty;
 
-  const { initialPettyCash } = await getOpenShiftPettyFloat(oid);
-
-  const [rows] = await connection.query(
-    `SELECT type, amount FROM tr_petty_cash
-     WHERE outlet_id = ? AND status = ? AND COALESCE(is_petty_cash, 1) = 1
-     ORDER BY id ASC`,
-    [oid, APPROVED_STATUS]
+  const { shiftId, initialPettyCash } = await getOpenShiftPettyFloat(oid);
+  const [[row]] = await connection.query(
+    `SELECT
+       COALESCE(SUM(CASE WHEN type = 'Masuk'  AND status = ? THEN amount ELSE 0 END), 0) AS approved_in,
+       COALESCE(SUM(CASE WHEN type = 'Keluar' AND status = ? THEN amount ELSE 0 END), 0) AS approved_out,
+       COALESCE(SUM(CASE WHEN type = 'Keluar' AND status = ? THEN amount ELSE 0 END), 0) AS pending_out
+     FROM tr_petty_cash
+     WHERE outlet_id = ? AND COALESCE(is_petty_cash, 1) = 1
+       AND ${shiftId ? 'shift_id = ?' : 'shift_id IS NULL'}`,
+    [APPROVED_STATUS, APPROVED_STATUS, PENDING_STATUS, oid, ...(shiftId ? [shiftId] : [])]
   );
+  const approvedIn = parseFloat(row?.approved_in) || 0;
+  const approvedOut = parseFloat(row?.approved_out) || 0;
+  const pendingOut = parseFloat(row?.pending_out) || 0;
+  const approvedBalance = initialPettyCash + approvedIn - approvedOut;
+  return {
+    shiftId,
+    initialPettyCash,
+    approvedIn,
+    approvedOut,
+    pendingOut,
+    approvedBalance,
+    drawerBalance: approvedBalance - pendingOut
+  };
+}
 
-  if (!rows.length) return initialPettyCash;
-
-  let balance = initialPettyCash;
-  for (const r of rows) {
-    const amt = parseFloat(r.amount) || 0;
-    balance = r.type === 'Masuk' ? balance + amt : balance - amt;
-  }
-  return balance;
+/** Saldo efektif disetujui (snapshot balance_before / balance_after). */
+async function getApprovedBalance(outletId, connection = myWaschenPool) {
+  return (await getDrawerSummary(outletId, connection)).approvedBalance;
 }
 
 /**
@@ -122,24 +153,27 @@ export const getPettyCashLogs = async (req, res) => {
     const [rows] = await myWaschenPool.query(sql, params);
 
     const outletForBalance = outlet_id && outlet_id !== 'Semua' ? outlet_id : rows[0]?.outlet_id;
-    const { initialPettyCash } = await getOpenShiftPettyFloat(outletForBalance);
-    const currentBalance = outletForBalance
-      ? await getApprovedBalance(outletForBalance)
-      : initialPettyCash;
+    const drawer = await getDrawerSummary(outletForBalance);
+    const { initialPettyCash } = drawer;
+    const currentBalance = drawer.drawerBalance;
 
     const pendingCount = rows.filter((r) => r.status === PENDING_STATUS).length;
-    const approvedRows = rows.filter((r) => r.status === APPROVED_STATUS && usesPettyCashBalance(r));
 
     return res.status(200).json({
       success: true,
-      data: rows,
+      data: await attachPettyNames(rows),
       initialFloat: initialPettyCash,
       initialPettyCash,
       currentBalance,
       pendingCount,
+      // Ringkasan laci shift yang sedang buka (dipakai kartu Petty Cash, Dashboard, dan Closing)
       meta: {
-        approvedIn: approvedRows.filter((r) => r.type === 'Masuk').reduce((s, r) => s + (parseFloat(r.amount) || 0), 0),
-        approvedOut: approvedRows.filter((r) => r.type === 'Keluar').reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+        shiftId: drawer.shiftId,
+        approvedIn: drawer.approvedIn,
+        approvedOut: drawer.approvedOut,
+        pendingOut: drawer.pendingOut,
+        cashOut: drawer.approvedOut + drawer.pendingOut,
+        drawerBalance: drawer.drawerBalance
       }
     });
   } catch (error) {
@@ -235,7 +269,8 @@ export const addPettyCashEntry = async (req, res) => {
       [
         resolvedOutletId,
         resolvedShiftId,
-        cashierEmployeeId || 167,
+        // Pengaju = karyawan yang login (token sesi), bukan isian client
+        Number(req.auth?.employeeId) || Number(cashierEmployeeId) || null,
         type,
         category || 'Biaya Operasional',
         isPetty,

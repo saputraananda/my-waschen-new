@@ -204,7 +204,7 @@ export default function History() {
             }`}
           >
             <RefreshCcw className="h-4 w-4" />
-            <span>Request Refund</span>
+            <span>Request Refund &amp; Deposit</span>
             {refundRequestsCount > 0 && (
               <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-sky-600 text-white animate-pulse">
                 {refundRequestsCount}
