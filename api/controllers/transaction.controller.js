@@ -15,6 +15,7 @@ import { fetchSmartlinkWorkLog, groupSmartlinkWork, isSmartlinkTransaction, smar
 import { collectPhotoUrls, insertItemPhotos, loadItemPhotos, MAX_ITEM_PHOTOS } from '../utils/itemPhotos.js';
 import { safeUnlinkUploadUrl, replaceUploadUrl, safeUnlinkAbsPath, buildUploadPublicUrl, isItemPhotoUrl, ITEM_PHOTO_SUBDIR, DELETE_REQUEST_SUBDIR, REFUND_REQUEST_SUBDIR } from '../middleware/upload.js';
 import { REFUND_TYPES, findPendingRefund, insertRefundRequest, REFUND_SUMMARY_COLUMNS } from '../utils/transactionRefund.js';
+import { findLastPayment, findPendingVoid } from '../utils/paymentVoid.js';
 import { toWibYmdCompact, formatWibTime } from '../utils/wib.js';
 import { isShiftOptionalCashier, resolveValidCashier } from '../utils/cashierGuard.js';
 import { auditOrderPricing, priceCheckMode } from '../utils/priceAudit.js';
@@ -718,7 +719,8 @@ export const getTransactions = async (req, res) => {
     }
 
     // delete_requested=only → hanya nota pengajuan hapus (tab Request Delete); exclude → tanpa itu (Riwayat).
-    if (req.query.delete_requested === 'only') sql += ' AND t.is_delete_requested = 1';
+    // Termasuk yang ditolak SuperApp (is_delete_requested kembali 0, delete_approval_status = 2) sebagai riwayat.
+    if (req.query.delete_requested === 'only') sql += ' AND (t.is_delete_requested = 1 OR t.delete_approval_status = 2)';
     if (req.query.delete_requested === 'exclude') sql += ' AND COALESCE(t.is_delete_requested, 0) = 0';
 
     if (outlet_id && outlet_id !== 'Semua') {
@@ -1520,6 +1522,13 @@ export const requestDeleteTransaction = async (req, res) => {
         message: `Nota ${order.order_no} sudah dalam pengajuan hapus`
       });
     }
+    if (await findPendingVoid(connection, order.id)) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `Nota ${order.order_no} sedang dalam pengajuan hapus pelunasan — tunggu keputusan SuperApp dulu`
+      });
+    }
 
     const paidAmount = parseFloat(order.paid_amount) || 0;
     const isMemberPay = /saldo member/i.test(order.payment_method || '');
@@ -1588,6 +1597,106 @@ export const requestDeleteTransaction = async (req, res) => {
     connection.release();
     // Pengajuan gagal → hapus file lampiran yang sudah terunggah
     if (!saved && req.file?.path) await safeUnlinkAbsPath(req.file.path);
+  }
+};
+
+/**
+ * PATCH /api/transactions/:id/request-void-payment  (multipart, field `attachment` wajib)
+ * Request Hapus Pelunasan: ajukan pembatalan PEMBAYARAN TERAKHIR nota. Nota tidak dihapus.
+ * Sampai disetujui di SuperApp pembayaran tetap terhitung revenue. Setelah disetujui:
+ * log pembayaran → 'Dibatalkan' (keluar dari revenue di tanggal bayar aslinya), status bayar
+ * turun (Lunas → DP / Outstanding), Potong Saldo Member dikembalikan ke saldo.
+ */
+export const requestVoidPayment = async (req, res) => {
+  let saved = false;
+  const connection = await myWaschenPool.getConnection();
+  try {
+    const { id } = req.params;
+    const reason = String(req.body?.reason || '').trim().slice(0, 500);
+    if (!reason) {
+      return res.status(400).json({ success: false, message: 'Alasan hapus pelunasan wajib diisi.' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Lampiran foto/dokumen wajib disertakan.' });
+    }
+    const attachmentUrl = buildUploadPublicUrl(`${DELETE_REQUEST_SUBDIR}/${path.basename(req.file.filename || req.file.path)}`);
+
+    await connection.beginTransaction();
+    const [orderRows] = await connection.query(
+      'SELECT * FROM tr_transaction WHERE id = ? OR order_no = ? LIMIT 1 FOR UPDATE',
+      [id, id]
+    );
+    if (!orderRows.length) {
+      await connection.rollback();
+      return res.status(404).json({ success: false, message: 'Nota tidak ditemukan' });
+    }
+    const order = orderRows[0];
+    if (order.is_delete_requested) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: `Nota ${order.order_no} sedang dalam pengajuan hapus nota` });
+    }
+    if (await findPendingVoid(connection, order.id)) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: `Nota ${order.order_no} sudah punya pengajuan hapus pelunasan yang menunggu approval` });
+    }
+    const last = await findLastPayment(connection, order);
+    if (!last) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: `Nota ${order.order_no} belum punya pembayaran untuk dihapus` });
+    }
+
+    const [ins] = await connection.query(
+      `INSERT INTO tr_payment_void_request
+       (transaction_id, payment_log_id, log_type, amount, payment_method, paid_at, reason, attachment_url, requested_by_employee_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [order.id, last.paymentLogId, last.logType, last.amount, last.paymentMethod, last.paidAt, reason, attachmentUrl, req.auth?.employeeId || null]
+    );
+    await connection.commit();
+    saved = true;
+
+    emitDashboardRefresh('transaction:updated', { outletId: order.outlet_id, orderNo: order.order_no, transactionId: order.id });
+
+    return res.status(200).json({
+      success: true,
+      message: `Pengajuan hapus pelunasan nota ${order.order_no} (Rp ${last.amount.toLocaleString('id-ID')}) dikirim — menunggu approval`,
+      data: { id: ins.insertId, orderNo: order.order_no, amount: last.amount, logType: last.logType, paymentMethod: last.paymentMethod }
+    });
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    console.error('Error requestVoidPayment:', error);
+    return res.status(500).json({ success: false, message: 'Gagal mengajukan hapus pelunasan', error: error.message });
+  } finally {
+    connection.release();
+    if (!saved && req.file?.path) await safeUnlinkAbsPath(req.file.path);
+  }
+};
+
+/** GET /api/transactions/payment-voids?outlet_id= — daftar Request Hapus Pelunasan (tab Riwayat POS). */
+export const getPaymentVoidRequests = async (req, res) => {
+  try {
+    const outletId = parseInt(req.query.outlet_id, 10) || null;
+    const [rows] = await myWaschenPool.query(
+      `SELECT v.*, t.order_no, t.outlet_id, t.grand_total, t.paid_amount, t.payment_status, t.order_date,
+              c.name AS customer_name, c.phone AS customer_phone
+       FROM tr_payment_void_request v
+       JOIN tr_transaction t ON t.id = v.transaction_id
+       LEFT JOIN mst_customer c ON c.id = t.customer_id
+       ${outletId ? 'WHERE t.outlet_id = ?' : ''}
+       ORDER BY v.requested_at DESC, v.id DESC
+       LIMIT 500`,
+      outletId ? [outletId] : []
+    );
+    const names = await getEmployeeNames(rows.flatMap((r) => [r.requested_by_employee_id, r.reviewed_by_employee_id]));
+    const data = rows.map((r) => ({
+      ...r,
+      requested_by_name: names.get(Number(r.requested_by_employee_id)) || null,
+      reviewed_by_name: names.get(Number(r.reviewed_by_employee_id)) || null
+    }));
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    if (error?.code === 'ER_NO_SUCH_TABLE') return res.status(200).json({ success: true, data: [] });
+    console.error('Error getPaymentVoidRequests:', error);
+    return res.status(500).json({ success: false, message: 'Gagal mengambil pengajuan hapus pelunasan', error: error.message });
   }
 };
 

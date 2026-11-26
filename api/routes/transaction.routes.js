@@ -8,6 +8,8 @@ import {
   updateFulfillment,
   markTransactionAsPaid,
   requestDeleteTransaction,
+  requestVoidPayment,
+  getPaymentVoidRequests,
   requestRefundTransaction,
   getRefundRequests,
   settlePaymentBatch,
@@ -29,6 +31,7 @@ router.get('/', getTransactions);
 router.post('/settle-batch', settlePaymentBatch);
 router.get('/batch/:batchNo', getPaymentBatchByNo);
 router.get('/refunds', getRefundRequests);
+router.get('/payment-voids', getPaymentVoidRequests);
 router.post('/:orderNo/digital-nota-access', ensureDigitalNotaAccess);
 router.post('/:id/payment-proof', requirePosAuth, uploadPaymentReceipt, verifyUploadContents, uploadPaymentProof);
 router.post('/item-photo', requirePosAuth, uploadItemPhotoFile, verifyUploadContents, uploadItemPhotoDraft);
@@ -45,6 +48,7 @@ router.put('/:id/status', updateWorkStatus);
 router.patch('/:id/pay', markTransactionAsPaid);
 router.put('/:id/pay', markTransactionAsPaid);
 router.patch('/:id/request-delete', requirePosAuth, uploadDeleteRequestAttachment, verifyUploadContents, requestDeleteTransaction);
+router.patch('/:id/request-void-payment', requirePosAuth, uploadDeleteRequestAttachment, verifyUploadContents, requestVoidPayment);
 router.patch('/:id/request-refund', requirePosAuth, uploadRefundRequestAttachment, verifyUploadContents, requestRefundTransaction);
 
 export default router;

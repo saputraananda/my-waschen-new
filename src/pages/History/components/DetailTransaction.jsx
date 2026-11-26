@@ -1227,9 +1227,12 @@ export default function DetailTransaction() {
                           className="rounded-xl border border-[#e0e0e0] bg-white px-3 py-2 flex items-start justify-between gap-2"
                         >
                           <div className="min-w-0">
-                            <span className="text-[11px] font-black text-[#313030]">
+                            <span className={`text-[11px] font-black ${log.log_type === 'Dibatalkan' ? 'text-slate-400 line-through' : 'text-[#313030]'}`}>
                               {log.log_type || 'Bayar'} · Rp {Number(log.amount || 0).toLocaleString('id-ID')}
                             </span>
+                            {log.log_type === 'Dibatalkan' && (
+                              <span className="text-[10px] text-rose-600 font-bold block">Pembayaran dibatalkan (hapus pelunasan)</span>
+                            )}
                             <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
                               {log.payment_method || '-'}
                               {log.cashier_name ? ` · oleh ${formatEmployeeName(log.cashier_name)}` : ''}

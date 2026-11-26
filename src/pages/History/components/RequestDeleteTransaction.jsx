@@ -10,24 +10,29 @@ import {
   FileText,
   ShieldAlert,
   User,
-  Store
+  Store,
+  XCircle
 } from 'lucide-react';
 
 const isApprovedStatus = (s) => s === 1 || s === '1';
+const isRejectedStatus = (s) => s === 2 || s === '2';
 const isPendingStatus = (s) => s === 0 || s === '0' || s === null || s === undefined;
 
-// Approve di SuperApp menempelkan "[APPROVED by KODE — NAMA @ ISO]" ke delete_reason; dipisah agar tampil rapi.
-const APPROVE_TAG = /\s*\[APPROVED by (.+?) — (.+?) @ (.+?)\]/;
+// Keputusan di SuperApp ditempel ke delete_reason:
+//   "[APPROVED|REJECTED by KODE — NAMA @ ISO] Catatan: ..." — dipisah agar tampil rapi.
+const DECISION_TAG = /\s*\[(APPROVED|REJECTED) by (.+?) — (.+?) @ ([^\]]+)\](?: Catatan: ([^\n]*))?/g;
 
 function splitReason(raw) {
   const text = String(raw || '');
-  const m = text.match(APPROVE_TAG);
-  const reason = text.replace(new RegExp(APPROVE_TAG, 'g'), '').trim();
-  if (!m) return { reason, approver: null, approvedAt: null };
-  const when = new Date(m[3]);
+  const all = [...text.matchAll(DECISION_TAG)];
+  const m = all[all.length - 1];
+  const reason = text.replace(DECISION_TAG, '').trim();
+  if (!m) return { reason, approver: null, approvedAt: null, notes: '' };
+  const when = new Date(m[4]);
   return {
     reason,
-    approver: m[2],
+    approver: m[3],
+    notes: (m[5] || '').trim(),
     approvedAt: Number.isNaN(when.getTime())
       ? null
       : when.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
@@ -62,11 +67,15 @@ function AttachmentChip({ url }) {
 
 export default function RequestDeleteTransaction({ transactions }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [approvalFilter, setApprovalFilter] = useState('Semua'); // Semua | Pending | Approved
+  const [approvalFilter, setApprovalFilter] = useState('Semua'); // Semua | Pending | Approved | Rejected
 
-  const deleteRequests = useMemo(() => transactions.filter((t) => t.isDeleteRequested), [transactions]);
+  const deleteRequests = useMemo(
+    () => transactions.filter((t) => t.isDeleteRequested || isRejectedStatus(t.deleteApprovalStatus)),
+    [transactions]
+  );
   const pendingCount = deleteRequests.filter((t) => isPendingStatus(t.deleteApprovalStatus)).length;
   const approvedCount = deleteRequests.filter((t) => isApprovedStatus(t.deleteApprovalStatus)).length;
+  const rejectedCount = deleteRequests.filter((t) => isRejectedStatus(t.deleteApprovalStatus)).length;
 
   // Pending dulu (perlu perhatian), lalu pengajuan terbaru.
   const filteredRequests = useMemo(() => {
@@ -80,7 +89,8 @@ export default function RequestDeleteTransaction({ transactions }) {
           || (t.deleteReason && t.deleteReason.toLowerCase().includes(q));
         const matchesApproval = approvalFilter === 'Semua'
           || (approvalFilter === 'Pending' && isPendingStatus(t.deleteApprovalStatus))
-          || (approvalFilter === 'Approved' && isApprovedStatus(t.deleteApprovalStatus));
+          || (approvalFilter === 'Approved' && isApprovedStatus(t.deleteApprovalStatus))
+          || (approvalFilter === 'Rejected' && isRejectedStatus(t.deleteApprovalStatus));
         return matchesSearch && matchesApproval;
       })
       .sort((a, b) => {
@@ -133,7 +143,8 @@ export default function RequestDeleteTransaction({ transactions }) {
             {[
               { id: 'Semua', label: `Semua (${deleteRequests.length})` },
               { id: 'Pending', label: `Pending (${pendingCount})` },
-              { id: 'Approved', label: `Approved (${approvedCount})` }
+              { id: 'Approved', label: `Approved (${approvedCount})` },
+              { id: 'Rejected', label: `Ditolak (${rejectedCount})` }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -169,7 +180,8 @@ export default function RequestDeleteTransaction({ transactions }) {
               {pagination.pageItems.length > 0 ? (
                 pagination.pageItems.map((t, idx) => {
                   const approved = isApprovedStatus(t.deleteApprovalStatus);
-                  const { reason, approver, approvedAt } = splitReason(t.deleteReason);
+                  const rejected = isRejectedStatus(t.deleteApprovalStatus);
+                  const { reason, approver, approvedAt, notes } = splitReason(t.deleteReason);
                   return (
                     <tr key={t.id} className="align-top hover:bg-slate-50/80 transition-colors">
                       <td className="py-4 px-4 text-center text-slate-400 font-bold">{pagination.start + idx + 1}</td>
@@ -203,7 +215,24 @@ export default function RequestDeleteTransaction({ transactions }) {
                         Rp {t.grandTotal.toLocaleString('id-ID')}
                       </td>
                       <td className="py-4 px-4 text-center whitespace-nowrap">
-                        {approved ? (
+                        {rejected ? (
+                          <>
+                            <span className="bg-slate-100 text-slate-700 border border-slate-300 font-black text-[10px] px-3 py-1 rounded-full inline-flex items-center gap-1 shadow-2xs">
+                              <XCircle className="h-3 w-3 text-slate-500" />
+                              <span>Ditolak</span>
+                            </span>
+                            {approver && (
+                              <span className="block text-[10px] text-slate-500 font-semibold mt-1.5">oleh {formatEmployeeName(approver)}</span>
+                            )}
+                            {approvedAt && (
+                              <span className="block text-[10px] text-slate-400 font-semibold">{approvedAt}</span>
+                            )}
+                            {notes && (
+                              <span className="block text-[10px] text-slate-600 italic mt-1 max-w-[12rem] mx-auto whitespace-normal">&ldquo;{notes}&rdquo;</span>
+                            )}
+                            <span className="block text-[10px] text-slate-400 mt-1">Nota kembali aktif</span>
+                          </>
+                        ) : approved ? (
                           <>
                             <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 font-black text-[10px] px-3 py-1 rounded-full inline-flex items-center gap-1 shadow-2xs">
                               <CheckCircle2 className="h-3 w-3 text-emerald-600" />
@@ -214,6 +243,9 @@ export default function RequestDeleteTransaction({ transactions }) {
                             )}
                             {approvedAt && (
                               <span className="block text-[10px] text-slate-400 font-semibold">{approvedAt}</span>
+                            )}
+                            {notes && (
+                              <span className="block text-[10px] text-slate-600 italic mt-1 max-w-[12rem] mx-auto whitespace-normal">&ldquo;{notes}&rdquo;</span>
                             )}
                           </>
                         ) : (

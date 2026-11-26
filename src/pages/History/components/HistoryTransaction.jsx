@@ -165,6 +165,8 @@ export default function HistoryTransaction({
   const [printingNotaId, setPrintingNotaId] = useState(null);
   const [deleteModalOrder, setDeleteModalOrder] = useState(null);
   const [deleteReason, setDeleteReason] = useState('');
+  // Nota sudah dibayar: 'refund' = hapus nota + refund, 'void' = hapus pelunasan saja (nota tetap)
+  const [deleteMode, setDeleteMode] = useState('refund');
   const [deleteAttachment, setDeleteAttachment] = useState(null);
   const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
   const [refundModalOrder, setRefundModalOrder] = useState(null);
@@ -450,6 +452,9 @@ export default function HistoryTransaction({
     }
   };
 
+  const deleteModalPaid = (Number(deleteModalOrder?.paidAmount) || 0) > 0;
+  useEffect(() => { setDeleteMode('refund'); }, [deleteModalOrder]);
+
   // Submit Delete Request
   const handleSubmitDeleteRequest = async () => {
     if (!deleteModalOrder) return;
@@ -471,15 +476,20 @@ export default function HistoryTransaction({
     }
 
     setIsSubmittingDelete(true);
+    const isVoid = deleteModalPaid && deleteMode === 'void';
     try {
       const fd = new FormData();
       fd.append('reason', deleteReason);
       fd.append('attachment', deleteAttachment);
-      await axios.patch(`/api/transactions/${deleteModalOrder.dbId || deleteModalOrder.id}/request-delete`, fd, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
-      });
+      const res = await axios.patch(
+        `/api/transactions/${deleteModalOrder.dbId || deleteModalOrder.id}/${isVoid ? 'request-void-payment' : 'request-delete'}`,
+        fd,
+        { headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` } }
+      );
 
-      showAlert({ title: 'Request Delete Dikirim', message: `Pengajuan hapus nota ${deleteModalOrder.id} telah dikirim (Status: Pending)`, type: 'success' });
+      showAlert(isVoid
+        ? { title: 'Request Hapus Pelunasan Dikirim', message: res.data?.message || `Pengajuan hapus pelunasan nota ${deleteModalOrder.id} dikirim (Status: Pending)`, type: 'success' }
+        : { title: 'Request Delete Dikirim', message: `Pengajuan hapus nota ${deleteModalOrder.id} telah dikirim (Status: Pending)`, type: 'success' });
       setDeleteModalOrder(null);
       setDeleteReason('');
       setDeleteAttachment(null);
@@ -1081,8 +1091,10 @@ export default function HistoryTransaction({
               <div className="flex items-center gap-2">
                 <Trash2 className="h-5 w-5 text-rose-600" />
                 <div>
-                  <h3 className="text-sm font-black text-[#313030]">Request Hapus Nota {deleteModalOrder.id}</h3>
-                  <span className="text-[10px] text-slate-400">Status akan menjadi Request Delete Pending Approval</span>
+                  <h3 className="text-sm font-black text-[#313030]">
+                    {deleteModalPaid && deleteMode === 'void' ? 'Request Hapus Pelunasan' : 'Request Hapus Nota'} {deleteModalOrder.id}
+                  </h3>
+                  <span className="text-[10px] text-slate-400">Menunggu approval SuperApp</span>
                 </div>
               </div>
               <button onClick={() => setDeleteModalOrder(null)} className="p-1 text-slate-400 hover:text-[#313030]">
@@ -1100,11 +1112,65 @@ export default function HistoryTransaction({
                   <span className="font-bold text-slate-500">Tagihan Nota:</span>
                   <span className="font-extrabold text-[#5f1340]">Rp {(deleteModalOrder.grandTotal || deleteModalOrder.totalAmount || 0).toLocaleString('id-ID')}</span>
                 </div>
+                {deleteModalPaid && (
+                  <div className="flex justify-between">
+                    <span className="font-bold text-slate-500">Sudah Dibayar:</span>
+                    <span className="font-extrabold text-emerald-700">
+                      Rp {(Number(deleteModalOrder.paidAmount) || 0).toLocaleString('id-ID')} · {deleteModalOrder.paymentStatus}
+                    </span>
+                  </div>
+                )}
               </div>
+
+              {deleteModalPaid && (
+                <div>
+                  <span className="block text-xs font-bold text-[#313030] mb-1.5">
+                    Nota ini sudah dibayar. Mau diapakan? <span className="text-rose-600">*</span>
+                  </span>
+                  <div className="grid gap-2">
+                    {[
+                      {
+                        id: 'refund',
+                        title: 'Hapus nota + refund',
+                        desc: 'Nota dihapus dan uang dikembalikan ke pelanggan (otomatis dibuat Request Refund). Tidak masuk revenue.'
+                      },
+                      {
+                        id: 'void',
+                        title: 'Hapus pelunasan saja',
+                        desc: 'Nota TIDAK dihapus. Hanya pembayaran terakhir yang dibatalkan, jadi nota kembali belum lunas.'
+                      }
+                    ].map((opt) => {
+                      const active = deleteMode === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setDeleteMode(opt.id)}
+                          className={`text-left p-3 rounded-xl border-2 transition-all cursor-pointer flex gap-2.5 ${
+                            active
+                              ? opt.id === 'void' ? 'border-sky-600 bg-sky-50/60' : 'border-rose-600 bg-rose-50/60'
+                              : 'border-[#e0e0e0] bg-white hover:border-slate-300'
+                          }`}
+                        >
+                          <span className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 flex items-center justify-center ${
+                            active ? (opt.id === 'void' ? 'border-sky-600' : 'border-rose-600') : 'border-slate-300'
+                          }`}>
+                            {active && <span className={`h-2 w-2 rounded-full ${opt.id === 'void' ? 'bg-sky-600' : 'bg-rose-600'}`} />}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-xs font-black text-[#313030]">{opt.title}</span>
+                            <span className="block text-[11px] text-slate-500 font-medium mt-0.5">{opt.desc}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-[#313030] mb-1.5">
-                  Alasan Pengajuan Hapus <span className="text-rose-600">*</span>
+                  {deleteModalPaid && deleteMode === 'void' ? 'Alasan Hapus Pelunasan' : 'Alasan Pengajuan Hapus'} <span className="text-rose-600">*</span>
                 </label>
                 <textarea
                   rows="3"
@@ -1124,9 +1190,17 @@ export default function HistoryTransaction({
                 cameraTitle="Ambil Foto Lampiran Hapus Nota"
               />
 
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 font-medium">
-                <strong>Catatan:</strong> Nota tidak akan langsung terhapus permanen dari sistem. Status akan berubah menjadi <strong>Pending Approval</strong> dan menunggu persetujuan dari Aplikasi Utama / Manager.
-              </div>
+              {deleteModalPaid && deleteMode === 'void' ? (
+                <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl text-[11px] text-sky-900 font-medium">
+                  <strong>Catatan:</strong> Sampai disetujui SuperApp, pembayaran tetap tercatat. Setelah disetujui, <strong>pembayaran terakhir</strong> dibatalkan:
+                  status bayar turun (Lunas → DP / Belum Bayar), revenue berkurang di tanggal bayar aslinya, dan Potong Saldo Member dikembalikan ke saldo.
+                </div>
+              ) : (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 font-medium">
+                  <strong>Catatan:</strong> Nota tidak akan langsung terhapus permanen dari sistem. Status akan berubah menjadi <strong>Pending Approval</strong> dan menunggu persetujuan dari Aplikasi Utama / Manager.
+                  {deleteModalPaid && <> Pembayaran nota ini otomatis diajukan sebagai <strong>Refund</strong>.</>}
+                </div>
+              )}
             </div>
 
             <div className="p-4 bg-slate-50 border-t border-[#e0e0e0] flex justify-end gap-2 shrink-0">
@@ -1144,7 +1218,7 @@ export default function HistoryTransaction({
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs cursor-pointer flex items-center gap-1.5 shadow-2xs"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                <span>{isSubmittingDelete ? 'Mengirim...' : 'Kirim Request Hapus'}</span>
+                <span>{isSubmittingDelete ? 'Mengirim...' : deleteModalPaid && deleteMode === 'void' ? 'Kirim Request Hapus Pelunasan' : 'Kirim Request Hapus'}</span>
               </button>
             </div>
           </div>
