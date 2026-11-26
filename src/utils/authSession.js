@@ -92,28 +92,34 @@ export function isHqUser() {
 }
 
 export const DELIVERY_ROLE = 'Delivery Staff';
+export const FRONTLINER_ROLE = 'Frontliner';
 
-/** Delivery buat nota di rumah customer, jadi tidak wajib open shift. */
 export function isDeliveryStaff() {
   return localStorage.getItem('activeRole') === DELIVERY_ROLE;
 }
 
-/**
- * Karyawan outlet Waschen (company_id = 5) wajib buka shift sebelum akses menu POS,
- * kecuali outlet aktif diset tanpa shift (mst_outlet.requires_shift = 0, diatur admin di SuperApp).
- * Delivery dikecualikan — notanya diklaim frontliner saat open shift berikutnya.
- */
-export function requiresShiftGate() {
-  return localStorage.getItem('companyId') === '5' && !isDeliveryStaff() && activeOutletRequiresShift();
+/** Role kosong ikut Frontliner (default login), supaya tidak lolos gerbang shift tanpa sengaja. */
+function isFrontliner() {
+  const role = (localStorage.getItem('activeRole') || '').trim();
+  return !role || role === FRONTLINER_ROLE;
 }
 
 /**
- * Delivery & Manajemen tidak wajib shift, tapi tetap melihat badge shift dan BOLEH open/close shift
- * (sebagian kurir memang bisa menjalankan shift). Daily Worker tidak termasuk — dia wajib shift.
+ * Hanya Frontliner (company_id = 5) yang wajib buka shift sebelum aksi di POS,
+ * kecuali outlet aktif diset tanpa shift (mst_outlet.requires_shift = 0, diatur admin di SuperApp).
+ */
+export function requiresShiftGate() {
+  return localStorage.getItem('companyId') === '5' && isFrontliner() && activeOutletRequiresShift();
+}
+
+/**
+ * Selain Frontliner (Manajemen, Delivery, Daily Worker, staf produksi) shift opsional:
+ * badge shift tetap tampil dan BOLEH open/close, tapi semua aksi jalan tanpa shift.
+ * Nota & pelunasan tanpa shift jadi tanggung jawab shift outlet berikutnya yang dibuka.
  */
 export function allowsOptionalShift() {
   const companyId = localStorage.getItem('companyId');
-  const optionalRole = companyId === '1' || (companyId === '5' && isDeliveryStaff());
+  const optionalRole = companyId === '1' || (companyId === '5' && !isFrontliner());
   return optionalRole && activeOutletRequiresShift();
 }
 

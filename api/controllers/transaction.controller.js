@@ -16,8 +16,7 @@ import { collectPhotoUrls, insertItemPhotos, loadItemPhotos, MAX_ITEM_PHOTOS } f
 import { safeUnlinkUploadUrl, replaceUploadUrl, safeUnlinkAbsPath, buildUploadPublicUrl, isItemPhotoUrl, ITEM_PHOTO_SUBDIR, DELETE_REQUEST_SUBDIR, REFUND_REQUEST_SUBDIR } from '../middleware/upload.js';
 import { REFUND_TYPES, findPendingRefund, insertRefundRequest, REFUND_SUMMARY_COLUMNS } from '../utils/transactionRefund.js';
 import { toWibYmdCompact, formatWibTime } from '../utils/wib.js';
-import { resolveValidCashier } from '../utils/cashierGuard.js';
-import { getManagementEmployee } from '../utils/employeePin.js';
+import { isShiftOptionalCashier, resolveValidCashier } from '../utils/cashierGuard.js';
 import { auditOrderPricing, priceCheckMode } from '../utils/priceAudit.js';
 import { AVAILABLE_SQL, EFFECTIVE_CATEGORY_ID_SQL } from '../utils/serviceOutlet.js';
 import { insertCleanoxItemsForDetail, getCleanoxItemsByTransaction, attachCleanoxHoldCount } from '../utils/cleanoxItems.js';
@@ -177,17 +176,10 @@ export const createTransaction = async (req, res) => {
     }
 
     // Gate shift — jangan percaya shiftId dari client, tentukan sendiri di server.
-    // Delivery Staff bebas buat nota tanpa shift; notanya diklaim frontliner
-    // saat open shift berikutnya (lihat adoptOrphanTransactions di shift.controller.js).
+    // Selain Frontliner bebas buat nota tanpa shift; notanya diklaim shift outlet
+    // berikutnya yang dibuka (lihat adoptOrphanTransactions di shift.controller.js).
     const resolvedOutletId = parseInt(outletId, 10) || 2;
-    const [roleRows] = await connection.query(
-      'SELECT role FROM mst_role WHERE employee_id = ? LIMIT 1',
-      [resolvedCashierId]
-    );
-    const isDeliveryStaff = roleRows[0]?.role === 'Delivery Staff';
-    // Manajemen (company_id = 1, tanpa mst_role) kedudukannya sama dengan Delivery: shift opsional
-    const isManagementCashier = !roleRows.length && Boolean(await getManagementEmployee(resolvedCashierId));
-    const shiftOptional = isDeliveryStaff || isManagementCashier;
+    const shiftOptional = await isShiftOptionalCashier(connection, resolvedCashierId);
     // Semua outlet (biasa maupun Drop Point) harus aktif untuk membuat nota baru.
     const outletFlags = await getOutletFlags(resolvedOutletId, connection);
     if (outletFlags.is_active !== 1) {
@@ -205,7 +197,7 @@ export const createTransaction = async (req, res) => {
         `SELECT id FROM tr_cashier_shift WHERE outlet_id = ? AND status = 'Open' ORDER BY id DESC LIMIT 1`,
         [resolvedOutletId]
       );
-      // Delivery & Manajemen: shift opsional — ikut shift yang sedang terbuka bila ada, bila tidak notanya yatim
+      // Selain Frontliner: shift opsional — ikut shift yang sedang terbuka bila ada, bila tidak notanya yatim
       if (shiftOptional) {
         resolvedShiftId = openShiftRows[0]?.id || null;
       } else if (!openShiftRows.length) {
@@ -725,6 +717,10 @@ export const getTransactions = async (req, res) => {
       sql += ` AND ((${parts.join(' AND ')})${keepDel})`;
     }
 
+    // delete_requested=only → hanya nota pengajuan hapus (tab Request Delete); exclude → tanpa itu (Riwayat).
+    if (req.query.delete_requested === 'only') sql += ' AND t.is_delete_requested = 1';
+    if (req.query.delete_requested === 'exclude') sql += ' AND COALESCE(t.is_delete_requested, 0) = 0';
+
     if (outlet_id && outlet_id !== 'Semua') {
       sql += ' AND t.outlet_id = ?';
       params.push(outlet_id);
@@ -742,8 +738,13 @@ export const getTransactions = async (req, res) => {
     }
 
     if (payment_status && payment_status !== 'Semua') {
-      sql += ' AND t.payment_status = ?';
-      params.push(payment_status);
+      // Status lama 'Belum Lunas' setara Outstanding (normalizePaymentStatus di frontend)
+      if (payment_status === 'Outstanding') {
+        sql += " AND (t.payment_status IN ('Outstanding', 'Belum Lunas') OR t.payment_status IS NULL OR t.payment_status = '')";
+      } else {
+        sql += ' AND t.payment_status = ?';
+        params.push(payment_status);
+      }
     }
 
     if (category && category !== 'Semua') {
@@ -757,9 +758,26 @@ export const getTransactions = async (req, res) => {
       params.push(s, s, s, s);
     }
 
+    // Paginasi server (page_size diisi): Riwayat bisa menampilkan semua periode tanpa menarik semua nota.
+    const pageSize = Math.min(200, Math.max(1, parseInt(req.query.page_size, 10) || 0));
+    const paginate = Boolean(parseInt(req.query.page_size, 10));
+    let total = null;
+    if (paginate) {
+      const fromIdx = sql.indexOf('      FROM tr_transaction t\n');
+      const [[cnt]] = await myWaschenPool.query(
+        `SELECT COUNT(DISTINCT t.id) AS total ${sql.slice(fromIdx)}`,
+        params
+      );
+      total = Number(cnt?.total) || 0;
+    }
+
     sql += ' ORDER BY t.order_date DESC, t.id DESC';
 
-    if (limit) {
+    if (paginate) {
+      const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+      sql += ' LIMIT ? OFFSET ?';
+      params.push(pageSize, (page - 1) * pageSize);
+    } else if (limit) {
       sql += ' LIMIT ?';
       params.push(parseInt(limit));
     }
@@ -773,6 +791,7 @@ export const getTransactions = async (req, res) => {
     if (lite) {
       return res.status(200).json({
         success: true,
+        ...(paginate ? { total } : {}),
         data: rows.map((order) => ({
           ...order,
           items: [],
@@ -1359,12 +1378,16 @@ export const markTransactionAsPaid = async (req, res) => {
 
     const order = orderRows[0];
     // Shift dicek di outlet nota; outlet tanpa shift (requires_shift = 0) boleh melunasi tanpa shift.
+    // Selain Frontliner shift opsional: pembayarannya masuk ke shift outlet berikutnya yang dibuka
+    // (rentang pembayaran shift dimulai dari closing shift sebelumnya, lihat getShiftPaymentFrom).
     const orderOutletFlags = await getOutletFlags(order.outlet_id, connection);
     const [openShiftRows] = await connection.query(
       `SELECT id FROM tr_cashier_shift WHERE outlet_id = ? AND status = 'Open' ORDER BY id DESC LIMIT 1`,
       [order.outlet_id]
     );
-    if (!openShiftRows.length && orderOutletFlags.requires_shift === 1) {
+    const payActorId = (await resolveValidCashier(connection, req, cashierEmployeeId)) || Number(req.auth?.employeeId) || null;
+    if (!openShiftRows.length && orderOutletFlags.requires_shift === 1
+      && !(await isShiftOptionalCashier(connection, payActorId))) {
       await connection.rollback();
       return res.status(409).json({
         success: false,

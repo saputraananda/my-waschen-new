@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { mapHistoryTxn } from '../mapHistoryTxn.js';
+import { useNetworkRestored } from '../../../hooks/useNetworkRestored.js';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { formatName, formatEmployeeName } from '../../../utils/FormatName';
@@ -31,7 +33,7 @@ import BackdatePaymentField, { paidDatePayload } from '../../../components/Backd
 import ModalLacakNota from '../../../components/ModalLacakNota.jsx';
 import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
 import DateModeFilter from '../../../components/DateModeFilter.jsx';
-import { passesDateModeFilter, getCutoffMonthKey, getCutoffRangeForMonth, formatDateKeyId, toDateKey } from '../../../utils/dateCutoffFilter.js';
+import { getCutoffMonthKey, getCutoffRangeForMonth, formatDateKeyId, toDateKey } from '../../../utils/dateCutoffFilter.js';
 import { formatDateId } from '../../../utils/FilterDate.js';
 import {
   sendCustomerNotaWhatsAppFromOrder,
@@ -47,12 +49,10 @@ import { ProofLink } from '../../../components/ImageLightbox.jsx';
 const SHOW_QUEUE_TABS = false;
 
 export default function HistoryTransaction({
-  transactions,
-  transactionsLoading = false,
-  setTransactions,
-  outlets,
-  fetchTransactions,
-  loadedWindow = null
+  outletId,
+  outlets = [],
+  onTotalChange,
+  onDeleteRequested
 }) {
   const navigate = useNavigate();
   // Shift belum dibuka → lihat & cetak saja (tanpa pelunasan, refund, hapus)
@@ -65,29 +65,93 @@ export default function HistoryTransaction({
   const [paymentFilter, setPaymentFilter] = useState('Semua'); // Semua | Lunas | DP | Outstanding (= enum payment_status)
   const [activeFilterTab, setActiveFilterTab] = useState('Semua'); // Kategori antrean nota (NOTA_QUEUE_TABS)
   const [selectedBranchFilter, setSelectedBranchFilter] = useState(localStorage.getItem('activeOutletName') || 'Semua');
-  const [dateMode, setDateMode] = useState('cutoff'); // 'cutoff' | 'range'
+  // Default semua periode; daftar tetap ringan karena diambil per halaman dari server.
+  const [dateMode, setDateMode] = useState('all'); // 'all' | 'cutoff' | 'range'
   const [rangeStart, setRangeStart] = useState('');
   const [rangeEnd, setRangeEnd] = useState('');
   const [cutoffMonth, setCutoffMonth] = useState(getCutoffMonthKey());
-  const dateFilterState = { mode: dateMode, start: rangeStart, end: rangeEnd, cutoffMonth };
+
+  // Ketik cari → tunggu sebentar baru tanya server
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
+    return () => clearTimeout(id);
+  }, [searchQuery]);
 
   // Pagination: ribuan baris sekaligus membuat halaman berat, jadi tabel dibagi per halaman.
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState(1);
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, paymentFilter, activeFilterTab, selectedBranchFilter, dateMode, rangeStart, rangeEnd, cutoffMonth, pageSize]);
+  }, [debouncedSearch, paymentFilter, activeFilterTab, selectedBranchFilter, dateMode, rangeStart, rangeEnd, cutoffMonth, pageSize, outletId]);
 
-  // Server hanya mengirim nota dalam jendela tanggal yang dipilih: ambil ulang saat filter tanggal berubah.
+  // Ganti outlet di header → filter cabang ikut outlet baru
   useEffect(() => {
-    const win = dateMode === 'cutoff'
+    setSelectedBranchFilter(localStorage.getItem('activeOutletName') || 'Semua');
+  }, [outletId]);
+
+  // Data halaman aktif (pencarian, filter, & paginasi dikerjakan server)
+  const [transactions, setTransactions] = useState([]);
+  const [transactionsLoading, setTransactionsLoading] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const requestSeq = useRef(0);
+
+  const branchOutletId = selectedBranchFilter === 'Semua'
+    ? outletId
+    : (outlets.find((o) => (o.full_name || o.name) === selectedBranchFilter)?.id ?? outletId);
+
+  // Cari = semua periode, supaya nota lama langsung ketemu tanpa ganti filter tanggal.
+  const searchAllPeriods = Boolean(debouncedSearch);
+  const dateWindow = searchAllPeriods || dateMode === 'all'
+    ? {}
+    : dateMode === 'cutoff'
       ? getCutoffRangeForMonth(cutoffMonth)
       : { start: rangeStart || undefined, end: rangeEnd || undefined };
-    // Sudah sesuai dengan data yang dimuat halaman (mis. muat awal): tidak perlu ambil ulang.
-    if ((loadedWindow?.start || undefined) === win.start && (loadedWindow?.end || undefined) === win.end) return;
-    fetchTransactions(undefined, win);
+
+  const fetchTransactions = useCallback(async () => {
+    const seq = ++requestSeq.current;
+    setTransactionsLoading(true);
+    const load = () => axios.get('/api/transactions', {
+      params: {
+        lite: 1,
+        outlet_id: branchOutletId || undefined,
+        date_from: dateWindow.start || undefined,
+        date_to: dateWindow.end || undefined,
+        delete_requested: 'exclude',
+        payment_status: paymentFilter !== 'Semua' ? paymentFilter : undefined,
+        search: debouncedSearch || undefined,
+        page,
+        page_size: pageSize
+      },
+      timeout: 20000
+    });
+    try {
+      let res;
+      try {
+        res = await load();
+      } catch (err) {
+        if (err.response && err.response.status < 500) throw err;
+        res = await load();
+      }
+      if (seq !== requestSeq.current) return; // ada permintaan yang lebih baru
+      if (res.data?.success) {
+        setTransactions(res.data.data.map(mapHistoryTxn));
+        const total = Number(res.data.total) || 0;
+        setTotalCount(total);
+        onTotalChange?.(total);
+      }
+    } catch (err) {
+      if (seq === requestSeq.current) console.error('Gagal mengambil data transaksi:', err);
+    } finally {
+      if (seq === requestSeq.current) setTransactionsLoading(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateMode, rangeStart, rangeEnd, cutoffMonth]);
+  }, [branchOutletId, dateWindow.start, dateWindow.end, paymentFilter, debouncedSearch, page, pageSize]);
+
+  useEffect(() => {
+    fetchTransactions();
+  }, [fetchTransactions]);
+  useNetworkRestored(() => fetchTransactions());
 
   // Samakan bentuk order dengan TrackingService agar kategori antrean konsisten
   const toQueueOrder = (order) => ({
@@ -420,6 +484,7 @@ export default function HistoryTransaction({
       setDeleteReason('');
       setDeleteAttachment(null);
       fetchTransactions();
+      onDeleteRequested?.();
     } catch (err) {
       console.error('Gagal pengajuan hapus nota:', err);
       showAlert({ title: 'Gagal Request Delete', message: err.response?.data?.message || 'Terjadi kesalahan sistem', type: 'error' });
@@ -428,46 +493,16 @@ export default function HistoryTransaction({
     }
   };
 
-  // Filter Active Transactions
-  const activeTransactions = transactions.filter(t => !t.isDeleteRequested);
+  // Satu halaman dari server (cari, cabang, bayar, periode sudah difilter di sana)
+  const activeTransactions = transactions;
+  const displayOrders = SHOW_QUEUE_TABS
+    ? transactions.filter((order) => matchesNotaQueueTab(toQueueOrder(order), activeFilterTab))
+    : transactions;
 
-  const displayOrders = activeTransactions.filter(order => {
-    // Search Filter
-    const q = searchQuery.toLowerCase();
-    const matchesSearch = !q ||
-      order.id.toLowerCase().includes(q) ||
-      (order.customerName && order.customerName.toLowerCase().includes(q)) ||
-      (order.customerPhone && order.customerPhone.includes(q)) ||
-      (order.serviceType && order.serviceType.toLowerCase().includes(q));
-
-    if (!matchesSearch) return false;
-
-    // Payment Filter
-    if (!matchesPaymentFilter(order)) return false;
-
-    // Branch Filter
-    if (selectedBranchFilter !== 'Semua') {
-      const matchesBranch = order.branch === selectedBranchFilter ||
-        (order.branch && selectedBranchFilter && (
-          order.branch.toLowerCase().includes(selectedBranchFilter.toLowerCase()) ||
-          selectedBranchFilter.toLowerCase().includes(order.branch.toLowerCase())
-        ));
-      if (!matchesBranch) return false;
-    }
-
-    // Date Filter (cutoff 26–25 atau range manual)
-    if (!passesDateModeFilter(order, dateFilterState)) return false;
-
-    // Filter kategori antrean (progress + bayar + pengambilan)
-    if (!matchesNotaQueueTab(toQueueOrder(order), activeFilterTab)) return false;
-
-    return true;
-  }).slice().sort((a, b) => (new Date(b.rawDate || 0).getTime() || 0) - (new Date(a.rawDate || 0).getTime() || 0));
-
-  const totalPages = Math.max(1, Math.ceil(displayOrders.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageStart = (currentPage - 1) * pageSize;
-  const pageEnd = Math.min(pageStart + pageSize, displayOrders.length);
+  const pageEnd = pageStart + displayOrders.length;
   // Nomor halaman yang ditampilkan: 1 ... (sekitar halaman aktif) ... terakhir
   const pageNumbers = (() => {
     const set = new Set([1, totalPages, currentPage - 1, currentPage, currentPage + 1]);
@@ -482,19 +517,7 @@ export default function HistoryTransaction({
 
   // Helper for Status Tab Counts
   const getTabCount = (tabName) => {
-    const baseList = activeTransactions.filter(order => {
-      if (!matchesPaymentFilter(order)) return false;
-      if (selectedBranchFilter !== 'Semua') {
-        const matchesBranch = order.branch === selectedBranchFilter ||
-          (order.branch && selectedBranchFilter && (
-            order.branch.toLowerCase().includes(selectedBranchFilter.toLowerCase()) ||
-            selectedBranchFilter.toLowerCase().includes(order.branch.toLowerCase())
-          ));
-        if (!matchesBranch) return false;
-      }
-      if (!passesDateModeFilter(order, dateFilterState)) return false;
-      return true;
-    });
+    const baseList = activeTransactions; // sudah difilter server
 
     if (tabName === 'Semua') return baseList.length;
     return baseList.filter((o) => matchesNotaQueueTab(toQueueOrder(o), tabName)).length;
@@ -643,21 +666,21 @@ export default function HistoryTransaction({
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-base font-extrabold text-[#313030] tracking-tight">Riwayat Transaksi</h3>
               <span className="px-2.5 py-0.5 rounded-full bg-[#5f1340]/10 text-[#5f1340] text-[10px] font-black border border-[#5f1340]/15">
-                {displayOrders.length} Order
+                {totalCount.toLocaleString('id-ID')} Order
               </span>
             </div>
           </div>
 
-          {((dateMode === 'range' && (rangeStart || rangeEnd)) || cutoffMonth !== getCutoffMonthKey() || paymentFilter !== 'Semua' || selectedBranchFilter !== 'Semua' || activeFilterTab !== 'Semua' || searchQuery) && (
+          {(dateMode !== 'all' || paymentFilter !== 'Semua' || selectedBranchFilter !== (localStorage.getItem('activeOutletName') || 'Semua') || activeFilterTab !== 'Semua' || searchQuery) && (
             <button
               type="button"
               onClick={() => {
-                setDateMode('cutoff');
+                setDateMode('all');
                 setRangeStart('');
                 setRangeEnd('');
                 setCutoffMonth(getCutoffMonthKey());
                 setPaymentFilter('Semua');
-                setSelectedBranchFilter('Semua');
+                setSelectedBranchFilter(localStorage.getItem('activeOutletName') || 'Semua');
                 setActiveFilterTab('Semua');
                 setSearchQuery('');
               }}
@@ -749,6 +772,7 @@ export default function HistoryTransaction({
           {/* Periode */}
           <div className="xl:shrink-0">
             <DateModeFilter
+              allowAll
               mode={dateMode}
               onModeChange={setDateMode}
               rangeStart={rangeStart}
@@ -762,6 +786,12 @@ export default function HistoryTransaction({
           </div>
         </div>
       </div>
+
+      {searchAllPeriods && dateMode !== 'all' && (
+        <div className="px-5 py-2 border-b border-[#e0e0e0]/60 bg-amber-50/60 text-[11px] font-bold text-amber-800">
+          Pencarian mencakup semua periode — filter tanggal diabaikan selama mencari.
+        </div>
+      )}
 
       {/* Tab antrean — DISEMBUNYIKAN sementara di semua layar (permintaan user). Ubah SHOW_QUEUE_TABS untuk menampilkan lagi. */}
       {SHOW_QUEUE_TABS && (
@@ -812,7 +842,7 @@ export default function HistoryTransaction({
       ) : (
       <>
       <div className="lg:hidden grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50/40">
-        {displayOrders.slice(pageStart, pageStart + pageSize).map((order) => {
+        {displayOrders.map((order) => {
           const workStatus = order.progressStatus || order.workStatus || 'Antrean';
           const pctTone = percentageTone(getWorkPercentage(workStatus));
           const openDetail = () => navigate(`/riwayat/${order.id}`, { state: { from: '/riwayat' } });
@@ -894,7 +924,7 @@ export default function HistoryTransaction({
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e0e0e0]/40 text-xs font-medium">
-              {displayOrders.slice(pageStart, pageStart + pageSize).map((order) => {
+              {displayOrders.map((order) => {
                 const workStatus = order.progressStatus || order.workStatus || 'Antrean';
                 const workPct = getWorkPercentage(workStatus);
                 const pctTone = percentageTone(workPct);
@@ -985,7 +1015,7 @@ export default function HistoryTransaction({
       {/* Table footer */}
       <div className="px-4 py-2.5 border-t border-[#e0e0e0]/70 bg-slate-50/50 flex flex-col lg:flex-row justify-between lg:items-center gap-2 text-[10px] text-slate-400 font-bold">
         <span>
-          Menampilkan {displayOrders.length === 0 ? 0 : pageStart + 1}–{pageEnd} dari {displayOrders.length} hasil ({activeTransactions.length} nota dimuat)
+          Menampilkan {displayOrders.length === 0 ? 0 : pageStart + 1}–{pageEnd} dari {totalCount.toLocaleString('id-ID')} nota{transactionsLoading ? ' · memuat…' : ''}
         </span>
         <div className="flex flex-wrap items-center gap-1.5">
           <label className="flex items-center gap-1.5 mr-2">

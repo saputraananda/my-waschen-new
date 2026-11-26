@@ -1,4 +1,5 @@
 import path from 'path';
+import { isShiftOptionalCashier, resolveValidCashier } from '../utils/cashierGuard.js';
 import { getEmployeeNames, fillFallbackNames } from '../utils/employeeName.js';
 import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
@@ -181,12 +182,16 @@ export const updateTransactionPayment = async (req, res) => {
 
     const order = orderRows[0];
     // Shift dicek di outlet nota; outlet tanpa shift (requires_shift = 0) boleh melunasi tanpa shift.
+    // Selain Frontliner shift opsional: pembayarannya masuk ke shift outlet berikutnya yang dibuka
+    // (rentang pembayaran shift dimulai dari closing shift sebelumnya, lihat getShiftPaymentFrom).
     const orderOutletFlags = await getOutletFlags(order.outlet_id, connection);
     const [openShiftRows] = await connection.query(
       `SELECT id FROM tr_cashier_shift WHERE outlet_id = ? AND status = 'Open' ORDER BY id DESC LIMIT 1`,
       [order.outlet_id]
     );
-    if (!openShiftRows.length && orderOutletFlags.requires_shift === 1) {
+    const payActorId = (await resolveValidCashier(connection, req, cashierEmployeeId)) || Number(req.auth?.employeeId) || null;
+    if (!openShiftRows.length && orderOutletFlags.requires_shift === 1
+      && !(await isShiftOptionalCashier(connection, payActorId))) {
       await connection.rollback();
       return res.status(409).json({
         success: false,

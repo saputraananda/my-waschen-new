@@ -28,6 +28,8 @@ export default function DateModeFilter({
   onCutoffMonthChange,
   onReset,
   showCutoffLabel = true,
+  /** Tampilkan tombol "Semua" (tanpa batas tanggal) di depan Cutoff/Range. */
+  allowAll = false,
   className = ''
 }) {
   const defaultMonth = useMemo(() => getCutoffMonthKey(), []);
@@ -46,6 +48,20 @@ export default function DateModeFilter({
   return (
     <div className={`inline-flex flex-wrap items-center gap-1.5 ${className}`}>
       <div className="inline-flex rounded-xl border border-[#e0e0e0] bg-white overflow-hidden shadow-2xs shrink-0">
+        {allowAll && (
+          <button
+            type="button"
+            onClick={() => onModeChange?.('all')}
+            className={`px-2.5 py-1.5 text-[10px] font-black transition-colors cursor-pointer border-r border-[#e0e0e0] ${
+              mode === 'all'
+                ? 'bg-[#5f1340] text-white'
+                : 'bg-white text-slate-600 hover:bg-slate-50'
+            }`}
+            title="Semua periode"
+          >
+            Semua
+          </button>
+        )}
         <button
           type="button"
           onClick={() => onModeChange?.('cutoff')}
@@ -71,7 +87,7 @@ export default function DateModeFilter({
         </button>
       </div>
 
-      {mode === 'cutoff' ? (
+      {mode === 'all' ? null : mode === 'cutoff' ? (
         <>
           <select
             value={activeMonthNo}

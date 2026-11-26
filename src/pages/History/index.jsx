@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useNetworkRestored } from '../../hooks/useNetworkRestored.js';
@@ -6,7 +6,7 @@ import HeaderNav from '../../components/HeaderNav';
 import HistoryTransaction from './components/HistoryTransaction';
 import RequestDeleteTransaction from './components/RequestDeleteTransaction';
 import RequestRefundTransaction from './components/RequestRefundTransaction';
-import { getCutoffRange } from '../../utils/dateCutoffFilter.js';
+import { mapHistoryTxn } from './mapHistoryTxn.js';
 import {
   History as HistoryIcon,
   Trash2,
@@ -23,9 +23,6 @@ export default function History() {
   // Active Tab State: 'history' | 'request_delete' | 'request_refund'
   const [activeTab, setActiveTab] = useState('history');
 
-  // Transactions State
-  const [transactions, setTransactions] = useState([]);
-  const [transactionsLoading, setTransactionsLoading] = useState(true);
 
   useEffect(() => {
     document.title = 'Riwayat Transaksi | Waschen Laundry';
@@ -56,103 +53,41 @@ export default function History() {
   }, [navigate]);
 
   useEffect(() => {
-    fetchTransactions(activeOutletId);
+    fetchDeleteRequests(activeOutletId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOutletId]);
 
-  // Jendela tanggal yang diminta ke server (default = cutoff berjalan). Dipakai ulang oleh setiap
-  // refresh agar daftar tidak menarik seluruh nota sepanjang masa. null = tanpa batas tanggal.
-  const dateWindowRef = useRef(getCutoffRange());
-  useNetworkRestored(() => fetchTransactions());
-  const lastListKeyRef = useRef('');
+  // Riwayat mengambil datanya sendiri per halaman (HistoryTransaction). Di sini hanya
+  // nota pengajuan hapus (tab Request Delete + badge) dan jumlah total nota untuk badge.
+  const [deleteRequests, setDeleteRequests] = useState([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
 
-  const fetchTransactions = async (outletId = localStorage.getItem('activeOutletId'), dateWindow, search) => {
-    if (dateWindow !== undefined) dateWindowRef.current = dateWindow;
-    const win = dateWindowRef.current;
-    const load = () => axios.get('/api/transactions', {
-      params: {
-        lite: 1,
-        outlet_id: outletId || undefined,
-        date_from: win?.start || undefined,
-        date_to: win?.end || undefined,
-        include_delete_requested: 1,
-        search: search || undefined
-      },
-      timeout: 20000
-    });
-    // Kosongkan daftar hanya saat outlet/jendela berubah; refresh setelah aksi tidak membuat daftar berkedip.
-    const listKey = `${outletId || ''}|${win?.start || ''}|${win?.end || ''}|${search || ''}`;
-    if (lastListKeyRef.current !== listKey) setTransactions([]);
-    lastListKeyRef.current = listKey;
-    setTransactionsLoading(true);
-    try {
-      let res;
-      try {
-        res = await load();
-      } catch (err) {
-        if (err.response && err.response.status < 500) throw err;
-        res = await load();
-      }
-      if (res.data && res.data.success) {
-        const mapped = res.data.data.map(t => ({
-          id: t.order_no,
-          dbId: t.id,
-          customerId: t.customer_id,
-          customerCode: t.customer_code,
-          customerName: t.customer_name || 'Pelanggan',
-          customerPhone: t.customer_phone || '-',
-          customerTier: t.customer_tier || 'Reguler',
-          customerAddress: t.customer_address || '-',
-          memberBalance: parseFloat(t.member_balance ?? t.customer_deposit_balance ?? t.deposit_balance ?? 0) || 0,
-          customerBalance: parseFloat(t.member_balance ?? t.customer_deposit_balance ?? t.deposit_balance ?? 0) || 0,
-          branch: t.outlet_name || t.home_branch || 'Waschen Laundry Citra Gran',
-          serviceType: t.speed_name ? `${t.order_category} - ${t.speed_name}` : t.order_category,
-          category: t.order_category,
-          qty: t.order_category === 'Kiloan' ? `${t.total_weight_kg} Kg` : `${t.total_pcs} Pcs`,
-          perfume: t.parfume_name || 'Standar',
-          speed: t.speed_name || 'Reguler',
-          subtotal: parseFloat(t.subtotal) || 0,
-          grandTotal: parseFloat(t.grand_total) || 0,
-          paymentStatus: t.payment_status || 'Outstanding',
-          paymentMethod: t.payment_method || '-',
-          paidAmount: parseFloat(t.paid_amount) || 0,
-          paymentProofUrl: t.payment_proof_url || null,
-          progressStatus: t.work_status ?? 10,
-          pickedUpAt: t.picked_up_at || null,
-          cashierName: t.cashier_name || t.cashier_employee_name || (t.cashier_employee_id ? `Kasir #${t.cashier_employee_id}` : 'Kasir Waschen'),
-          createdAt: new Date(t.order_date).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
-          rawDate: t.order_date || null,
-          settledAt: t.settled_at || null,
-          paidAt: t.paid_at || null,
-          notes: t.special_notes || '-',
-          isSmartlink: t.source === 'SMARTLINK',
-          cleanoxHoldCount: Number(t.cleanox_hold_count) || 0,
-          queueNo: t.queue_no ?? null,
-          // Delete Request Fields
-          isDeleteRequested: t.is_delete_requested === 1 || t.is_delete_requested === true,
-          deleteApprovalStatus: t.delete_approval_status,
-          deleteRequestedAt: t.delete_requested_at ? new Date(t.delete_requested_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : null,
-          deleteRequestedRaw: t.delete_requested_at || null,
-          deleteReason: t.delete_reason || null,
-          deleteAttachmentUrl: t.delete_attachment_url || null,
-          // Refund (tr_transaction_refund)
-          refundPendingCount: Number(t.refund_pending_count) || 0,
-          refundCount: Number(t.refund_count) || 0
-        }));
-        setTransactions(mapped);
-      }
-    } catch (err) {
-      console.error('Gagal mengambil data transaksi:', err);
-    } finally {
-      setTransactionsLoading(false);
+  const [refundRequestsCount, setRefundRequestsCount] = useState(0);
+
+  /** Data badge tab: pengajuan hapus (juga isi tab Request Delete) + refund yang masih Pending. */
+  const fetchDeleteRequests = async (outletId = localStorage.getItem('activeOutletId')) => {
+    const [del, ref] = await Promise.allSettled([
+      axios.get('/api/transactions', {
+        params: { lite: 1, outlet_id: outletId || undefined, delete_requested: 'only' },
+        timeout: 20000
+      }),
+      axios.get('/api/transactions/refunds', { params: { outlet_id: outletId || undefined }, timeout: 20000 })
+    ]);
+    if (del.status === 'fulfilled' && del.value.data?.success) {
+      setDeleteRequests(del.value.data.data.map(mapHistoryTxn));
+    } else if (del.status === 'rejected') {
+      console.error('Gagal mengambil pengajuan hapus:', del.reason);
+    }
+    if (ref.status === 'fulfilled' && Array.isArray(ref.value.data?.data)) {
+      setRefundRequestsCount(ref.value.data.data.filter((r) => r.status === 'Pending').length);
     }
   };
+  useNetworkRestored(() => fetchDeleteRequests(activeOutletId));
 
-  const activeTransactionsCount = transactions.filter(t => !t.isDeleteRequested).length;
   // Badge hanya menghitung yang masih menunggu approve; hilang setelah semua disetujui.
-  const deleteRequestsCount = transactions.filter(
-    t => t.isDeleteRequested && !(t.deleteApprovalStatus === 1 || t.deleteApprovalStatus === '1')
+  const deleteRequestsCount = deleteRequests.filter(
+    t => !(t.deleteApprovalStatus === 1 || t.deleteApprovalStatus === '1')
   ).length;
-  const refundRequestsCount = transactions.reduce((sum, t) => sum + (t.refundPendingCount || 0), 0);
 
   return (
     <div className="min-h-screen bg-[#f8f8f8] text-[#313030] flex flex-col font-sans">
@@ -190,7 +125,7 @@ export default function History() {
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
               activeTab === 'history' ? 'bg-[#5f1340] text-white' : 'bg-slate-200 text-slate-700'
             }`}>
-              {activeTransactionsCount}
+              {historyTotal}
             </span>
           </button>
 
@@ -233,12 +168,10 @@ export default function History() {
 
         {activeTab === 'history' && (
           <HistoryTransaction
-            transactions={transactions}
-            transactionsLoading={transactionsLoading}
-            setTransactions={setTransactions}
+            outletId={activeOutletId}
             outlets={outlets}
-            fetchTransactions={fetchTransactions}
-            loadedWindow={dateWindowRef.current}
+            onTotalChange={setHistoryTotal}
+            onDeleteRequested={() => fetchDeleteRequests(activeOutletId)}
           />
         )}
         {activeTab === 'request_refund' && (
@@ -246,7 +179,7 @@ export default function History() {
         )}
         {activeTab === 'request_delete' && (
           <RequestDeleteTransaction
-            transactions={transactions}
+            transactions={deleteRequests}
             outlets={outlets}
           />
         )}

@@ -77,7 +77,27 @@ export async function getRevenueSplit({ outletId, from, to = null }, conn = myWa
   return { tunai, nonTunai, total: tunai + nonTunai, notaCount: num(cnt?.n), byMethod };
 }
 
-/** Revenue sebuah shift = pembayaran yang masuk antara opened_at dan closed_at (atau sekarang). */
-export function getShiftRevenue(shift, conn = myWaschenPool) {
-  return getRevenueSplit({ outletId: shift.outlet_id, from: shift.opened_at, to: shift.closed_at || null }, conn);
+/**
+ * Awal rentang pembayaran sebuah shift = tepat setelah closing shift sebelumnya di outlet itu
+ * (fallback opened_at bila belum pernah ada closing). Selain Frontliner boleh menerima pembayaran
+ * saat tidak ada shift terbuka; uang di sela antar-shift itu jadi tanggung jawab shift berikutnya,
+ * sama seperti nota yatim (adoptOrphanTransactions). Rentang antar-shift tidak tumpang tindih
+ * karena hanya satu shift boleh terbuka per outlet.
+ */
+export async function getShiftPaymentFrom(shift, conn = myWaschenPool) {
+  if (!shift?.opened_at) return shift?.opened_at || null;
+  const [[row]] = await conn.query(
+    `SELECT DATE_ADD(MAX(closed_at), INTERVAL 1 SECOND) AS from_at
+     FROM tr_cashier_shift
+     WHERE outlet_id = ? AND id <> ? AND status = 'Closed'
+       AND closed_at IS NOT NULL AND closed_at <= ?`,
+    [shift.outlet_id, shift.id || 0, shift.opened_at]
+  );
+  return row?.from_at || shift.opened_at;
+}
+
+/** Revenue sebuah shift = pembayaran sejak closing shift sebelumnya sampai closed_at (atau sekarang). */
+export async function getShiftRevenue(shift, conn = myWaschenPool) {
+  const from = await getShiftPaymentFrom(shift, conn);
+  return getRevenueSplit({ outletId: shift.outlet_id, from, to: shift.closed_at || null }, conn);
 }

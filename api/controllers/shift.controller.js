@@ -2,7 +2,7 @@ import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 import { getOutletFlags } from '../utils/dropPointOutlet.js';
 import { getEmployeeNames, formatEmployeeLabel } from '../utils/employeeNames.js';
-import { getShiftRevenue } from '../utils/revenue.js';
+import { getShiftPaymentFrom, getShiftRevenue } from '../utils/revenue.js';
 import { findEmployeeIdByPin, getManagementEmployee } from '../utils/employeePin.js';
 import { todayWibISO, formatWibWeekdayUpper, formatWibDateLong } from '../utils/wib.js';
 
@@ -118,7 +118,7 @@ SISA PETTY CASH : ${formatRp(sisaPetty)}
 /**
  * Klaim nota yatim (shift_id NULL) ke shift yang baru dibuka.
  *
- * Delivery Staff boleh buat nota di rumah customer tanpa open shift, jadi notanya
+ * Selain Frontliner (Delivery, Manajemen, Daily Worker, staf produksi) boleh buat nota tanpa open shift, jadi notanya
  * lahir tanpa shift_id. Frontliner yang open shift berikutnya mengambil alih
  * tanggung jawab revenue-nya. Uang tunainya diserahkan kurir ke frontliner secara
  * fisik (di luar sistem); checklist nota saat closing yang jadi bukti serah terima.
@@ -352,7 +352,7 @@ export const openShift = async (req, res) => {
       [eid, result.insertId]
     );
 
-    // Adopsi nota yatim (dibuat Delivery Staff tanpa shift) ke shift yang baru dibuka.
+    // Adopsi nota yatim (dibuat non-Frontliner tanpa shift) ke shift yang baru dibuka.
     // Batas bawah = closed_at Final terakhir, supaya nota dini hari ikut terjaring
     // tapi tidak menyedot nota dari hari-hari sebelumnya.
     const adoptedCount = await adoptOrphanTransactions(oid, result.insertId);
@@ -371,7 +371,7 @@ export const openShift = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: adoptedCount > 0
-        ? `Shift ${sn === 1 ? 'Pagi' : 'Siang'} dibuka. ${adoptedCount} nota delivery masuk ke tanggung jawab shift ini.`
+        ? `Shift ${sn === 1 ? 'Pagi' : 'Siang'} dibuka. ${adoptedCount} nota tanpa shift masuk ke tanggung jawab shift ini.`
         : `Shift ${sn === 1 ? 'Pagi' : 'Siang'} berhasil dibuka`,
       adoptedTransactions: adoptedCount,
       data: await enrichShiftRow(created[0])
@@ -425,11 +425,14 @@ export const resumeShift = async (req, res) => {
 };
 
 /**
- * Daftar Daily Report: nota yang ada pembayaran (DP/Lunas/Pelunasan) di rentang shift,
+ * Daftar Daily Report: nota yang ada pembayaran (DP/Lunas/Pelunasan) di rentang shift
+ * (sejak closing shift sebelumnya sampai closing shift ini),
  * apa pun tanggal nota dibuat. Nota baru outstanding tidak masuk.
  * is_paid_here = tunai/non-tunai dihitung dari nominal bayar di shift ini.
  */
 async function getShiftPaidTxns(shift) {
+  // Sejak closing shift sebelumnya: pembayaran saat tidak ada shift terbuka ikut ke shift ini
+  const paidFrom = await getShiftPaymentFrom(shift);
   const [rows] = await myWaschenPool.query(
     `SELECT t.id, t.order_no, t.order_date, t.grand_total, t.payment_status,
             t.cashier_employee_id, t.shift_id,
@@ -452,7 +455,7 @@ async function getShiftPaidTxns(shift) {
      LEFT JOIN tr_shift_txn_verify v ON v.transaction_id = t.id AND v.shift_id = ?
      WHERE t.outlet_id = ? AND t.is_delete_requested = 0
      ORDER BY p.last_paid_at ASC`,
-    [shift.opened_at, shift.closed_at || null, shift.id, shift.outlet_id]
+    [paidFrom, shift.closed_at || null, shift.id, shift.outlet_id]
   );
   return rows.map((t) => ({
     ...t,
