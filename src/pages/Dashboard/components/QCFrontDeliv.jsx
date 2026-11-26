@@ -246,8 +246,10 @@ function QcSheet({ target, onClose, onSaved }) {
       setError(handover ? 'Serah terima wajib minimal 1 foto.' : 'QC wajib minimal 1 foto.');
       return;
     }
-    if (needBags && bags.some((b) => !(Number(b.qty) > 0))) {
-      setError('Isi jumlah pakaian di setiap plastik.');
+    // Jumlah per plastik opsional; tapi plastik yang dirinci jenis pakaiannya wajib ada jumlahnya
+    const noQtyIdx = needBags ? bags.findIndex((b) => !(Number(b.qty) > 0) && kgBagSum(b) > 0) : -1;
+    if (noQtyIdx >= 0) {
+      setError(`Plastik ${noQtyIdx + 1}: isi jumlah pakaian, atau kosongkan rinciannya.`);
       return;
     }
     if (needBags) {
@@ -273,7 +275,11 @@ function QcSheet({ target, onClose, onSaved }) {
       fd.append('wa_contacted', stage === 'frontliner' && waContacted ? '1' : '0');
       if (askIroning) fd.append('requires_ironing', requiresIroning ? '1' : '0');
       if (needBags) {
-        fd.append('bags', JSON.stringify(bags.map((b, i) => ({ bag_no: i + 1, qty_pcs: Number(b.qty) }))));
+        // Plastik yang dikosongkan tidak dikirim (rincian plastik Frontliner opsional)
+        const filledBags = bags
+          .map((b, i) => ({ bag_no: i + 1, qty_pcs: Number(b.qty) }))
+          .filter((b) => b.qty_pcs > 0);
+        if (filledBags.length) fd.append('bags', JSON.stringify(filledBags));
         const kgItems = bags.flatMap((b, i) => [
           ...Object.entries(b.kg)
             .filter(([, q]) => Number(q) > 0)
@@ -318,7 +324,7 @@ function QcSheet({ target, onClose, onSaved }) {
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Rincian Plastik — {STAGE_LABEL[stage] || stage}</p>
               <p className="text-[10.5px] text-slate-500 leading-snug mb-2">
-                Rinci jenis pakaian boleh dilewati (dikerjakan Tim Cuci).
+                Opsional — jumlah plastik & rincian jenis pakaian boleh dikosongkan (dihitung Tim Cuci).
               </p>
               <div className="flex flex-col gap-2">
                 {bags.map((b, i) => {
