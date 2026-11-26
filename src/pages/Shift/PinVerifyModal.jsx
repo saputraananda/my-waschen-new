@@ -16,6 +16,9 @@ export default function PinVerifyModal({
   mode = 'pin',
   onCancel,
   onVerified,
+  /** Bila diisi: PIN wajib milik karyawan ini (mis. close shift = akun yang login). */
+  requireEmployeeId = null,
+  requireEmployeeMessage = 'PIN tidak sesuai dengan akun yang sedang login.',
   title = 'Konfirmasi PIN Kasir',
   description = 'Masukkan PIN 4 digit Anda untuk atribusi kasir.',
   submitLabel = 'Lanjut Simpan Nota'
@@ -55,8 +58,13 @@ export default function PinVerifyModal({
           setError('PIN valid tetapi identitas kasir tidak ditemukan');
           return;
         }
+        if (requireEmployeeId && Number(data.employeeId) !== Number(requireEmployeeId)) {
+          setError(requireEmployeeMessage);
+          return;
+        }
         await Promise.resolve(
           onVerified({
+            pin: cleanPin,
             employeeId: Number(data.employeeId),
             role: data.role,
             fullName: data.fullName || null,

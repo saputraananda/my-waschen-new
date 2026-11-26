@@ -8,7 +8,8 @@ import {
   closeShift,
   getDailyReport,
   verifyPin,
-  resumeShift
+  resumeShift,
+  getShiftLogins
 } from '../controllers/shift.controller.js';
 
 const router = Router();
@@ -20,6 +21,7 @@ router.post('/open', openShift);
 router.post('/verify-pin', verifyPin);
 router.post('/:id/resume', resumeShift);
 router.get('/:id/transactions', getShiftTransactions);
+router.get('/:id/logins', getShiftLogins);
 router.post('/:id/verify-txn', verifyShiftTxn);
 router.post('/:id/close', closeShift);
 

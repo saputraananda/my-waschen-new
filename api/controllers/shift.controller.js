@@ -1,3 +1,6 @@
+import jwt from 'jsonwebtoken';
+import { getSessionSecret } from '../utils/sessionSecret.js';
+import { insertPosLoginLog } from '../utils/posLoginLog.js';
 import { myWaschenPool } from '../db/pool.js';
 import { emitDashboardRefresh } from '../socket.js';
 import { getOutletFlags } from '../utils/dropPointOutlet.js';
@@ -408,6 +411,21 @@ export const resumeShift = async (req, res) => {
       [employeeId, shiftId]
     );
 
+    // Akun lain yang masuk ke shift yang sudah dibuka FL → dicatat (siapa, kapan, perangkat)
+    const [roleRows] = await myWaschenPool.query(
+      'SELECT role, employee_name FROM mst_role WHERE employee_id = ? LIMIT 1',
+      [employeeId]
+    );
+    const names = await getEmployeeNames([employeeId]);
+    await insertPosLoginLog(req, {
+      event: 'Masuk Shift',
+      employeeId,
+      employeeName: roleRows[0]?.employee_name || names[employeeId] || null,
+      role: roleRows[0]?.role || null,
+      outletId: rows[0].outlet_id,
+      shiftId
+    });
+
     const [updated] = await myWaschenPool.query(
       'SELECT * FROM tr_cashier_shift WHERE id = ?',
       [shiftId]
@@ -590,6 +608,24 @@ export const closeShift = async (req, res) => {
     const shift = shiftRows[0];
     if (shift.status !== 'Open') {
       return res.status(400).json({ success: false, message: 'Shift sudah ditutup' });
+    }
+
+    // Close oleh orang selain pembuka shift (backup): wajib PIN, dan PIN harus milik akun yang login.
+    const closerId = parseInt(cashierEmployeeId, 10) || null;
+    const sessionEmployeeId = Number(readSessionEmployeeId(req)) || null;
+    if (closerId && Number(shift.cashier_employee_id) !== closerId) {
+      const pin = String(req.body.codePin || '').replace(/\D/g, '');
+      if (pin.length !== 4) {
+        return res.status(400).json({ success: false, message: 'PIN wajib diisi untuk close shift oleh kasir pengganti' });
+      }
+      const pinOwner = await findEmployeeIdByPin(pin);
+      if (!pinOwner) {
+        return res.status(401).json({ success: false, message: 'PIN tidak ditemukan' });
+      }
+      const loggedIn = sessionEmployeeId || closerId;
+      if (Number(pinOwner) !== Number(loggedIn) || Number(pinOwner) !== closerId) {
+        return res.status(403).json({ success: false, message: 'PIN tidak sesuai dengan akun yang sedang login' });
+      }
     }
 
     const sn = Number(shift.shift_number);
@@ -872,6 +908,44 @@ export const verifyPin = async (req, res) => {
     });
   } catch (error) {
     console.error('verifyPin:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/** employee_id dari token sesi POS (opsional; route shift tidak memakai requirePosAuth). */
+function readSessionEmployeeId(req) {
+  const raw = String(req.headers?.authorization || '');
+  const token = raw.startsWith('Bearer ') ? raw.slice(7).trim() : '';
+  if (!token) return null;
+  try {
+    return jwt.verify(token, getSessionSecret())?.employeeId || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * GET /api/shifts/:id/logins — siapa saja yang login / masuk ke shift ini:
+ * baris "Masuk Shift" untuk shift ini + "Login" di outlet itu selama shift berjalan.
+ */
+export const getShiftLogins = async (req, res) => {
+  try {
+    const shiftId = parseInt(req.params.id, 10);
+    const [[shift]] = await myWaschenPool.query('SELECT id, outlet_id, opened_at, closed_at FROM tr_cashier_shift WHERE id = ?', [shiftId]);
+    if (!shift) return res.status(404).json({ success: false, message: 'Shift tidak ditemukan' });
+    const [rows] = await myWaschenPool.query(
+      `SELECT id, event, employee_id, employee_name, role, outlet_id, shift_id, ip_address, user_agent, created_at
+       FROM tr_pos_login_log
+       WHERE shift_id = ?
+          OR (event = 'Login' AND outlet_id = ? AND created_at >= ? AND created_at <= COALESCE(?, NOW()))
+       ORDER BY created_at DESC, id DESC
+       LIMIT 300`,
+      [shift.id, shift.outlet_id, shift.opened_at, shift.closed_at]
+    );
+    return res.status(200).json({ success: true, data: rows });
+  } catch (error) {
+    if (error?.code === 'ER_NO_SUCH_TABLE') return res.status(200).json({ success: true, data: [] });
+    console.error('getShiftLogins:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };

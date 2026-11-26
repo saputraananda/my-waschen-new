@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { getCutoffMonthKey } from '../../../utils/dateCutoffFilter.js';
 import {
   computeCarryDailyTarget,
@@ -20,8 +21,24 @@ export default function StatCard({
   setActiveFilterTab
 }) {
   const [periodTarget, setPeriodTarget] = useState(monthlyTargetProp || 0);
-  // Modal rincian per kartu: 'revenue' | 'today' | 'piutang'
-  const [detail, setDetail] = useState(null);
+  // Modal rincian per kartu: 'revenue' | 'today' | 'piutang'.
+  // Kembali dari rincian nota → state history berisi dashReopen → modal yang sama dibuka lagi.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const reopen = location.state?.dashReopen || null;
+  const [detail, setDetail] = useState(reopen?.modal || null);
+  useEffect(() => {
+    if (reopen?.modal) setDetail(reopen.modal);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
+  // Tutup modal → hapus dashReopen supaya tidak terbuka lagi saat halaman dimuat ulang
+  const closeDetail = () => {
+    setDetail(null);
+    if (location.state?.dashReopen) {
+      const { dashReopen, ...rest } = location.state;
+      navigate(`${location.pathname}${location.search}`, { replace: true, state: Object.keys(rest).length ? rest : null });
+    }
+  };
   const outletForDetail = activeOutletId || localStorage.getItem('activeOutletId') || undefined;
 
   const resolvedFilter = useMemo(
@@ -155,9 +172,9 @@ export default function StatCard({
         />
       </div>
 
-      <RevenueDetailModal open={detail === 'revenue'} onClose={() => setDetail(null)} outletId={outletForDetail} />
-      <TodayPaymentsModal open={detail === 'today'} onClose={() => setDetail(null)} outletId={outletForDetail} />
-      <PiutangDetailModal open={detail === 'piutang'} onClose={() => setDetail(null)} outletId={outletForDetail} />
+      <RevenueDetailModal open={detail === 'revenue'} onClose={closeDetail} outletId={outletForDetail} initial={reopen?.modal === 'revenue' ? reopen : null} />
+      <TodayPaymentsModal open={detail === 'today'} onClose={closeDetail} outletId={outletForDetail} initial={reopen?.modal === 'today' ? reopen : null} />
+      <PiutangDetailModal open={detail === 'piutang'} onClose={closeDetail} outletId={outletForDetail} initial={reopen?.modal === 'piutang' ? reopen : null} />
     </div>
   );
 }

@@ -119,6 +119,23 @@ export function ShiftProvider({ children }) {
     }
   }, []);
 
+  /**
+   * Shift outlet sudah dibuka FL → akun apa pun yang login langsung ikut bekerja di shift itu
+   * (tanpa konfirmasi "Lanjutkan"). Server mencatat "Masuk Shift" (log login + terakhir aktif).
+   * Aksi nota / pelunasan tetap meminta PIN masing-masing.
+   */
+  const joinShiftSilently = useCallback((shift) => {
+    if (!shift?.id) return;
+    syncShiftToStorage(shift);
+    markShiftSessionConfirmed(shift.id);
+    setSessionReady(true);
+    const empId = getLoggedInEmployeeId();
+    if (!empId) return;
+    axios.post(`/api/shifts/${shift.id}/resume`, { employeeId: empId }, { timeout: 15000 })
+      .then((r) => { if (r.data?.success && r.data.data) setActiveShift(r.data.data); })
+      .catch(() => {});
+  }, []);
+
   const applyOpenShift = useCallback((shift) => {
     setActiveShift(shift);
     syncShiftToStorage(shift);
@@ -191,11 +208,13 @@ export function ShiftProvider({ children }) {
         const isSameOpener = Number(shift.cashier_employee_id) === Number(currentEmpId);
         const alreadyConfirmed = isShiftSessionConfirmed(shift.id);
 
-        const confirmed = alreadyConfirmed || isSameOpener;
-        setSessionReady(confirmed);
-        if (confirmed) {
+        if (alreadyConfirmed || isSameOpener) {
+          setSessionReady(true);
           syncShiftToStorage(shift);
           markShiftSessionConfirmed(shift.id);
+        } else {
+          // Akun lain di shift yang sedang berjalan: langsung masuk, tanpa modal "Lanjutkan"
+          joinShiftSilently(shift);
         }
       } else {
         setActiveShift(null);
@@ -212,7 +231,7 @@ export function ShiftProvider({ children }) {
     } finally {
       setShiftChecked(true);
     }
-  }, [isLoginPage, outletId]);
+  }, [isLoginPage, outletId, joinShiftSilently]);
 
   useEffect(() => {
     // Sync outlet/token tanpa force refetch tiap ganti path
@@ -319,15 +338,11 @@ export function ShiftProvider({ children }) {
       return false;
     }
 
-    if (!isShiftSessionConfirmed(activeShift.id)) {
-      setPendingNavigatePath(path);
-      setIsResumeModalOpen(true);
-      return false;
-    }
+    if (!isShiftSessionConfirmed(activeShift.id)) joinShiftSilently(activeShift);
 
     navigate(path);
     return true;
-  }, [activeShift, mustGateShift, navigate, requestOpenShift, shiftChecked]);
+  }, [activeShift, joinShiftSilently, mustGateShift, navigate, requestOpenShift, shiftChecked]);
 
   /** Dipanggil dari tombol Order Baru / Click To Order */
   const startOrderFlow = useCallback(() => {
@@ -344,14 +359,10 @@ export function ShiftProvider({ children }) {
       return false;
     }
 
-    if (!isShiftSessionConfirmed(activeShift.id)) {
-      setPendingNavigatePath(null);
-      setIsResumeModalOpen(true);
-      return false;
-    }
+    if (!isShiftSessionConfirmed(activeShift.id)) joinShiftSilently(activeShift);
 
     return true;
-  }, [activeShift, mustGateShift, requestOpenShift, shiftChecked]);
+  }, [activeShift, joinShiftSilently, mustGateShift, requestOpenShift, shiftChecked]);
 
   const cancelShiftGate = useCallback(() => {
     setIsOpenShiftModalOpen(false);
@@ -384,12 +395,9 @@ export function ShiftProvider({ children }) {
       return;
     }
 
-    if (!isShiftSessionConfirmed(activeShift.id)) {
-      setPendingNavigatePath(location.pathname);
-      setIsResumeModalOpen(true);
-      navigate('/dashboard', { replace: true });
-    }
+    if (!isShiftSessionConfirmed(activeShift.id)) joinShiftSilently(activeShift);
   }, [
+    joinShiftSilently,
     activeShift,
     hasToken,
     isLoginPage,

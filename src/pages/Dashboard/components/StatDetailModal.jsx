@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Banknote, CalendarDays, ChevronRight, CreditCard, Loader2, Receipt, Search, Wallet, X } from 'lucide-react';
 import DateModeFilter from '../../../components/DateModeFilter.jsx';
 import { getCutoffMonthKey, toDateKey, formatDateKeyId } from '../../../utils/dateCutoffFilter.js';
@@ -273,17 +273,46 @@ function ShareTile({ label, icon: Icon, amount, total, count, active, onClick, a
   );
 }
 
-function PaymentsPanel({ data, oldBeforeKey = null, emptyText, toolbar = null }) {
+/**
+ * Buka rincian nota dari modal. Modal + filternya disimpan di state entry history Dashboard
+ * (dashReopen), lalu tombol kembali (aplikasi / browser) mundur ke entry itu dan StatCard membuka
+ * modal yang sama lagi.
+ */
+export function useOpenNotaFromModal(modal) {
   const navigate = useNavigate();
-  const [kind, setKind] = useState('all'); // all | tunai | nontunai
-  const [method, setMethod] = useState('');
-  const [query, setQuery] = useState('');
-  const [shown, setShown] = useState(PAGE);
+  const location = useLocation();
+  return (orderNo, snapshot = {}) => {
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: { ...(location.state || {}), dashReopen: { modal, ...snapshot } }
+    });
+    navigate(`/riwayat/${orderNo}`, { state: { from: location.pathname, backWithHistory: true } });
+  };
+}
+
+function PaymentsPanel({ data, oldBeforeKey = null, emptyText, toolbar = null, onOpenNota, restore = null }) {
+  const [kind, setKind] = useState(restore?.kind || 'all'); // all | tunai | nontunai
+  const [method, setMethod] = useState(restore?.method || '');
+  const [query, setQuery] = useState(restore?.query || '');
+  const [shown, setShown] = useState(restore?.shown || PAGE);
+  const restoreRef = useRef(restore);
   const { rows, summary, loading, error, truncated } = data;
 
-  // Data baru (periode berganti) → filter kembali ke awal
-  useEffect(() => { setKind('all'); setMethod(''); setShown(PAGE); }, [rows]);
-  useEffect(() => { setShown(PAGE); }, [kind, method, query]);
+  // Data baru (periode berganti) → filter kembali ke awal; kecuali data pertama setelah kembali
+  // dari rincian nota (filter & jumlah baris yang tampil dipulihkan).
+  useEffect(() => {
+    if (restoreRef.current) {
+      if (loading) return;
+      const r = restoreRef.current;
+      restoreRef.current = null;
+      setKind(r.kind || 'all');
+      setMethod(r.method || '');
+      setShown(r.shown || PAGE);
+      return;
+    }
+    setKind('all'); setMethod(''); setShown(PAGE);
+  }, [rows, loading]);
+  useEffect(() => { if (!restoreRef.current) setShown(PAGE); }, [kind, method, query]);
 
   const total = summary?.total || 0;
   const counts = useMemo(() => {
@@ -309,7 +338,7 @@ function PaymentsPanel({ data, oldBeforeKey = null, emptyText, toolbar = null })
   const filteredTotal = useMemo(() => filtered.reduce((s, r) => s + r.amount, 0), [filtered]);
   const visible = filtered.slice(0, shown);
   const toggleKind = (k) => { setKind((cur) => (cur === k ? 'all' : k)); setMethod(''); };
-  const openNota = (r) => navigate(`/riwayat/${r.order_no}`, { state: { from: '/dashboard' } });
+  const openNota = (r) => onOpenNota?.(r.order_no, { panel: { kind, method, query, shown } });
   const isOld = (r) => oldBeforeKey && wibDateKey(r.order_date) < oldBeforeKey;
   const paidLabel = (r) => (oldBeforeKey ? fmtTime(r.paid_at) : fmtDateTime(r.paid_at));
   const isFiltered = kind !== 'all' || method || query.trim();
@@ -484,18 +513,20 @@ function PeriodBar({ label, children }) {
 
 /* ───────────────────────── Kartu 1: Revenue periode ───────────────────────── */
 
-export function RevenueDetailModal({ open, onClose, outletId }) {
-  const [mode, setMode] = useState('cutoff');
-  const [cutoffMonth, setCutoffMonth] = useState(getCutoffMonthKey());
-  const [rangeStart, setRangeStart] = useState('');
-  const [rangeEnd, setRangeEnd] = useState('');
-  // Dibuka ulang → kembali ke cutoff berjalan
+export function RevenueDetailModal({ open, onClose, outletId, initial = null }) {
+  const [mode, setMode] = useState(initial?.mode || 'cutoff');
+  const [cutoffMonth, setCutoffMonth] = useState(initial?.cutoffMonth || getCutoffMonthKey());
+  const [rangeStart, setRangeStart] = useState(initial?.rangeStart || '');
+  const [rangeEnd, setRangeEnd] = useState(initial?.rangeEnd || '');
+  const openNotaFromModal = useOpenNotaFromModal('revenue');
+  // Dibuka ulang → kembali ke cutoff berjalan (atau filter terakhir bila kembali dari rincian nota)
   useEffect(() => {
     if (!open) return;
-    setMode('cutoff');
-    setCutoffMonth(getCutoffMonthKey());
-    setRangeStart('');
-    setRangeEnd('');
+    setMode(initial?.mode || 'cutoff');
+    setCutoffMonth(initial?.cutoffMonth || getCutoffMonthKey());
+    setRangeStart(initial?.rangeStart || '');
+    setRangeEnd(initial?.rangeEnd || '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const range = useMemo(
@@ -508,6 +539,8 @@ export function RevenueDetailModal({ open, onClose, outletId }) {
     <ModalShell open={open} onClose={onClose} icon={Wallet} title="Revenue Periode" subtitle={`Uang masuk · ${range.label}`}>
       <PaymentsPanel
         data={data}
+        restore={initial?.panel}
+        onOpenNota={(orderNo, extra) => openNotaFromModal(orderNo, { mode, cutoffMonth, rangeStart, rangeEnd, ...extra })}
         emptyText="Belum ada pembayaran di periode ini."
         toolbar={(
           <PeriodBar label="Periode">
@@ -537,11 +570,13 @@ const shiftDay = (key, n) => {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 };
 
-export function TodayPaymentsModal({ open, onClose, outletId, dateKey }) {
+export function TodayPaymentsModal({ open, onClose, outletId, dateKey, initial = null }) {
   const today = dateKey || toDateKey(new Date());
-  const [day, setDay] = useState(today);
-  // Dibuka ulang → kembali ke hari ini
-  useEffect(() => { if (open) setDay(today); }, [open, today]);
+  const [day, setDay] = useState(initial?.day || today);
+  const openNotaFromModal = useOpenNotaFromModal('today');
+  // Dibuka ulang → kembali ke hari ini (atau tanggal terakhir bila kembali dari rincian nota)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) setDay(initial?.day || today); }, [open, today]);
   const isToday = day === today;
   const data = usePayments({ open, outletId, start: day, end: day });
   const navBtn = 'h-9 w-9 rounded-xl border border-[#e6dcd5] bg-white grid place-items-center text-slate-600 hover:border-[#5f1340]/40 hover:text-[#5f1340] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed';
@@ -557,6 +592,8 @@ export function TodayPaymentsModal({ open, onClose, outletId, dateKey }) {
       <PaymentsPanel
         data={data}
         oldBeforeKey={day}
+        restore={initial?.panel}
+        onOpenNota={(orderNo, extra) => openNotaFromModal(orderNo, { day, ...extra })}
         emptyText={isToday ? 'Belum ada pembayaran hari ini.' : 'Tidak ada pembayaran di tanggal ini.'}
         toolbar={(
           <PeriodBar label="Tanggal bayar">
@@ -594,25 +631,28 @@ export function TodayPaymentsModal({ open, onClose, outletId, dateKey }) {
 
 /* ───────────────────────── Kartu 3: Piutang ───────────────────────── */
 
-export function PiutangDetailModal({ open, onClose, outletId }) {
-  const navigate = useNavigate();
-  const [mode, setMode] = useState('cutoff');
-  const [cutoffMonth, setCutoffMonth] = useState(getCutoffMonthKey());
-  const [rangeStart, setRangeStart] = useState('');
-  const [rangeEnd, setRangeEnd] = useState('');
-  const [status, setStatus] = useState('');
-  const [query, setQuery] = useState('');
+export function PiutangDetailModal({ open, onClose, outletId, initial = null }) {
+  const openNotaFromModal = useOpenNotaFromModal('piutang');
+  const restoreShownRef = useRef(initial?.shown || null);
+  const [mode, setMode] = useState(initial?.mode || 'cutoff');
+  const [cutoffMonth, setCutoffMonth] = useState(initial?.cutoffMonth || getCutoffMonthKey());
+  const [rangeStart, setRangeStart] = useState(initial?.rangeStart || '');
+  const [rangeEnd, setRangeEnd] = useState(initial?.rangeEnd || '');
+  const [status, setStatus] = useState(initial?.status || '');
+  const [query, setQuery] = useState(initial?.query || '');
   const [shown, setShown] = useState(PAGE);
   const [state, setState] = useState({ loading: true, error: '', rows: [], summary: null, truncated: false });
 
   useEffect(() => {
     if (!open) return;
-    setMode('cutoff');
-    setCutoffMonth(getCutoffMonthKey());
-    setRangeStart('');
-    setRangeEnd('');
-    setStatus('');
-    setQuery('');
+    setMode(initial?.mode || 'cutoff');
+    setCutoffMonth(initial?.cutoffMonth || getCutoffMonthKey());
+    setRangeStart(initial?.rangeStart || '');
+    setRangeEnd(initial?.rangeEnd || '');
+    setStatus(initial?.status || '');
+    setQuery(initial?.query || '');
+    restoreShownRef.current = initial?.shown || null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const range = useMemo(
@@ -638,7 +678,16 @@ export function PiutangDetailModal({ open, onClose, outletId }) {
     return () => { cancelled = true; };
   }, [open, outletId, range.start, range.end]);
 
-  useEffect(() => { setShown(PAGE); }, [status, query, state.rows]);
+  useEffect(() => {
+    // Kembali dari rincian nota: jumlah baris yang tampil dipulihkan setelah data termuat
+    if (restoreShownRef.current) {
+      if (state.loading) return;
+      setShown(restoreShownRef.current);
+      restoreShownRef.current = null;
+      return;
+    }
+    setShown(PAGE);
+  }, [status, query, state.rows, state.loading]);
 
   const { rows, summary, loading, error, truncated } = state;
   const filtered = useMemo(() => rows.filter((r) => {
@@ -648,7 +697,7 @@ export function PiutangDetailModal({ open, onClose, outletId }) {
   const filteredRemaining = useMemo(() => filtered.reduce((s, r) => s + r.remaining, 0), [filtered]);
   const visible = filtered.slice(0, shown);
   const byStatus = summary?.byStatus || {};
-  const openNota = (r) => navigate(`/riwayat/${r.order_no}`, { state: { from: '/dashboard' } });
+  const openNota = (r) => openNotaFromModal(r.order_no, { mode, cutoffMonth, rangeStart, rangeEnd, status, query, shown });
   const pickedUnpaid = rows.filter((r) => r.picked_up).length;
 
   return (

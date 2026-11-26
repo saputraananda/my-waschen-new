@@ -764,27 +764,45 @@ export const getTransactions = async (req, res) => {
     const pageSize = Math.min(200, Math.max(1, parseInt(req.query.page_size, 10) || 0));
     const paginate = Boolean(parseInt(req.query.page_size, 10));
     let total = null;
+    let rows;
     if (paginate) {
-      const fromIdx = sql.indexOf('      FROM tr_transaction t\n');
+      // Cepat untuk semua periode (±120rb nota):
+      //  - hitung total tanpa JOIN (customer/layanan hanya dibutuhkan saat mencari);
+      //  - ambil id halaman ini dulu lewat indeks order_date, baru JOIN kolom lengkap + subquery
+      //    refund untuk 25 baris itu saja (bukan seluruh nota sebelum diurutkan).
+      const FROM_LINE = '      FROM tr_transaction t\n';
+      const fromIdx = sql.indexOf(FROM_LINE);
+      const whereIdx = sql.indexOf('      WHERE 1=1');
+      const selectPart = sql.slice(0, fromIdx);
+      const joinPart = sql.slice(fromIdx + FROM_LINE.length, whereIdx);
+      const wherePart = sql.slice(whereIdx);
+      const searchJoins = search && search.trim()
+        ? ' LEFT JOIN mst_customer c ON c.id = t.customer_id LEFT JOIN mst_service_speed sp ON t.speed_id = sp.id'
+        : '';
       const [[cnt]] = await myWaschenPool.query(
-        `SELECT COUNT(DISTINCT t.id) AS total ${sql.slice(fromIdx)}`,
+        `SELECT COUNT(*) AS total FROM tr_transaction t${searchJoins} ${wherePart}`,
         params
       );
       total = Number(cnt?.total) || 0;
-    }
-
-    sql += ' ORDER BY t.order_date DESC, t.id DESC';
-
-    if (paginate) {
       const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-      sql += ' LIMIT ? OFFSET ?';
-      params.push(pageSize, (page - 1) * pageSize);
-    } else if (limit) {
-      sql += ' LIMIT ?';
-      params.push(parseInt(limit));
+      [rows] = await myWaschenPool.query(
+        `${selectPart}      FROM tr_transaction t
+         JOIN (
+           SELECT t.id FROM tr_transaction t${searchJoins} ${wherePart}
+           ORDER BY t.order_date DESC, t.id DESC
+           LIMIT ? OFFSET ?
+         ) pg ON pg.id = t.id
+${joinPart}      ORDER BY t.order_date DESC, t.id DESC`,
+        [...params, pageSize, (page - 1) * pageSize]
+      );
+    } else {
+      sql += ' ORDER BY t.order_date DESC, t.id DESC';
+      if (limit) {
+        sql += ' LIMIT ?';
+        params.push(parseInt(limit));
+      }
+      [rows] = await myWaschenPool.query(sql, params);
     }
-
-    const [rows] = await myWaschenPool.query(sql, params);
     await attachQueueNo(myWaschenPool, rows);
     await fillFallbackNames(rows, 'cashier_employee_id', 'cashier_name');
     useLegacyCashierName(rows);
@@ -1546,6 +1564,11 @@ export const requestDeleteTransaction = async (req, res) => {
        WHERE id = ?`,
       [reason || 'Request Hapus Nota oleh Kasir', attachmentUrl, order.id]
     );
+    // Siapa yang mengajukan (kolom dari agent/migrate_delete_requested_by.sql; abaikan bila belum dimigrasi)
+    await connection.query(
+      'UPDATE tr_transaction SET delete_requested_by_employee_id = ? WHERE id = ?',
+      [req.auth?.employeeId || null, order.id]
+    ).catch((err) => { if (err?.code !== 'ER_BAD_FIELD_ERROR') throw err; });
 
     if (shouldRefundOnDelete) {
       const reasonSuffix = reason ? ` — ${reason}` : '';

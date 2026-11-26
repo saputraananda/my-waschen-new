@@ -115,6 +115,12 @@ export default function HeaderNav({
   const handleBack = () => {
     // Halaman bertahap (mis. buat nota) mundur satu langkah dulu; return true = sudah ditangani
     if (typeof onBack === 'function' && onBack() === true) return;
+    // Dibuka dari modal (mis. rincian kartu Dashboard): mundur lewat history agar modal & filternya
+    // kembali seperti semula, bukan membuka halaman asal sebagai halaman baru.
+    if (location.state?.backWithHistory && location.key && location.key !== 'default') {
+      navigate(-1);
+      return;
+    }
     const backPath = resolveBackPath();
     if (backPath) {
       navigate(backPath);

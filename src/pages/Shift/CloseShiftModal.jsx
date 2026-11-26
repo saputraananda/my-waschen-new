@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { formatRupiah, parseRupiah } from '../../utils/FormatRupiah.js';
 import { formatEmployeeName } from '../../utils/FormatName.js';
@@ -22,6 +22,7 @@ export default function CloseShiftModal({
   const [revenueNonTunai, setRevenueNonTunai] = useState('');
   const [tab, setTab] = useState('close');
   const [showPinModal, setShowPinModal] = useState(false);
+  const verifiedPinRef = useRef(null);
   const [verifiedCloserId, setVerifiedCloserId] = useState(null);
   // Shift 1: pilih Handover (default) atau Finalisasi. Shift 2: selalu Finalisasi.
   const [closeType, setCloseType] = useState(
@@ -154,7 +155,7 @@ export default function CloseShiftModal({
     }
   };
 
-  const submitClose = async (closingEmployeeId) => {
+  const submitClose = async (closingEmployeeId, codePin) => {
     const resolvedCloserId = closingEmployeeId || verifiedCloserId || parseInt(employeeId, 10);
     setSubmitting(true);
     setError('');
@@ -166,7 +167,8 @@ export default function CloseShiftModal({
         declaredRevenueNonTunai: parseRupiah(revenueNonTunai),
         declaredRevenue: parseRupiah(revenueTunai) + parseRupiah(revenueNonTunai),
         closeType,
-        cashierEmployeeId: resolvedCloserId
+        cashierEmployeeId: resolvedCloserId,
+        codePin: codePin || verifiedPinRef.current || undefined
       });
       if (res.data?.success) {
         const text = res.data.reportText || res.data.data?.report_text || '';
@@ -202,13 +204,16 @@ export default function CloseShiftModal({
         defaultEmployeeId={employeeId}
         mode="employee"
         title="PIN Closing Shift"
-        description={`Shift dibuka oleh ${openerLabel}. Masukkan PIN Anda untuk menutup shift sebagai kasir pengganti.`}
+        description={`Shift dibuka oleh ${openerLabel}. Masukkan PIN akun Anda yang sedang login untuk menutup shift sebagai kasir pengganti.`}
+        requireEmployeeId={employeeId}
+        requireEmployeeMessage="PIN tidak sesuai dengan akun yang sedang login. Gunakan PIN milik akun Anda sendiri."
         submitLabel="Verifikasi & Lanjut Closing"
         onCancel={() => setShowPinModal(false)}
-        onVerified={({ employeeId: pinEmployeeId }) => {
+        onVerified={({ employeeId: pinEmployeeId, pin: enteredPin }) => {
+          verifiedPinRef.current = enteredPin;
           setVerifiedCloserId(pinEmployeeId);
           setShowPinModal(false);
-          submitClose(pinEmployeeId);
+          submitClose(pinEmployeeId, enteredPin);
         }}
       />
     );

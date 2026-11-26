@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { getSessionSecret } from '../../utils/sessionSecret.js';
 import { mainPool, myWaschenPool } from '../../db/pool.js';
 import { listDropPointOutlets, listEventOutlets } from '../../utils/dropPointOutlet.js';
+import { insertPosLoginLog } from '../../utils/posLoginLog.js';
 
 export const loginUser = async (req, res) => {
   const { username, password } = req.body;
@@ -139,6 +140,16 @@ export const loginUser = async (req, res) => {
     const dropPointOutlets = await listDropPointOutlets();
     // Outlet Event (is_event): stand event yang bisa dipilih semua staf di pilihan outlet POS
     const eventOutlets = await listEventOutlets();
+
+    // Log siapa yang login (outlet = outlet penempatan; pilihan outlet aktif tercatat saat Masuk Shift)
+    await insertPosLoginLog(req, {
+      event: 'Login',
+      employeeId: user.employee_id || null,
+      userId: user.user_id,
+      employeeName: user.full_name || user.username,
+      role: assignedRole || (user.company_id === 1 ? 'Management' : null),
+      outletId: assignedOutletId || null
+    });
 
     // Return success response with user and employee info
     return res.status(200).json({
