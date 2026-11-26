@@ -41,6 +41,28 @@ export const REVENUE_PAYMENTS_SQL = `
 
 export const revenuePaymentParams = (from, to) => [from, to, from, to];
 
+/**
+ * Sama persis dengan REVENUE_PAYMENTS_SQL (filter & params sama), ditambah kolom rincian untuk
+ * daftar pembayaran (modal Dashboard): log_id, log_type, cashier_employee_id, is_legacy.
+ * Ubah keduanya bersamaan.
+ */
+export const REVENUE_PAYMENT_DETAIL_SQL = `
+  SELECT pl.id AS log_id, pl.transaction_id, pl.amount, pl.payment_method AS method, pl.created_at AS paid_at,
+         pl.log_type, pl.cashier_employee_id, 0 AS is_legacy
+  FROM tr_payment_log pl
+  WHERE pl.log_type IN ${REVENUE_LOG_TYPES} AND pl.amount > 0
+    AND pl.created_at >= ? AND pl.created_at <= ?
+  UNION ALL
+  SELECT NULL, t0.id, COALESCE(NULLIF(t0.paid_amount, 0), t0.grand_total), t0.payment_method, t0.paid_at,
+         'Lunas', t0.cashier_employee_id, 1
+  FROM tr_transaction t0
+  WHERE t0.payment_status <> 'Outstanding' AND t0.paid_at IS NOT NULL
+    AND t0.paid_at >= ? AND t0.paid_at <= ?
+    AND NOT EXISTS (
+      SELECT 1 FROM tr_payment_log p0
+      WHERE p0.transaction_id = t0.id AND p0.log_type IN ${REVENUE_LOG_TYPES} AND p0.amount > 0
+    )`;
+
 const num = (v) => Number(v) || 0;
 
 /**

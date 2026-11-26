@@ -9,6 +9,7 @@ import {
   resolveStatDateRange,
   summarizePiutang
 } from '../../../utils/dailyTargetCarry.js';
+import { PiutangDetailModal, RevenueDetailModal, TodayPaymentsModal } from './StatDetailModal.jsx';
 
 export default function StatCard({
   orders = [],
@@ -19,6 +20,9 @@ export default function StatCard({
   setActiveFilterTab
 }) {
   const [periodTarget, setPeriodTarget] = useState(monthlyTargetProp || 0);
+  // Modal rincian per kartu: 'revenue' | 'today' | 'piutang'
+  const [detail, setDetail] = useState(null);
+  const outletForDetail = activeOutletId || localStorage.getItem('activeOutletId') || undefined;
 
   const resolvedFilter = useMemo(
     () => dateFilter || { mode: 'cutoff', start: '', end: '', cutoffMonth: getCutoffMonthKey() },
@@ -105,10 +109,6 @@ export default function StatCard({
   const todayTarget = daily.today.effectiveTarget;
   const todayPct = todayTarget > 0 ? Math.min(999, (todayPemasukan / todayTarget) * 100) : 0;
 
-  const scrollToTracking = (tab) => {
-    if (setActiveFilterTab) setActiveFilterTab(tab);
-    document.getElementById('tracking-service-section')?.scrollIntoView({ behavior: 'smooth' });
-  };
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -125,7 +125,7 @@ export default function StatCard({
           footLabel="Target"
           footValue={periodTarget > 0 ? `Rp ${periodTarget.toLocaleString('id-ID')}` : 'belum diatur'}
           aside={<ProgressRing pct={periodPct} tone="brand" />}
-          onClick={() => scrollToTracking('Semua')}
+          onClick={() => setDetail('revenue')}
         />
         <SummaryCard
           label="Hari Ini"
@@ -136,7 +136,7 @@ export default function StatCard({
           footValue={todayTarget > 0 ? `Rp ${todayTarget.toLocaleString('id-ID')}` : 'belum diatur'}
           title={`Target harian termasuk sisa kemarin jika ada · ${asOfKey}`}
           aside={<ProgressRing pct={todayPct} tone="amber" />}
-          onClick={() => scrollToTracking('Semua')}
+          onClick={() => setDetail('today')}
         />
         <SummaryCard
           label="Piutang"
@@ -151,9 +151,13 @@ export default function StatCard({
               <span className="text-[10px] font-bold text-rose-700/80 mt-0.5">nota</span>
             </div>
           )}
-          onClick={() => scrollToTracking('proses_belum_bayar')}
+          onClick={() => setDetail('piutang')}
         />
       </div>
+
+      <RevenueDetailModal open={detail === 'revenue'} onClose={() => setDetail(null)} outletId={outletForDetail} />
+      <TodayPaymentsModal open={detail === 'today'} onClose={() => setDetail(null)} outletId={outletForDetail} />
+      <PiutangDetailModal open={detail === 'piutang'} onClose={() => setDetail(null)} outletId={outletForDetail} />
     </div>
   );
 }

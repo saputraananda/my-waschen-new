@@ -150,6 +150,8 @@ export function countPaidNota(orders) {
 
 export function summarizePiutang(orders) {
   const unpaid = (orders || []).filter((o) => {
+    // Nota pengajuan hapus bukan piutang (sama dengan /api/dashboard/receivables)
+    if (o.isDeleteRequested || Number(o.is_delete_requested) === 1) return false;
     const ps = o.paymentStatus || o.payment_status;
     return ps && ps !== 'Lunas';
   });

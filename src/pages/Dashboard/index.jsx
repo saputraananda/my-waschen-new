@@ -145,6 +145,7 @@ export default function Dashboard() {
           totalAmount: parseFloat(o.grand_total) || 0,
           paidAmount: parseFloat(o.paid_amount) || 0,
           paymentStatus: o.payment_status || 'Outstanding',
+          isDeleteRequested: Number(o.is_delete_requested) === 1,
           paymentMethod: o.payment_method || '-',
           paymentProofUrl: o.payment_proof_url || null,
           workStatus: o.work_status ?? 10,
