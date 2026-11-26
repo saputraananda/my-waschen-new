@@ -1120,7 +1120,12 @@ export default function DetailTransaction() {
                                         {w.source === 'smartlink' && w.qty != null && (
                                           <span className="text-[10px] text-slate-400">{Number(w.qty).toLocaleString('id-ID')} {String(w.unit || '').toLowerCase()}</span>
                                         )}
-                                        {w.qc_status && (
+                                        {w.status === 'skipped' && (
+                                          <span className="rounded border border-amber-200 bg-amber-50 px-1 py-px text-[9px] font-bold text-amber-800" title="Tahap ini dilewati — item langsung di-QC tahap berikutnya">
+                                            Dilewati
+                                          </span>
+                                        )}
+                                        {w.qc_status && w.status !== 'skipped' && (
                                           <span className={`rounded border px-1 py-px text-[9px] font-bold ${w.qc_status === 'aman' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
                                             QC {w.qc_status}
                                           </span>
