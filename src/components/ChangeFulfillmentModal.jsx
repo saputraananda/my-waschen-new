@@ -55,14 +55,7 @@ export default function ChangeFulfillmentModal({
       showAlert?.({ title: 'Pilih Item', message: 'Pilih minimal 1 item.', type: 'warning' });
       return;
     }
-    if (toDelivery && !String(address || '').trim()) {
-      showAlert?.({
-        title: 'Alamat Wajib',
-        message: 'Isi alamat pengantaran supaya tim delivery mudah antar.',
-        type: 'warning'
-      });
-      return;
-    }
+    // Alamat opsional: tim cabang sering menulis alamat di nama customer (mis. "Putra Mahogany Blok C/21")
 
     setSubmitting(true);
     try {
@@ -218,7 +211,7 @@ export default function ChangeFulfillmentModal({
             <div className="space-y-3">
               <div>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1 mb-1.5">
-                  <MapPin className="h-3 w-3" /> Alamat Pengantaran
+                  <MapPin className="h-3 w-3" /> Alamat Pengantaran (opsional)
                 </label>
                 <textarea
                   value={address}

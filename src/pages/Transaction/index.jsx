@@ -794,7 +794,7 @@ export default function TransactionPage() {
     setCurrentStep(1);
   };
 
-  // Check if delivery can be enabled (requires non-empty customer address)
+  // Hanya untuk label & alamat antar; Delivery tetap boleh tanpa alamat (alamat sering ada di nama customer)
   const hasValidAddress = Boolean(selectedCustomer && hasCustomerAddress(selectedCustomer));
 
   // Handle Order Submit & Receipt Generation via Backend API
@@ -905,7 +905,12 @@ export default function TransactionPage() {
       paymentMethod: isOutstanding ? '-' : resolvedPaymentMethod,
       paidAmount: resolvedPaidAmount,
       isDelivery,
-      deliveryAddress: isDelivery ? (selectedCustomer.address || '-') : null,
+      // Alamat kosong → NULL (bukan '-') supaya tampilan antar tetap jatuh ke alamat customer bila nanti diisi
+      deliveryAddress: isDelivery
+        ? ([selectedCustomer.address, selectedCustomer.fullAddress, selectedCustomer.full_address]
+          .map((v) => String(v || '').trim())
+          .find((v) => v && v !== '-') || null)
+        : null,
       deliveryNotes: isDelivery ? generalOrderNotes : null,
       specialNotes: generalOrderNotes,
       items: cartItems.map(item => ({

@@ -262,10 +262,9 @@ export default function Cart({
               </select>
             </div>
 
-            {/* Delivery Toggle (Requires Address) */}
-            <div className={`p-3 border rounded-2xl flex items-center justify-between ${
-              hasValidAddress ? 'bg-[#f8f8f8] border-[#e0e0e0]' : 'bg-slate-50 border-slate-200 opacity-60'
-            }`}>
+            {/* Delivery Toggle — boleh tanpa alamat: tim cabang sering menulis alamat di nama customer
+                (mis. "Putra Mahogany Blok C/21"), kurir tetap bisa antar. */}
+            <div className="p-3 border rounded-2xl flex items-center justify-between bg-[#f8f8f8] border-[#e0e0e0]">
               <div className="flex items-center gap-2.5">
                 <div className={`p-2 rounded-xl ${isDelivery ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
                   <Truck className="h-4 w-4" />
@@ -273,14 +272,13 @@ export default function Cart({
                 <div>
                   <span className="font-extrabold text-xs text-[#313030] block">Layanan Antar (Delivery)</span>
                   <span className="text-[10px] text-slate-400">
-                    {hasValidAddress ? 'Nota wajib diantar ke alamat customer' : 'Alamat belum diisi (Disabled)'}
+                    {hasValidAddress ? 'Nota wajib diantar ke alamat customer' : 'Alamat kosong — kurir pakai info di nama customer'}
                   </span>
                 </div>
               </div>
-              <label className={`relative inline-flex items-center ${hasValidAddress ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+              <label className="relative inline-flex items-center cursor-pointer">
                 <input
                   type="checkbox"
-                  disabled={!hasValidAddress}
                   checked={isDelivery}
                   onChange={(e) => setIsDelivery(e.target.checked)}
                   className="sr-only peer"
