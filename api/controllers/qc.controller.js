@@ -6,7 +6,7 @@ import { isDropPointOutlet } from '../utils/dropPointOutlet.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 6 * 1024 * 1024, files: 5 },
+  limits: { fileSize: 6 * 1024 * 1024 }, // jumlah foto QC tidak dibatasi
   fileFilter: (req, file, cb) => {
     if (!/^image\/(jpeg|jpg|png|webp)$/.test(file.mimetype || '')) {
       cb(new Error('Foto harus berupa jpeg, png, atau webp'));
@@ -17,7 +17,7 @@ const upload = multer({
 });
 
 export const uploadQcPhotos = (req, res, next) => {
-  upload.array('photos', 5)(req, res, (err) => {
+  upload.array('photos')(req, res, (err) => {
     if (err) {
       const message = err.code === 'LIMIT_FILE_SIZE'
         ? 'Ukuran foto terlalu besar (maks 6MB per foto).'

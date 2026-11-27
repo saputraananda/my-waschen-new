@@ -11,7 +11,7 @@ import { burnQcPhoto, buildQcPhotoLines } from '../../../utils/qcPhotoStamp.js';
 import { customerPickLabel } from '../../../utils/customerPickLabel.js';
 import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 
-const MAX_PHOTOS = 5;
+const MAX_PHOTOS = Infinity; // jumlah foto QC tidak dibatasi
 const QC_PAGE_SIZE = 10;
 const QC_PHOTO = { maxEdge: 2560, quality: 0.95 };
 
@@ -484,7 +484,7 @@ function QcSheet({ target, onClose, onSaved }) {
 
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
-              {handover ? 'Foto bukti diantar (wajib)' : qcStatus === 'temuan' ? 'Foto temuan (wajib)' : 'Foto (wajib)'} · maks {MAX_PHOTOS}
+              {handover ? 'Foto bukti diantar (wajib)' : qcStatus === 'temuan' ? 'Foto temuan (wajib)' : 'Foto (wajib)'}{photos.length ? ` · ${photos.length} foto` : ''}
             </p>
             <div className="grid grid-cols-3 gap-2">
               {photos.map((p, i) => (
