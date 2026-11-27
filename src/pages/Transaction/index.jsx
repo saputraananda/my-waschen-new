@@ -828,7 +828,7 @@ export default function TransactionPage() {
     const paidAmountNum = parseRupiah(paidAmountInput);
     const isOutstanding = paymentStatus === 'Outstanding';
     const isCash = mainCategory === 'Tunai';
-    if (!isOutstanding && !isCash && !paymentProofFile) {
+    if (!isOutstanding && !isCash && !isMemberBalanceMethod && !paymentProofFile) {
       showAlert({
         title: 'Bukti Pembayaran Wajib',
         message: 'Foto atau PDF bukti bayar wajib dilampirkan, kecuali nota outstanding.',

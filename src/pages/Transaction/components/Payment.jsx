@@ -93,7 +93,8 @@ export default function Payment({
   const isCash = mainCategory === 'Tunai';
   const hasProof = Boolean(paymentProofFile);
   const amountOk = isLunas || isValidDP;
-  const canSubmit = isOutstanding || ((isCash || hasProof) && amountOk);
+  // Potong saldo member tercatat otomatis di mutasi saldo → tanpa bukti bayar
+  const canSubmit = isOutstanding || ((isCash || isMemberBalanceMethod || hasProof) && amountOk);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full animate-fade-in">
@@ -384,7 +385,11 @@ export default function Payment({
                   </>
                 )}
 
-                {isCash ? (
+                {isMemberBalanceMethod ? (
+                  <p className="text-[11px] font-bold text-slate-500 leading-relaxed">
+                    Potong saldo member: tidak perlu upload bukti pembayaran.
+                  </p>
+                ) : isCash ? (
                   <p className="text-[11px] font-bold text-slate-500 leading-relaxed">
                     Pembayaran tunai: bukti diunggah di halaman selesai, setelah nota dicetak dan ditandatangani customer.
                   </p>

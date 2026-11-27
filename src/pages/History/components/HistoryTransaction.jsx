@@ -26,7 +26,8 @@ import {
   QrCode,
   MessageCircle,
   ChevronDown,
-  Store
+  Store,
+  Loader2
 } from 'lucide-react';
 import CascadingPaymentSelector, { resolvePaymentMethodString } from '../../../components/CascadingPaymentSelector.jsx';
 import PaymentProofFields from '../../../components/PaymentProofFields.jsx';
@@ -96,9 +97,18 @@ export default function HistoryTransaction({
   const [transactionsLoading, setTransactionsLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
   const requestSeq = useRef(0);
+  const listTopRef = useRef(null);
+  // Ganti halaman → langsung tampil memuat + gulir ke atas daftar
+  const goToPage = (n) => {
+    if (n === page) return;
+    setTransactionsLoading(true);
+    setPage(n);
+    listTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
+  // "Semua Cabang" = tanpa filter outlet (server mengembalikan nota semua cabang).
   const branchOutletId = selectedBranchFilter === 'Semua'
-    ? outletId
+    ? undefined
     : (outlets.find((o) => (o.full_name || o.name) === selectedBranchFilter)?.id ?? outletId);
 
   // Cari = semua periode, supaya nota lama langsung ketemu tanpa ganti filter tanggal.
@@ -320,7 +330,7 @@ export default function HistoryTransaction({
       showAlert({ title: 'Sudah Lunas', message: 'Nota ini sudah lunas.', type: 'error' });
       return;
     }
-    if (mainCategory !== 'Tunai' && !proofFile) {
+    if (mainCategory !== 'Tunai' && mainCategory !== 'Potong Saldo Member' && !proofFile) {
       showAlert({
         title: 'Bukti Pembayaran Wajib',
         message: 'Foto atau PDF bukti bayar wajib untuk pembayaran selain tunai.',
@@ -848,10 +858,22 @@ export default function HistoryTransaction({
       {/* Table / empty state ringkas */}
       {displayOrders.length === 0 ? (
         <div className="px-5 py-6 text-center text-xs text-slate-400 font-semibold">
-          {transactionsLoading ? 'Memuat riwayat transaksi…' : 'Tidak ada data riwayat transaksi yang sesuai dengan filter.'}
+          {transactionsLoading ? (
+            <span className="inline-flex items-center gap-2 text-[#5f1340]">
+              <Loader2 className="h-4 w-4 animate-spin" /> Memuat riwayat transaksi…
+            </span>
+          ) : 'Tidak ada data riwayat transaksi yang sesuai dengan filter.'}
         </div>
       ) : (
-      <>
+      <div ref={listTopRef} className="relative" aria-busy={transactionsLoading}>
+      {/* Ganti halaman/filter: data lama diredupkan + indikator memuat, supaya tidak terlihat macet */}
+      {transactionsLoading && (
+        <div className="absolute inset-0 z-10 flex items-start justify-center bg-white/60 backdrop-blur-[1px] pt-16">
+          <span className="sticky top-24 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-extrabold text-[#5f1340] shadow-lg border border-[#5f1340]/15">
+            <Loader2 className="h-4 w-4 animate-spin" /> Memuat halaman {page}…
+          </span>
+        </div>
+      )}
       <div className="lg:hidden grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50/40">
         {displayOrders.map((order) => {
           const workStatus = order.progressStatus || order.workStatus || 'Antrean';
@@ -1020,7 +1042,7 @@ export default function HistoryTransaction({
           </tbody>
         </table>
       </div>
-      </>
+      </div>
       )}
 
       {/* Table footer */}
@@ -1041,8 +1063,8 @@ export default function HistoryTransaction({
           </label>
           <button
             type="button"
-            disabled={currentPage <= 1}
-            onClick={() => setPage(currentPage - 1)}
+            disabled={currentPage <= 1 || transactionsLoading}
+            onClick={() => goToPage(currentPage - 1)}
             className="px-2.5 py-1 rounded-lg bg-[#5f1340]/10 text-[#5f1340] font-extrabold hover:bg-[#5f1340]/20 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             ‹ Sebelumnya
@@ -1053,18 +1075,19 @@ export default function HistoryTransaction({
             <button
               key={n}
               type="button"
-              onClick={() => setPage(n)}
-              className={`min-w-[28px] px-2 py-1 rounded-lg font-extrabold cursor-pointer ${
+              onClick={() => goToPage(n)}
+              disabled={transactionsLoading}
+              className={`min-w-[28px] px-2 py-1 rounded-lg font-extrabold cursor-pointer disabled:cursor-wait inline-flex items-center justify-center ${
                 n === currentPage ? 'bg-[#5f1340] text-white' : 'bg-[#5f1340]/10 text-[#5f1340] hover:bg-[#5f1340]/20'
               }`}
             >
-              {n}
+              {n === currentPage && transactionsLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : n}
             </button>
           )))}
           <button
             type="button"
-            disabled={currentPage >= totalPages}
-            onClick={() => setPage(currentPage + 1)}
+            disabled={currentPage >= totalPages || transactionsLoading}
+            onClick={() => goToPage(currentPage + 1)}
             className="px-2.5 py-1 rounded-lg bg-[#5f1340]/10 text-[#5f1340] font-extrabold hover:bg-[#5f1340]/20 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Berikutnya ›
@@ -1481,6 +1504,10 @@ export default function HistoryTransaction({
                           </p>
                           <PaymentProofFields orderNo={cashProof.orderNo} file={proofFile} onFile={setProofFile} />
                         </div>
+                      ) : mainCategory === 'Potong Saldo Member' ? (
+                        <p className="text-[11px] font-bold text-slate-500 leading-relaxed">
+                          Potong saldo member: tidak perlu upload bukti pembayaran.
+                        </p>
                       ) : mainCategory === 'Tunai' ? (
                         <p className="text-[11px] font-bold text-slate-500 leading-relaxed">
                           Pembayaran tunai: bukti diunggah setelah nota dicetak dan ditandatangani konsumen.

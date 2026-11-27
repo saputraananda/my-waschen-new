@@ -413,7 +413,7 @@ export default function DetailTransaction() {
       showToast('Sudah Lunas', 'Tidak ada sisa tagihan.', 'error');
       return;
     }
-    if (mainCategory !== 'Tunai' && !proofFile) {
+    if (mainCategory !== 'Tunai' && mainCategory !== 'Potong Saldo Member' && !proofFile) {
       showAlert({
         title: 'Bukti Pembayaran Wajib',
         message: 'Foto atau PDF bukti bayar wajib untuk pembayaran selain tunai.',
@@ -1331,6 +1331,10 @@ export default function DetailTransaction() {
                           </p>
                           <PaymentProofFields orderNo={cashProof.orderNo} file={proofFile} onFile={setProofFile} />
                         </div>
+                      ) : mainCategory === 'Potong Saldo Member' ? (
+                        <p className="text-[11px] font-bold text-slate-500 leading-relaxed">
+                          Potong saldo member: tidak perlu upload bukti pembayaran.
+                        </p>
                       ) : mainCategory === 'Tunai' ? (
                         <p className="text-[11px] font-bold text-slate-500 leading-relaxed">
                           Pembayaran tunai: bukti diunggah setelah nota dicetak dan ditandatangani konsumen.
