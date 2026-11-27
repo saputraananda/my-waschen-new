@@ -96,7 +96,7 @@ export default function UploadDepositModal({ row, onUploaded, onCancel }) {
             </span>
             <span className="text-[11px] text-slate-500 font-medium block">
               Closing: {formatWibDateTime(row.closed_at)}
-              {row.declared_revenue != null && <> · Revenue Rp {Number(row.declared_revenue || 0).toLocaleString('id-ID')}</>}
+              {(row.cash_revenue ?? row.declared_revenue) != null && <> · Tunai disetor Rp {Number(row.cash_revenue ?? row.declared_revenue ?? 0).toLocaleString('id-ID')}</>}
             </span>
             {replacing && (
               <span className="text-[10px] text-amber-700 font-bold block">

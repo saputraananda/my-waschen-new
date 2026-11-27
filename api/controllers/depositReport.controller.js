@@ -9,6 +9,33 @@ import {
 } from '../middleware/upload.js';
 import { getEmployeeNames, formatEmployeeLabel } from '../utils/employeeNames.js';
 import { todayWibISO, toWibDateKey } from '../utils/wib.js';
+import { getShiftRevenue } from '../utils/revenue.js';
+
+/**
+ * Yang disetor = uang TUNAI saja (non tunai sudah masuk rekening).
+ * Sumber utama: baris "TUNAI : Rp ..." di report closing (angka yang dideklarasikan kasir);
+ * cadangan: pembayaran tunai sistem di rentang shift.
+ */
+const parseReportTunai = (text) => {
+  const m = String(text || '').match(/^TUNAI\s*:\s*Rp\s*([\d.,]+)/m);
+  if (!m) return null;
+  const n = Number(m[1].replace(/\./g, '').replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+};
+
+const attachCashRevenue = async (row) => {
+  // Utama: tunai yang tercatat sistem di rentang shift — ikut ter-update bila ada pembayaran
+  // yang masuk belakangan (mis. sinkron Smartlink setelah closing). Angka laporan kasir disimpan
+  // sebagai pembanding.
+  const reported = parseReportTunai(row.report_text);
+  let cash = null;
+  try {
+    cash = (await getShiftRevenue(row)).tunai;
+  } catch (_) {
+    cash = reported;
+  }
+  return { ...row, cash_revenue: cash, cash_reported: reported };
+};
 
 /**
  * Setoran tunai = bukti setor uang hasil closing Final (tr_cashier_shift.deposit_*), semua outlet.
@@ -51,6 +78,10 @@ const withDepositStatus = (row, nameMap, todayKey) => {
     opened_at: row.opened_at,
     closed_at: row.closed_at,
     declared_revenue: row.declared_revenue,
+    // Nominal yang wajib disetor (Tunai saja)
+    cash_revenue: row.cash_revenue ?? null,
+    // Tunai menurut laporan closing kasir (null bila tidak ada report)
+    cash_reported: row.cash_reported ?? null,
     status: uploaded ? 'uploaded' : 'pending',
     is_late: lateDays > 0,
     late_days: lateDays,
@@ -66,7 +97,7 @@ const withDepositStatus = (row, nameMap, todayKey) => {
 
 const SELECT_FINAL_CLOSING = `
   SELECT s.id, s.outlet_id, s.shift_number, s.cashier_employee_id, s.closed_by_employee_id,
-         s.opened_at, s.closed_at, s.declared_revenue, s.closing_notes,
+         s.opened_at, s.closed_at, s.declared_revenue, s.closing_notes, s.report_text,
          s.deposit_proof_url, s.deposit_notes, s.deposit_uploaded_at, s.deposit_uploaded_by,
          o.name AS outlet_name, o.full_name AS outlet_full_name
   FROM tr_cashier_shift s
@@ -93,7 +124,8 @@ const loadShiftRows = async ({ outletId, start, end, todayKey }) => {
     r.closed_by_employee_id,
     r.deposit_uploaded_by
   ]));
-  return rows.map((r) => withDepositStatus(r, nameMap, todayKey));
+  const withCash = await Promise.all(rows.map(attachCashRevenue));
+  return withCash.map((r) => withDepositStatus(r, nameMap, todayKey));
 };
 
 /**
@@ -232,7 +264,7 @@ export const uploadDepositProof = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'Bukti setoran berhasil diupload',
-      data: withDepositStatus(updated, nameMap, todayWibISO())
+      data: withDepositStatus(await attachCashRevenue(updated), nameMap, todayWibISO())
     });
   } catch (error) {
     console.error('uploadDepositProof:', error);

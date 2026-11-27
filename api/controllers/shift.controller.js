@@ -34,7 +34,7 @@ const enrichShiftRow = async (row) => {
   };
 };
 
-const buildReportText = async ({ outletId, shift, revenue, pettyExpenses, salesCashExpenses, declaredTunai, declaredNonTunai }) => {
+export const buildReportText = async ({ outletId, shift, revenue, pettyExpenses, salesCashExpenses, declaredTunai, declaredNonTunai }) => {
   let outletName = `Outlet #${outletId}`;
   try {
     const [rows] = await myWaschenPool.query(

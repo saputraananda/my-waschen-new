@@ -130,7 +130,7 @@ export default function DepositReport() {
       .map(([key, items]) => ({
         key,
         items: items.sort((a, b) => new Date(b.closed_at) - new Date(a.closed_at)),
-        revenue: items.reduce((sum, r) => sum + (Number(r.declared_revenue) || 0), 0),
+        revenue: items.reduce((sum, r) => sum + (Number(r.cash_revenue ?? r.declared_revenue) || 0), 0),
         pending: items.filter((r) => r.status !== 'uploaded').length
       }));
   }, [rows]);
@@ -376,10 +376,16 @@ function ClosingItem({ row, dueDays, onUpload }) {
           </p>
         </div>
         <div className="text-right shrink-0">
-          <span className="block text-[10px] sm:text-[11px] text-slate-400 font-semibold">Revenue</span>
+          <span className="block text-[10px] sm:text-[11px] text-slate-400 font-semibold">Tunai disetor</span>
           <span className="block text-sm sm:text-lg font-black text-[#313030] tabular-nums leading-tight">
-            {row.declared_revenue != null ? fmtRp(row.declared_revenue) : '—'}
+            {(row.cash_revenue ?? row.declared_revenue) != null ? fmtRp(row.cash_revenue ?? row.declared_revenue) : '—'}
           </span>
+          {row.cash_reported != null && row.cash_revenue != null
+            && Math.round(row.cash_reported) !== Math.round(row.cash_revenue) && (
+            <span className="block text-[10px] font-bold text-amber-700 tabular-nums">
+              Laporan kasir: {fmtRp(row.cash_reported)}
+            </span>
+          )}
         </div>
       </div>
 
