@@ -286,9 +286,20 @@ export function ShiftProvider({ children }) {
       syncAuthFlags({ authChanged: true });
       window.dispatchEvent(new Event('waschen:outlet-flags-changed'));
     };
+    // Shift ditutup otomatis sistem saat ganti hari → minta open shift baru
+    const onShiftUpdated = (payload) => {
+      if (payload?.action !== 'auto-close') return;
+      const oid = localStorage.getItem('activeOutletId') || outletId || '2';
+      if (payload.outletId && String(payload.outletId) !== String(oid)) return;
+      fetchCurrentShift(oid, { soft: true });
+    };
     socket.on('outlet:updated', onOutletUpdated);
-    return () => socket.off('outlet:updated', onOutletUpdated);
-  }, [hasToken, isLoginPage, syncAuthFlags]);
+    socket.on('shift:updated', onShiftUpdated);
+    return () => {
+      socket.off('outlet:updated', onOutletUpdated);
+      socket.off('shift:updated', onShiftUpdated);
+    };
+  }, [fetchCurrentShift, hasToken, isLoginPage, outletId, syncAuthFlags]);
 
   const confirmResume = useCallback(async () => {
     if (!activeShift?.id || !employeeId) return;

@@ -154,12 +154,116 @@ const adoptOrphanTransactions = async (outletId, shiftId) => {
   return result.affectedRows || 0;
 };
 
+export const AUTO_CLOSE_NOTE =
+  'Ditutup otomatis oleh sistem: shift belum di-close sampai ganti hari (00:00 WIB). '
+  + 'Kas & revenue memakai angka sistem, belum dihitung fisik.';
+
+/**
+ * Ganti hari = ganti tanggung jawab shift. Shift yang masih Open dari tanggal sebelumnya
+ * ditutup otomatis sebagai Final pada jam 23:59:59 tanggal dibukanya (waktu DB = WIB).
+ * - Pembayaran setelah 00:00 otomatis masuk shift berikutnya (rentang pembayaran shift
+ *   dimulai dari closed_at shift sebelumnya + 1 detik).
+ * - Nota yang dibuat setelah 00:00 tapi masih menempel ke shift lama dilepas (shift_id NULL),
+ *   lalu diklaim shift berikutnya yang dibuka (adoptOrphanTransactions).
+ * - Angka kas memakai angka sistem (selisih 0); revenue = pembayaran sistem di rentang shift.
+ * Dipanggil berkala dari index.js dan sebagai pengaman di endpoint shift.
+ */
+export async function autoCloseStaleShifts(outletId = null) {
+  const params = [];
+  let sql = `SELECT *, TIMESTAMP(DATE(opened_at), '23:59:59') AS auto_close_at
+             FROM tr_cashier_shift
+             WHERE status = 'Open' AND opened_at < CURDATE()`;
+  if (outletId) {
+    sql += ' AND outlet_id = ?';
+    params.push(outletId);
+  }
+  const [rows] = await myWaschenPool.query(sql, params);
+  const closedIds = [];
+
+  for (const shift of rows) {
+    try {
+      const closedAt = shift.auto_close_at;
+      const closedShift = { ...shift, closed_at: closedAt };
+      const rev = await getShiftRevenue(closedShift);
+
+      const [pettyOutRows] = await myWaschenPool.query(
+        `SELECT COALESCE(SUM(amount),0) AS total FROM tr_petty_cash
+         WHERE outlet_id = ? AND type = 'Keluar' AND shift_id = ? AND status IN ('Disetujui', 'Pengajuan')
+           AND COALESCE(is_petty_cash, 1) = 1`,
+        [shift.outlet_id, shift.id]
+      );
+      const pettyOut = parseFloat(pettyOutRows[0]?.total) || 0;
+      const expected = parseFloat(shift.expected_cash ?? shift.initial_cash) || 0;
+      const petty = Math.max(0, (parseFloat(shift.initial_petty_cash) || 0) - pettyOut);
+
+      const reportText = await buildReportText({
+        outletId: shift.outlet_id,
+        shift: { ...closedShift, actual_cash: expected, actual_petty_cash: petty },
+        revenue: rev,
+        pettyExpenses: pettyOut,
+        salesCashExpenses: 0
+      });
+
+      const [upd] = await myWaschenPool.query(
+        `UPDATE tr_cashier_shift SET
+           closed_at = ?,
+           closed_by_employee_id = NULL,
+           actual_cash = ?,
+           actual_petty_cash = ?,
+           declared_revenue = ?,
+           system_cash_revenue = ?,
+           system_cash_expense = ?,
+           expected_cash = ?,
+           difference = 0,
+           close_type = 'Final',
+           closing_notes = ?,
+           report_text = ?,
+           status = 'Closed',
+           updated_at = NOW()
+         WHERE id = ? AND status = 'Open'`,
+        [closedAt, expected, petty, rev.total, rev.total, pettyOut, expected,
+          AUTO_CLOSE_NOTE, reportText, shift.id]
+      );
+      if (!upd.affectedRows) continue; // sudah ditutup proses lain
+
+      // Nota setelah 00:00 = tanggung jawab shift berikutnya
+      await myWaschenPool.query(
+        'UPDATE tr_transaction SET shift_id = NULL WHERE shift_id = ? AND order_date > ?',
+        [shift.id, closedAt]
+      );
+
+      closedIds.push(shift.id);
+      console.log(`[shift] auto-close shift #${shift.id} outlet ${shift.outlet_id} (ganti hari)`);
+      emitDashboardRefresh('shift:updated', {
+        outletId: shift.outlet_id,
+        shiftId: shift.id,
+        action: 'auto-close',
+        closeType: 'Final'
+      });
+    } catch (err) {
+      console.error(`autoCloseStaleShifts #${shift.id}:`, err.message);
+    }
+  }
+  return closedIds;
+}
+
+/** Pengaman: jangan biarkan error auto-close menggagalkan endpoint. */
+const ensureNoStaleShift = async (outletId) => {
+  try {
+    return await autoCloseStaleShifts(outletId);
+  } catch (err) {
+    console.error('ensureNoStaleShift:', err.message);
+    return [];
+  }
+};
+
 /**
  * GET /api/shifts/current?outlet_id=
  */
 export const getCurrentShift = async (req, res) => {
   try {
     const outletId = parseInt(req.query.outlet_id) || null;
+    await ensureNoStaleShift(outletId);
     let sql = `SELECT * FROM tr_cashier_shift WHERE status = 'Open'`;
     const params = [];
     if (outletId) {
@@ -258,6 +362,7 @@ export const openShift = async (req, res) => {
       });
     }
 
+    await ensureNoStaleShift(oid);
     const [openRows] = await myWaschenPool.query(
       `SELECT id FROM tr_cashier_shift WHERE outlet_id = ? AND status = 'Open' LIMIT 1`,
       [oid]
@@ -608,6 +713,14 @@ export const closeShift = async (req, res) => {
     const shift = shiftRows[0];
     if (shift.status !== 'Open') {
       return res.status(400).json({ success: false, message: 'Shift sudah ditutup' });
+    }
+    const autoClosed = await ensureNoStaleShift(shift.outlet_id);
+    if (autoClosed.includes(shift.id)) {
+      return res.status(409).json({
+        success: false,
+        autoClosed: true,
+        message: 'Shift ini sudah ganti hari, jadi ditutup otomatis oleh sistem (Final, 23:59). Silakan open shift baru untuk hari ini.'
+      });
     }
 
     // Close oleh orang selain pembuka shift (backup): wajib PIN, dan PIN harus milik akun yang login.

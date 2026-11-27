@@ -46,7 +46,8 @@ const withDepositStatus = (row, nameMap, todayKey) => {
     opener_name: formatEmployeeLabel(row.cashier_employee_id, nameMap),
     closed_by_name: row.closed_by_employee_id
       ? formatEmployeeLabel(row.closed_by_employee_id, nameMap)
-      : null,
+      : (String(row.closing_notes || '').startsWith('Ditutup otomatis') ? 'Sistem (otomatis ganti hari)' : null),
+    auto_closed: !row.closed_by_employee_id && String(row.closing_notes || '').startsWith('Ditutup otomatis'),
     opened_at: row.opened_at,
     closed_at: row.closed_at,
     declared_revenue: row.declared_revenue,
@@ -65,7 +66,7 @@ const withDepositStatus = (row, nameMap, todayKey) => {
 
 const SELECT_FINAL_CLOSING = `
   SELECT s.id, s.outlet_id, s.shift_number, s.cashier_employee_id, s.closed_by_employee_id,
-         s.opened_at, s.closed_at, s.declared_revenue,
+         s.opened_at, s.closed_at, s.declared_revenue, s.closing_notes,
          s.deposit_proof_url, s.deposit_notes, s.deposit_uploaded_at, s.deposit_uploaded_by,
          o.name AS outlet_name, o.full_name AS outlet_full_name
   FROM tr_cashier_shift s

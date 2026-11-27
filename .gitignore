@@ -23,3 +23,5 @@ dist-ssr/
 
 .agent/
 uploads/
+# Backup data/skema produksi (lokal saja, jangan di-commit)
+backup_prod/

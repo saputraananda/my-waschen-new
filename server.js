@@ -6,6 +6,7 @@ import { Server } from 'socket.io';
 import app from './api/index.js';
 import { setIO } from './api/socket.js';
 import { startPoolWarmup } from './api/db/pool.js';
+import { autoCloseStaleShifts } from './api/controllers/shift.controller.js';
 
 // Resolve directory paths in ES module
 const __filename = fileURLToPath(import.meta.url);
@@ -80,8 +81,13 @@ io.on('connection', (socket) => {
   });
 });
 
+// Ganti hari = ganti tanggung jawab shift: shift yang masih Open dari kemarin ditutup otomatis (Final 23:59:59).
+const runShiftAutoClose = () => autoCloseStaleShifts().catch((e) => console.error('shift auto-close:', e.message));
+
 server.listen(PORT, () => {
   startPoolWarmup();
+  runShiftAutoClose();
+  setInterval(runShiftAutoClose, 60 * 1000);
   if (process.env.NODE_ENV !== 'production') {
     console.log(`=========================================`);
     console.log(`  My Waschen Server Status: Running     `);

@@ -1,0 +1,1 @@
+import{r as o}from"./index-n9d2_L_b.js";function c(r){const e=o.useRef(r);e.current=r,o.useEffect(()=>{const t=()=>{var n;return(n=e.current)==null?void 0:n.call(e)};return window.addEventListener("waschen:network-restored",t),()=>window.removeEventListener("waschen:network-restored",t)},[])}export{c as u};
