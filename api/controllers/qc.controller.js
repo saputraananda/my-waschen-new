@@ -221,7 +221,7 @@ async function forwardMobile(path, { json, form } = {}) {
 
 const ITEM_SQL = `
   SELECT d.id, d.transaction_id, d.service_name, d.qty, d.unit, d.item_work_status,
-         d.has_finding, d.finding_note, d.is_on_hold, d.hold_stage, d.requires_ironing,
+         d.has_finding, d.finding_note, d.is_on_hold, d.hold_stage, d.requires_ironing, d.is_cleanox,
          d.fulfillment_type, d.brand, d.color, d.condition_notes,
          d.production_outlet_id, po.name AS production_outlet_name,
          t.outlet_id AS txn_outlet_id,
@@ -264,9 +264,22 @@ export const getQcList = async (req, res) => {
     const outletScopeSql = includeAssignedDropPoint
       ? `(t.outlet_id = ? OR d.production_outlet_id = ?)`
       : `t.outlet_id = ?`;
-    const params = includeAssignedDropPoint ? [outletId, outletId, ...statuses] : [outletId, ...statuses];
+    // Cari di tab Delivery (sama seperti Waschen Mobile):
+    // - item yang belum sampai Siap Diantar ikut tampil → QC Delivery melewati tahap sebelumnya ("Dilewati");
+    // - nota Ambil di Outlet ikut tampil (mis. Smartlink yang mendadak minta diantar) → QC Delivery
+    //   otomatis mengubah nota jadi Delivery (Waschen Mobile, convertNotaToDelivery).
+    const searchPickupToDelivery = tab === 'delivery' && Boolean(search);
+    const SEARCH_DELIVERY_STATUSES = ['Antrean', 'Pencucian', 'Penyetrikaan', 'Pengemasan', 'Siap Diambil', ...statuses];
+    const statusSql = searchPickupToDelivery
+      ? `(d.item_work_status IN (${SEARCH_DELIVERY_STATUSES.map(() => '?').join(',')})
+          AND (d.fulfillment_type = 'Delivery_Kurir' OR d.item_work_status <> 'Sedang Diantar'))`
+      : `d.item_work_status IN (${statuses.map(() => '?').join(',')})`;
+    const statusParams = searchPickupToDelivery ? SEARCH_DELIVERY_STATUSES : statuses;
+    const params = includeAssignedDropPoint ? [outletId, outletId, ...statusParams] : [outletId, ...statusParams];
     let extra = '';
-    if (tab === 'delivery' || pickup === 'delivery') {
+    if (searchPickupToDelivery) {
+      // fulfillment sudah diatur di statusSql
+    } else if (tab === 'delivery' || pickup === 'delivery') {
       extra += ` AND d.fulfillment_type = 'Delivery_Kurir'`;
     } else if (pickup === 'outlet') {
       extra += ` AND d.fulfillment_type <> 'Delivery_Kurir'`;
@@ -284,7 +297,7 @@ export const getQcList = async (req, res) => {
        JOIN tr_transaction_detail d ON d.transaction_id = t.id
        LEFT JOIN mst_customer c ON c.id = t.customer_id
        WHERE ${outletScopeSql}
-         AND d.item_work_status IN (${statuses.map(() => '?').join(',')})
+         AND ${statusSql}
          AND COALESCE(d.item_work_status, '') != 'Dibatalkan'
          ${extra}`;
 
@@ -362,10 +375,25 @@ export const getQcList = async (req, res) => {
       }));
     }
 
-    const data = txns.map((t) => ({
-      ...t,
-      items: items.filter((d) => d.transaction_id === t.id && d.item_work_status !== 'Dibatalkan')
-    }));
+    // Item Ambil di Outlet di hasil cari Delivery ditampilkan sebagai Siap Diantar (akan dikonversi saat QC)
+    if (searchPickupToDelivery) {
+      items = items.map((d) => (d.fulfillment_type !== 'Delivery_Kurir'
+        && !['Selesai', 'Dibatalkan', 'Sedang Diantar'].includes(d.item_work_status)
+        ? {
+          ...d,
+          item_work_status: d.item_work_status === 'Siap Diambil' ? 'Siap Diantar' : d.item_work_status,
+          convert_to_delivery: 1
+        }
+        : d));
+    }
+    const data = txns.map((t) => {
+      const own = items.filter((d) => d.transaction_id === t.id && d.item_work_status !== 'Dibatalkan');
+      return {
+        ...t,
+        convert_to_delivery: own.some((d) => d.convert_to_delivery) ? 1 : 0,
+        items: own
+      };
+    });
 
     return res.json({
       success: true,

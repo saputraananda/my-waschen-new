@@ -9,6 +9,7 @@ import QcCameraModal from '../../../components/QcCameraModal.jsx';
 import { extractOrderNo } from '../../../utils/extractOrderNo.js';
 import { burnQcPhoto, buildQcPhotoLines } from '../../../utils/qcPhotoStamp.js';
 import { customerPickLabel } from '../../../utils/customerPickLabel.js';
+import { useAppDialog } from '../../../context/AppDialogContext.jsx';
 
 const MAX_PHOTOS = 5;
 const QC_PAGE_SIZE = 10;
@@ -136,6 +137,32 @@ const kgBagSum = (b) =>
 
 const isKiloan = (item) =>
   item?.category_code === 'KILOAN' || String(item?.unit || '').toLowerCase() === 'kg';
+
+// QC lompat tahap (sama dengan Waschen Mobile): QC Delivery lewat pencarian boleh melewati tahap
+// sebelumnya; tahap yang terlewat dicatat "Dilewati" oleh server.
+const SKIP_FLOW = ['frontliner', 'washing', 'ironing', 'packing', 'delivery'];
+const SKIP_STAGE_STATUS = {
+  frontliner: 'Antrean',
+  washing: 'Pencucian',
+  ironing: 'Penyetrikaan',
+  packing: 'Pengemasan',
+  delivery: 'Siap Diantar'
+};
+const SKIP_STAGE_LABEL = {
+  frontliner: 'Frontliner',
+  washing: 'Tim Cuci',
+  ironing: 'Tim Setrika',
+  packing: 'Tim Packing'
+};
+/** Tahap yang dilewati bila item di-QC Delivery sekarang ([] = tidak perlu / tidak boleh lewati). */
+const deliverySkipStages = (item) => {
+  if (!item || Number(item.is_on_hold) === 1 || Number(item.is_cleanox) === 1) return [];
+  const ci = SKIP_FLOW.findIndex((st) => SKIP_STAGE_STATUS[st] === item.item_work_status);
+  const ti = SKIP_FLOW.indexOf('delivery');
+  if (ci < 0 || ci >= ti) return [];
+  return SKIP_FLOW.slice(ci, ti).filter((st) => !(st === 'ironing' && Number(item.requires_ironing) === 0));
+};
+const skipStagesLabel = (list) => list.map((st) => SKIP_STAGE_LABEL[st] || st).join(', ');
 
 const stageFor = (tab, item) => {
   if (tab === 'delivery') {
@@ -546,6 +573,7 @@ function QcSheet({ target, onClose, onSaved }) {
 
 export default function QCFrontDeliv() {
   const navigate = useNavigate();
+  const { showConfirm } = useAppDialog();
   const [params] = useSearchParams();
   const [tab, setTab] = useState(params.get('tab') === 'delivery' ? 'delivery' : 'frontliner');
   const [search, setSearch] = useState(params.get('order') || '');
@@ -773,9 +801,12 @@ export default function QCFrontDeliv() {
   }, [scanOpen, applyScan]);
 
   const resolveHold = async (hold, decision) => {
-    if (decision === 'batal' && !window.confirm(
-      'Yakin membatalkan item ini? Item tidak akan diproses lebih lanjut dan status menjadi Dibatalkan.'
-    )) return;
+    if (decision === 'batal' && !(await showConfirm({
+      title: 'Batalkan item?',
+      message: 'Item tidak akan diproses lebih lanjut dan status menjadi Dibatalkan.',
+      confirmLabel: 'Ya, Batalkan',
+      variant: 'danger'
+    }))) return;
     setHoldBusyId(hold.detail_id);
     setError('');
     try {
@@ -795,7 +826,10 @@ export default function QCFrontDeliv() {
   };
 
   const visibleItems = (txn) => (txn.items || []).filter((item) => {
-    if (tab === 'delivery') return ['Siap Diantar', 'Sedang Diantar'].includes(item.item_work_status);
+    if (tab === 'delivery') {
+      return ['Siap Diantar', 'Sedang Diantar'].includes(item.item_work_status)
+        || (Boolean(search) && deliverySkipStages(item).length > 0);
+    }
     return item.item_work_status === 'Antrean';
   });
 
@@ -1021,8 +1055,16 @@ export default function QCFrontDeliv() {
                 ? (pickup === 'delivery'
                   ? 'Belum ada nota antar-jemput. Klik "Semua" untuk melihat seluruh nota.'
                   : 'Nota baru akan muncul di sini setelah checkout.')
-                : 'Belum ada item siap diantar. Item masuk ke sini setelah lolos packing.'}
+                : search
+                  ? `Nota "${search}" tidak ditemukan di outlet ini (atau sudah selesai / dibatalkan).`
+                  : 'Belum ada item siap diantar. Item masuk ke sini setelah lolos packing.'}
             </p>
+            {tab === 'delivery' && !search && (
+              <p className="text-xs text-sky-700 font-bold mt-3 px-4">
+                Nota Ambil di Outlet yang mendadak minta diantar? Cari nomor nota / nama / HP atau Scan —
+                nota akan muncul dan otomatis jadi Delivery saat di-QC.
+              </p>
+            )}
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1043,6 +1085,11 @@ export default function QCFrontDeliv() {
                         <p className="font-black text-sm text-[#5f1340] truncate">{txn.order_no}</p>
                         {txn.source === 'SMARTLINK' && <SmartlinkBadge />}
                         {txn.drop_point_name && <DropPointBadge name={txn.drop_point_name} />}
+                        {tab === 'delivery' && Number(txn.convert_to_delivery) === 1 && (
+                          <span title="Nota semula Ambil di Outlet. QC Delivery akan mengubahnya jadi Delivery." className="shrink-0 text-[9px] font-black px-1.5 py-0.5 rounded-full border bg-sky-50 text-sky-700 border-sky-200 whitespace-nowrap">
+                            Ambil di Outlet → Diantar
+                          </span>
+                        )}
                       </div>
                       <p className="font-black text-base leading-tight text-[#313030] truncate mt-1">{txn.customer_name}</p>
                       {place && (
@@ -1064,12 +1111,21 @@ export default function QCFrontDeliv() {
                       const held = Number(item.is_on_hold) === 1;
                       const finding = Number(item.has_finding) === 1;
                       const stage = stageFor(tab, item);
+                      const skipped = tab === 'delivery' ? deliverySkipStages(item) : [];
                       return (
                         <button
                           key={item.id}
                           type="button"
                           disabled={held}
-                          onClick={() => setTarget({ txn, item, stage })}
+                          onClick={async () => {
+                            if (skipped.length && !(await showConfirm({
+                              title: 'Lewati tahap sebelumnya?',
+                              message: `${item.service_name} masih di tahap ${item.item_work_status}. QC Delivery akan menandai ${skipStagesLabel(skipped)} sebagai "Dilewati".`,
+                              confirmLabel: 'Ya, Lewati & QC',
+                              variant: 'warning'
+                            }))) return;
+                            setTarget({ txn, item, stage });
+                          }}
                           className={`w-full text-left rounded-2xl border px-4 py-3 flex items-center justify-between gap-3 transition disabled:opacity-60 disabled:cursor-not-allowed ${
                             held
                               ? 'bg-amber-50 border-amber-200'
@@ -1083,9 +1139,14 @@ export default function QCFrontDeliv() {
                             <span className="block text-[11px] text-slate-500 mt-0.5">
                               {Number(item.qty)} {item.unit} · {item.item_work_status}{held ? ' · HOLD' : ''}
                             </span>
+                            {skipped.length > 0 && (
+                              <span className="block text-[10px] font-bold text-amber-700 mt-0.5">
+                                Lewati {skipStagesLabel(skipped)}
+                              </span>
+                            )}
                           </span>
-                          <span className={`text-[10px] font-black px-3 py-1.5 rounded-xl shrink-0 ${held ? 'bg-amber-200/70 text-amber-800' : 'bg-[#5f1340] text-white'}`}>
-                            {held ? 'HOLD' : stage === 'handover' ? 'Selesai' : 'QC'}
+                          <span className={`text-[10px] font-black px-3 py-1.5 rounded-xl shrink-0 ${held ? 'bg-amber-200/70 text-amber-800' : skipped.length ? 'bg-amber-500 text-white' : 'bg-[#5f1340] text-white'}`}>
+                            {held ? 'HOLD' : stage === 'handover' ? 'Selesai' : skipped.length ? 'LEWATI →' : 'QC'}
                           </span>
                         </button>
                       );
