@@ -15,7 +15,8 @@ import {
   getUnitPrice,
   getItemQtyCount,
   getCashierStamp,
-  getRackOrMeta
+  getRackOrMeta,
+  groupNotaItems
 } from './notaLayout.js';
 
 /** Lebar karakter efektif 58mm */
@@ -189,7 +190,7 @@ export function buildInternalNotaModel(receipt, settings) {
 
   rows.push({ type: 'dash' });
   rows.push(T('Layanan :'));
-  for (const item of receipt.items || []) {
+  for (const item of groupNotaItems(receipt.items)) {
     pushItemText(rows, `> ${formatItemTitle(item)}`, item);
   }
   rows.push({ type: 'dash' });
@@ -250,7 +251,7 @@ export function buildCustomerNotaModel(receipt, settings) {
 
   rows.push({ type: 'dash' });
   rows.push(T('Layanan :'));
-  for (const item of items) {
+  for (const item of groupNotaItems(items)) {
     const sub = Number(item.effectiveSubtotal || item.subtotal) || 0;
     const title = formatCustomerItemName(item);
     if (on(settings, 'show_item_price')) {

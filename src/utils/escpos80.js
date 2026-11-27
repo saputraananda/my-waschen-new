@@ -30,7 +30,8 @@ import {
   getUnitPrice,
   getItemQtyCount,
   getCashierStamp,
-  getRackOrMeta
+  getRackOrMeta,
+  groupNotaItems
 } from './notaLayout.js';
 
 /* ───────────────────────── ukuran kertas 80mm ───────────────────────── */
@@ -181,7 +182,7 @@ export function buildInternalNotaModel80(receipt, settings) {
 
   rows.push(DASH);
   rows.push(T('Layanan :'));
-  for (const item of receipt.items || []) pushItemText(rows, `> ${formatItemTitle(item)}`, item);
+  for (const item of groupNotaItems(receipt.items)) pushItemText(rows, `> ${formatItemTitle(item)}`, item);
   rows.push(DASH);
 
   rows.push(T(`Sisa bayar : ${rupiah(getRemaining(receipt))}`));
@@ -230,7 +231,7 @@ export function buildCustomerNotaModel80(receipt, settings) {
 
   rows.push(DASH);
   rows.push(T('Layanan :'));
-  for (const item of items) {
+  for (const item of groupNotaItems(items)) {
     const sub = Number(item.effectiveSubtotal || item.subtotal) || 0;
     const name = formatCustomerItemName(item);
     if (on(settings, 'show_item_price')) {

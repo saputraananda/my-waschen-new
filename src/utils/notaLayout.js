@@ -113,6 +113,43 @@ export function countTotalBarang(items = []) {
   }, 0);
 }
 
+/**
+ * Gabungkan item kembar supaya nota tidak panjang:
+ * 8 baris "1 Pcs - Celana Panjang/Jeans" → 1 baris "8 Pcs - Celana Panjang/Jeans".
+ * Kunci gabung: nama layanan + satuan + harga satuan + Dry Clean. Item kiloan (KG / qty pecahan)
+ * tetap per baris karena tiap timbangan berbeda. Urutan mengikuti kemunculan pertama.
+ */
+export function groupNotaItems(items = []) {
+  const groups = new Map();
+  const out = [];
+  for (const it of items || []) {
+    const qty = Number(it.qty);
+    const qtyText = String(it.qtyDisplay || '');
+    const unit = (qtyText.replace(/^[\d.,\s]+/, '').trim() || String(it.unit || 'Pcs')).trim();
+    const isKg = /^kg$/i.test(unit) || /kg/i.test(String(it.unit || '')) || !(Number.isInteger(qty) && qty > 0);
+    if (isKg) {
+      out.push(it);
+      continue;
+    }
+    const name = String(it.name || it.serviceName || 'Layanan').trim();
+    const key = [name.toLowerCase(), unit.toLowerCase(), getUnitPrice(it), it.isDryClean ? 1 : 0].join('|');
+    const g = groups.get(key);
+    if (!g) {
+      const copy = { ...it, qty, qtyDisplay: `${qty} ${unit}`, _unitLabel: unit };
+      groups.set(key, copy);
+      out.push(copy);
+      continue;
+    }
+    g.qty += qty;
+    g.qtyDisplay = `${g.qty} ${g._unitLabel}`;
+    if (it.subtotal != null || g.subtotal != null) g.subtotal = (Number(g.subtotal) || 0) + (Number(it.subtotal) || 0);
+    if (it.effectiveSubtotal != null || g.effectiveSubtotal != null) {
+      g.effectiveSubtotal = (Number(g.effectiveSubtotal || g.subtotal) || 0) + (Number(it.effectiveSubtotal || it.subtotal) || 0);
+    }
+  }
+  return out;
+}
+
 export function formatItemTitle(item) {
   // Internal style: "12.6 KG - Setrika (Kg)"
   const qty = item.qtyDisplay || (item.qty != null ? `${item.qty}` : '');
