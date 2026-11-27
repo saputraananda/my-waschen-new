@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { mapHistoryTxn } from '../mapHistoryTxn.js';
+import WhatsAppPhoneLink from '../../../components/WhatsAppPhoneLink.jsx';
 import { useNetworkRestored } from '../../../hooks/useNetworkRestored.js';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -888,7 +889,7 @@ export default function HistoryTransaction({
                   </p>
                 )}
                 {hasPhone && (
-                  <p className="mt-1 text-xs text-slate-600 font-mono font-bold">{order.customerPhone}</p>
+                  <p className="mt-1 text-xs text-slate-600 font-mono font-bold"><WhatsAppPhoneLink phone={order.customerPhone} /></p>
                 )}
               </div>
 
@@ -978,7 +979,7 @@ export default function HistoryTransaction({
                     {/* No. WhatsApp (Clickable — buka chat WA langsung) */}
                     <td className="py-3.5 px-6 text-center whitespace-nowrap">
                       {order.customerPhone && order.customerPhone !== '-' ? (
-                        <span className="text-xs text-slate-600 font-mono font-bold">{order.customerPhone}</span>
+                        <WhatsAppPhoneLink phone={order.customerPhone} className="text-xs text-slate-600 font-mono font-bold" />
                       ) : (
                         <span className="text-slate-300 font-bold">—</span>
                       )}

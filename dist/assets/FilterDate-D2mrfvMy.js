@@ -1,0 +1,1 @@
+import{Y as r,S as i}from"./index-BSaHblvQ.js";function a(t=new Date){return i(t)||""}function u(t,n={dateStyle:"medium",timeStyle:"short"}){if(t==null||t==="")return"-";const e=t instanceof Date?t:new Date(t);return Number.isNaN(e.getTime())?"-":e.toLocaleString("id-ID",{timeZone:r,...n})}export{u as f,a as t};

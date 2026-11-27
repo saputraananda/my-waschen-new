@@ -78,225 +78,228 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
    */
   workbox.precacheAndRoute([{
     "url": "index.html",
-    "revision": "ca09ef078165a775a9680b0405fe27b7"
+    "revision": "c8710d347774a2085c78ca7caa45ff4c"
   }, {
-    "url": "assets/zap-CHSdQtLh.js",
+    "url": "assets/zap-CWZ4tKog.js",
     "revision": null
   }, {
-    "url": "assets/workStatusMeta-CsnsxoC5.js",
+    "url": "assets/workStatusMeta-0A3M41kR.js",
     "revision": null
   }, {
     "url": "assets/workbox-window.prod.es5-BBnX5xw4.js",
     "revision": null
   }, {
+    "url": "assets/WhatsAppPhoneLink-BvM89hxl.js",
+    "revision": null
+  }, {
     "url": "assets/waschen_white-ClE-tgHn.js",
     "revision": null
   }, {
-    "url": "assets/useNetworkRestored-ib0R7oHt.js",
+    "url": "assets/useNetworkRestored-DLX-Lbxe.js",
     "revision": null
   }, {
-    "url": "assets/upload-BMNYNu3w.js",
+    "url": "assets/upload-ByJ8C6QA.js",
     "revision": null
   }, {
-    "url": "assets/truck-D5k39Biu.js",
+    "url": "assets/truck-L-2OnvQD.js",
     "revision": null
   }, {
-    "url": "assets/TransactionBarcodeCard-DQFCszn1.js",
+    "url": "assets/TransactionBarcodeCard-Dr96OQTA.js",
     "revision": null
   }, {
-    "url": "assets/ThermalNotaMerge-Bno2K4Z5.js",
+    "url": "assets/ThermalNotaMerge-1EzZC9WW.js",
     "revision": null
   }, {
-    "url": "assets/ThermalNotaBody-SlcIuzLY.js",
+    "url": "assets/ThermalNotaBody-BBPMfYPq.js",
     "revision": null
   }, {
-    "url": "assets/ThermalNota-_0akugNo.js",
+    "url": "assets/ThermalNota-B2WOKdbp.js",
     "revision": null
   }, {
-    "url": "assets/TablePagination-R-Ury2ZB.js",
+    "url": "assets/TablePagination-DTJ-af2P.js",
     "revision": null
   }, {
-    "url": "assets/store-DNVt3BzK.js",
+    "url": "assets/store-Bjuhe6HC.js",
     "revision": null
   }, {
-    "url": "assets/sparkles-CRZea4fp.js",
+    "url": "assets/sparkles-CoxUiMRb.js",
     "revision": null
   }, {
-    "url": "assets/shirt-B9NOH4d_.js",
+    "url": "assets/shirt-HB42lnO_.js",
     "revision": null
   }, {
-    "url": "assets/send-BDUbJOVe.js",
+    "url": "assets/send-CXBx_Ctz.js",
     "revision": null
   }, {
-    "url": "assets/search-CEaVear5.js",
+    "url": "assets/search-Cm3KcO_r.js",
     "revision": null
   }, {
-    "url": "assets/save-DmlF4n4J.js",
+    "url": "assets/save-tRvQBVt8.js",
     "revision": null
   }, {
-    "url": "assets/rotate-ccw-BCRkZKJK.js",
+    "url": "assets/rotate-ccw-Be0RwHjU.js",
     "revision": null
   }, {
-    "url": "assets/refresh-ccw-QogLnZ_a.js",
+    "url": "assets/refresh-ccw-DX1sJCYW.js",
     "revision": null
   }, {
-    "url": "assets/qr-code-BQWx3bub.js",
+    "url": "assets/qr-code-CkiBmSw-.js",
     "revision": null
   }, {
-    "url": "assets/QCFrontDeliv-BPxLR6Zo.js",
+    "url": "assets/QCFrontDeliv-B4ov7LRC.js",
     "revision": null
   }, {
-    "url": "assets/QcCameraModal-Bwwyp1n-.js",
+    "url": "assets/QcCameraModal-B_2xAk79.js",
     "revision": null
   }, {
-    "url": "assets/ProofFilePreview-CkdjouR9.js",
+    "url": "assets/ProofFilePreview-7vtMa_Iw.js",
     "revision": null
   }, {
-    "url": "assets/PrinterSettings-Nf_ElLty.js",
+    "url": "assets/PrinterSettings-CKEh6222.js",
     "revision": null
   }, {
-    "url": "assets/plus-DVW9miIg.js",
+    "url": "assets/plus-ul2_xydk.js",
     "revision": null
   }, {
-    "url": "assets/pen-line-C1qVZS0P.js",
+    "url": "assets/pen-line-DKBeoXIZ.js",
     "revision": null
   }, {
-    "url": "assets/PaymentProofFields-CoBYSCT4.js",
+    "url": "assets/PaymentProofFields-4r1vs_a4.js",
     "revision": null
   }, {
-    "url": "assets/paperclip-CtuBx7jJ.js",
+    "url": "assets/paperclip-B3yFjavh.js",
     "revision": null
   }, {
-    "url": "assets/package-BQxeMwAW.js",
+    "url": "assets/package-BDV1q9CH.js",
     "revision": null
   }, {
-    "url": "assets/NormalizePhone-7Dg2Mq-7.js",
+    "url": "assets/NormalizePhone-DBs9TkYn.js",
     "revision": null
   }, {
-    "url": "assets/ModalLacakNota-D2FGHS3m.js",
+    "url": "assets/ModalLacakNota-MLSq4KZr.js",
     "revision": null
   }, {
-    "url": "assets/message-circle-BMvmQRvB.js",
+    "url": "assets/message-circle-BqLBaFq2.js",
     "revision": null
   }, {
-    "url": "assets/maximize-2-CKg1KNpw.js",
+    "url": "assets/maximize-2-CeqrdV7E.js",
     "revision": null
   }, {
-    "url": "assets/map-pin-BAeK_sFx.js",
+    "url": "assets/map-pin-Crt6M2xc.js",
     "revision": null
   }, {
-    "url": "assets/LoginPage-Cg6giSAC.js",
+    "url": "assets/LoginPage-D6MJucdX.js",
     "revision": null
   }, {
-    "url": "assets/layers-DMQyQU5E.js",
+    "url": "assets/layers-D8CFw5Hf.js",
     "revision": null
   }, {
-    "url": "assets/ItemPhotosField-FR4zhp1Z.js",
+    "url": "assets/ItemPhotosField-ZhQ36at2.js",
     "revision": null
   }, {
-    "url": "assets/index-r1-wm3As.css",
+    "url": "assets/index-Tk4XwyDG.js",
     "revision": null
   }, {
-    "url": "assets/index-MZyBUpQh.js",
+    "url": "assets/index-SH4og0FE.js",
     "revision": null
   }, {
-    "url": "assets/index-MKqRcrk3.js",
+    "url": "assets/index-KTvdUfC4.css",
     "revision": null
   }, {
-    "url": "assets/index-DZbFpFj1.js",
+    "url": "assets/index-EdHaY1MZ.js",
     "revision": null
   }, {
-    "url": "assets/index-DXFM3n5M.js",
+    "url": "assets/index-DXhzs8gx.js",
     "revision": null
   }, {
-    "url": "assets/index-DSt-VNJZ.js",
+    "url": "assets/index-DgVUcg1p.js",
     "revision": null
   }, {
-    "url": "assets/index-Dss_cXJx.js",
+    "url": "assets/index-CqsNBTm7.js",
     "revision": null
   }, {
-    "url": "assets/index-DSp4klyZ.js",
+    "url": "assets/index-Cmops_NW.js",
     "revision": null
   }, {
-    "url": "assets/index-Dqrt3Npi.js",
+    "url": "assets/index-ChH7ifJ7.js",
     "revision": null
   }, {
-    "url": "assets/index-CD--F3rO.js",
+    "url": "assets/index-Cdiq0fr5.js",
     "revision": null
   }, {
-    "url": "assets/index-BoB_Ihyz.js",
+    "url": "assets/index-BSaHblvQ.js",
     "revision": null
   }, {
-    "url": "assets/index-BKMOrkQW.js",
+    "url": "assets/index-Brpft4DL.js",
     "revision": null
   }, {
-    "url": "assets/index-BfBNloFK.js",
+    "url": "assets/index-BK-qYEhg.js",
     "revision": null
   }, {
-    "url": "assets/index-B0-GK2-i.js",
+    "url": "assets/index-B-pr5Afp.js",
     "revision": null
   }, {
-    "url": "assets/ImageLightbox-BZHQMnvq.js",
+    "url": "assets/ImageLightbox-BDH4OaBL.js",
     "revision": null
   }, {
-    "url": "assets/image-Bx3AkMBE.js",
+    "url": "assets/image-BaeeZ8YF.js",
     "revision": null
   }, {
-    "url": "assets/history-Cf7j5VJG.js",
+    "url": "assets/history--Ld3YhIe.js",
     "revision": null
   }, {
-    "url": "assets/HeaderNav-PEi_Dd4Z.js",
+    "url": "assets/HeaderNav-BGhyrZJr.js",
     "revision": null
   }, {
-    "url": "assets/gem-DcqVYf0C.js",
+    "url": "assets/gem-C1G9MWi_.js",
     "revision": null
   }, {
-    "url": "assets/FilterDate-DtRnCT8j.js",
+    "url": "assets/FilterDate-D2mrfvMy.js",
     "revision": null
   }, {
-    "url": "assets/eye-y64jYCKT.js",
+    "url": "assets/eye-4Fai5-lg.js",
     "revision": null
   }, {
-    "url": "assets/extractOrderNo-BbsHE3-v.js",
+    "url": "assets/extractOrderNo-CLx5cJGp.js",
     "revision": null
   }, {
-    "url": "assets/exceljs.min-BVylh6mi.js",
+    "url": "assets/exceljs.min-Dx9ND3Wr.js",
     "revision": null
   }, {
-    "url": "assets/DetailTransaction-BgkXuMfQ.js",
+    "url": "assets/DetailTransaction-C-FDLGJ3.js",
     "revision": null
   }, {
-    "url": "assets/DateModeFilter-K4wj9qDt.js",
+    "url": "assets/DateModeFilter-ZuWJgB9p.js",
     "revision": null
   }, {
     "url": "assets/customerPickLabel-DlS90nUe.js",
     "revision": null
   }, {
-    "url": "assets/credit-card-BvlDg_OU.js",
+    "url": "assets/credit-card-Br6gGSnT.js",
     "revision": null
   }, {
-    "url": "assets/copy-H2L_akGW.js",
+    "url": "assets/copy-Dlr01Q5M.js",
     "revision": null
   }, {
-    "url": "assets/Complete-AbR8XN_V.js",
+    "url": "assets/Complete-DeV10MAs.js",
     "revision": null
   }, {
-    "url": "assets/circle-x-CMaS_FbW.js",
+    "url": "assets/circle-x-CGRvDp1L.js",
     "revision": null
   }, {
-    "url": "assets/circle-pause-C5TAQa_g.js",
+    "url": "assets/circle-pause-C6ZW6WLg.js",
     "revision": null
   }, {
-    "url": "assets/chevron-left-C3-aIoat.js",
+    "url": "assets/chevron-left-Dpo0pJ-M.js",
     "revision": null
   }, {
-    "url": "assets/camera-BD0NEwhD.js",
+    "url": "assets/camera-BSCYs7v6.js",
     "revision": null
   }, {
-    "url": "assets/calendar-days-wAYZmcTS.js",
+    "url": "assets/calendar-days-CL5d2NcY.js",
     "revision": null
   }, {
-    "url": "assets/BackdatePaymentField-VpfiKw9V.js",
+    "url": "assets/BackdatePaymentField-gt6NKunf.js",
     "revision": null
   }, {
     "url": "apple-touch-icon.png",

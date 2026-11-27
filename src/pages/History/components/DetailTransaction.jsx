@@ -20,6 +20,7 @@ import ItemPhotosField from '../../../components/ItemPhotosField.jsx';
 import ChangeFulfillmentModal from '../../../components/ChangeFulfillmentModal.jsx';
 import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
 import CleanoxItemsPanel from './CleanoxItemsPanel.jsx';
+import WhatsAppPhoneLink from '../../../components/WhatsAppPhoneLink.jsx';
 import { getNotaPricing, isExpressRow } from '../../../utils/notaPricing.js';
 import {
   CheckCircle2,
@@ -762,7 +763,9 @@ export default function DetailTransaction() {
                   <div className="sm:col-span-2 md:col-span-3 p-4 sm:p-5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl min-w-0">
                     <span className="text-[11px] font-bold text-slate-400 uppercase block">Pelanggan</span>
                     <span className="font-black text-base sm:text-lg text-[#313030] block mt-1 break-words">{formatName(order.customerName)}</span>
-                    <span className="text-xs sm:text-sm font-mono font-bold text-emerald-700 block mt-0.5">{order.customerPhone}</span>
+                    <span className="text-xs sm:text-sm font-mono font-bold text-emerald-700 block mt-0.5">
+                      {order.customerPhone && order.customerPhone !== '-' ? <WhatsAppPhoneLink phone={order.customerPhone} /> : order.customerPhone}
+                    </span>
                     <span className="text-xs text-slate-500 block mt-1.5 break-words">{order.customerAddress}</span>
                   </div>
                   <div className="p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl">
