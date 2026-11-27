@@ -131,7 +131,7 @@ export default function DepositReport() {
         key,
         items: items.sort((a, b) => new Date(b.closed_at) - new Date(a.closed_at)),
         revenue: items.reduce((sum, r) => sum + (Number(r.cash_revenue ?? r.declared_revenue) || 0), 0),
-        pending: items.filter((r) => r.status !== 'uploaded').length
+        pending: items.filter((r) => r.status === 'pending').length
       }));
   }, [rows]);
 
@@ -338,10 +338,11 @@ function StatusTile({ label, value, tone, active, onClick }) {
 
 function ClosingItem({ row, dueDays, onUpload }) {
   const uploaded = row.status === 'uploaded';
-  const late = row.is_late && !uploaded;
+  const noCash = row.status === 'none';
+  const late = row.is_late && !uploaded && !noCash;
   const isSiang = Number(row.shift_number) === 2;
 
-  const tone = uploaded
+  const tone = uploaded || noCash
     ? { card: 'bg-white border-[#e0e0e0]', box: 'bg-indigo-50 text-indigo-900' }
     : late
       ? { card: 'bg-rose-50/60 border-rose-200', box: 'bg-rose-100/70 text-rose-900' }
@@ -392,13 +393,18 @@ function ClosingItem({ row, dueDays, onUpload }) {
       {/* Status bukti + aksi */}
       <div className="flex items-center gap-3 md:w-[46%] lg:w-[42%] shrink-0 pt-3 md:pt-0 border-t md:border-t-0 md:border-l border-black/5 md:pl-5">
         <div className="flex items-start gap-2.5 min-w-0 flex-1">
-          {uploaded ? (
+          {uploaded || noCash ? (
             <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
           ) : (
             <Clock3 className={`h-5 w-5 shrink-0 mt-0.5 ${late ? 'text-rose-600' : 'text-amber-600'}`} />
           )}
           <div className="min-w-0">
-            {uploaded ? (
+            {noCash ? (
+              <>
+                <p className="text-xs sm:text-sm font-black text-emerald-700 truncate">Tidak Perlu Setor</p>
+                <p className="text-[11px] sm:text-xs text-slate-500 truncate">Tidak ada pembayaran tunai</p>
+              </>
+            ) : uploaded ? (
               <>
                 <p className="text-xs sm:text-sm font-black text-emerald-700 truncate">Bukti diupload {uploadedWhen}</p>
                 <p className="text-[11px] sm:text-xs text-slate-500 truncate" title={row.deposit_notes || ''}>
@@ -419,7 +425,7 @@ function ClosingItem({ row, dueDays, onUpload }) {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {uploaded ? (
+          {noCash ? null : uploaded ? (
             <>
               <ProofLink
                 url={row.deposit_proof_url}

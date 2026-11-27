@@ -59,8 +59,10 @@ const isDateKey = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
 const withDepositStatus = (row, nameMap, todayKey) => {
   const closedKey = toWibDateKey(row.closed_at);
   const uploaded = Boolean(row.deposit_proof_url);
+  // Tidak ada pembayaran tunai di shift ini → tidak ada uang yang perlu disetor
+  const noCash = !uploaded && row.cash_revenue != null && Math.round(Number(row.cash_revenue)) <= 0;
   const refKey = uploaded ? toWibDateKey(row.deposit_uploaded_at) || todayKey : todayKey;
-  const lateDays = Math.max(0, dayDiff(refKey, closedKey) - DEPOSIT_DUE_DAYS);
+  const lateDays = noCash ? 0 : Math.max(0, dayDiff(refKey, closedKey) - DEPOSIT_DUE_DAYS);
 
   return {
     kind: 'shift',
@@ -82,7 +84,7 @@ const withDepositStatus = (row, nameMap, todayKey) => {
     cash_revenue: row.cash_revenue ?? null,
     // Tunai menurut laporan closing kasir (null bila tidak ada report)
     cash_reported: row.cash_reported ?? null,
-    status: uploaded ? 'uploaded' : 'pending',
+    status: uploaded ? 'uploaded' : (noCash ? 'none' : 'pending'),
     is_late: lateDays > 0,
     late_days: lateDays,
     deposit_proof_url: row.deposit_proof_url,
@@ -148,6 +150,7 @@ export const listDepositReport = async (req, res) => {
       total: all.length,
       uploaded: all.filter((r) => r.status === 'uploaded').length,
       pending: all.filter((r) => r.status === 'pending').length,
+      none: all.filter((r) => r.status === 'none').length,
       late: all.filter((r) => r.is_late).length
     };
 
@@ -178,13 +181,16 @@ export const getPendingDepositCount = async (req, res) => {
   try {
     const outletId = parseInt(req.query.outlet_id) || null;
     const params = [];
-    let sql = `SELECT id, closed_at FROM tr_cashier_shift
+    let sql = `SELECT id, outlet_id, opened_at, closed_at, report_text FROM tr_cashier_shift
       WHERE status = 'Closed' AND close_type = 'Final' AND deposit_proof_url IS NULL`;
     if (outletId) {
       sql += ' AND outlet_id = ?';
       params.push(outletId);
     }
-    const [rows] = await myWaschenPool.query(sql, params);
+    const [rawRows] = await myWaschenPool.query(sql, params);
+    // Closing tanpa pembayaran tunai = Tidak Perlu Setor, tidak dihitung
+    const rows = (await Promise.all(rawRows.map(attachCashRevenue)))
+      .filter((r) => !(r.cash_revenue != null && Math.round(Number(r.cash_revenue)) <= 0));
 
     const todayKey = todayWibISO();
     const lateCount = rows.filter(
