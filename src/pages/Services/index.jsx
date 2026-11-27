@@ -14,7 +14,7 @@ export const mapServiceFromApi = (s) => ({
   price: parseFloat(s.price) || 0,
   unit: s.unit || 'Kg',
   estTime: s.regular_duration_days ? `${s.regular_duration_days} Hari` : '2 Hari',
-  desc: s.description || 'Layanan laundry profesional higienis dengan pewangi segar.',
+  desc: (s.description || '').trim(),
   minOrderQty: parseFloat(s.min_order_qty) || 1,
   isFeatured: s.is_featured === 1
 });

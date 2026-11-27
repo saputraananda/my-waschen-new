@@ -383,7 +383,7 @@ export const createTransaction = async (req, res) => {
     const [prodRows] = serviceIds.length
       ? await connection.query(
         `SELECT s.id, COALESCE(so.name, s.name) AS name,
-                COALESCE(c.is_production, 1) AS is_production, COALESCE(s.is_dc_required, 0) AS is_dc_required,
+                COALESCE(c.is_production, 1) AS is_production, COALESCE(so.is_dc_required, s.is_dc_required, 0) AS is_dc_required,
                 ${AVAILABLE_SQL} AS available
          FROM mst_service s
          LEFT JOIN mst_service_outlet so ON so.service_id = s.id AND so.outlet_id = ?

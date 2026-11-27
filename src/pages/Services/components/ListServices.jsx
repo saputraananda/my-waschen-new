@@ -20,7 +20,7 @@ function ServiceCard({ service }) {
           </span>
         </div>
         <h3 className="font-black text-[#313030] text-base group-hover:text-[#5f1340] transition-colors">{service.name}</h3>
-        <p className="text-xs text-slate-500 mt-1.5 leading-relaxed font-medium">{service.desc}</p>
+        {service.desc && <p className="text-xs text-slate-500 mt-1.5 leading-relaxed font-medium">{service.desc}</p>}
         {service.isFeatured && (
           <span className="inline-block mt-2 text-[9px] font-black text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
             Layanan Unggulan

@@ -7,7 +7,8 @@
 
 /** Kolom nilai efektif (override outlet, jika kosong pakai master). Butuh alias `s` dan `so`. */
 export const EFFECTIVE_SERVICE_COLUMNS = `
-  s.id, s.code, s.description, s.is_cleanox, s.is_featured, s.is_dc_required, s.is_active,
+  s.id, s.code, s.description, s.is_cleanox, s.is_featured, s.is_active,
+  COALESCE(so.is_dc_required, s.is_dc_required) AS is_dc_required,
   s.created_at, s.updated_at,
   COALESCE(so.name, s.name) AS name,
   COALESCE(so.category_id, s.category_id) AS category_id,
