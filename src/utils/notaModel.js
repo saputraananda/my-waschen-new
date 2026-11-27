@@ -16,7 +16,8 @@ import {
   getItemQtyCount,
   getCashierStamp,
   getRackOrMeta,
-  groupNotaItems
+  groupNotaItems,
+  getMemberNotaRows
 } from './notaLayout.js';
 
 /** Lebar karakter efektif 58mm */
@@ -278,6 +279,22 @@ export function buildCustomerNotaModel(receipt, settings) {
     }
     rows.push({ type: 'dash' });
     rows.push(T(padNotaRow('Status :', getPaymentStatusShort(receipt))));
+  }
+
+  // Blok member: Tipe Member, Saldo Sebelum, Saldo Terakhir, Masa Aktif
+  const memberRows = getMemberNotaRows(receipt);
+  if (memberRows.length) {
+    rows.push({ type: 'dash' });
+    rows.push(T('MEMBER WASCHEN', { bold: true })); // 58mm: rata kiri
+    memberRows.forEach(([label, value]) => {
+      const left = `${label} :`;
+      if (left.length + value.length + 1 > NOTA_WIDTH) {
+        rows.push(T(left));
+        rows.push(T(padNotaRow('', value)));
+      } else {
+        rows.push(T(padNotaRow(left, value)));
+      }
+    });
   }
 
   rows.push({ type: 'dash' });

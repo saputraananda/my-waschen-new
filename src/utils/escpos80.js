@@ -31,7 +31,8 @@ import {
   getItemQtyCount,
   getCashierStamp,
   getRackOrMeta,
-  groupNotaItems
+  groupNotaItems,
+  getMemberNotaRows
 } from './notaLayout.js';
 
 /* ───────────────────────── ukuran kertas 80mm ───────────────────────── */
@@ -255,6 +256,22 @@ export function buildCustomerNotaModel80(receipt, settings) {
     else rows.push(T('- Belum ada pembayaran'));
     rows.push(DASH);
     rows.push(T(padNota80('Status :', getPaymentStatusShort(receipt))));
+  }
+
+  // Blok member: Tipe Member, Saldo Sebelum, Saldo Terakhir, Masa Aktif
+  const memberRows = getMemberNotaRows(receipt);
+  if (memberRows.length) {
+    rows.push(DASH);
+    rows.push(T('MEMBER WASCHEN', { bold: true, align: 'center' }));
+    memberRows.forEach(([label, value]) => {
+      const left = `${label} :`;
+      if (left.length + value.length + 1 > NOTA80_WIDTH) {
+        rows.push(T(left));
+        rows.push(T(padNota80('', value)));
+      } else {
+        rows.push(T(padNota80(left, value)));
+      }
+    });
   }
 
   rows.push(DASH);

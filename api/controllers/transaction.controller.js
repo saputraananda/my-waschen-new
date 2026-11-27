@@ -18,6 +18,7 @@ import { REFUND_TYPES, findPendingRefund, insertRefundRequest, REFUND_SUMMARY_CO
 import { findLastPayment, findPendingVoid } from '../utils/paymentVoid.js';
 import { toWibYmdCompact, formatWibTime } from '../utils/wib.js';
 import { isShiftOptionalCashier, resolveValidCashier } from '../utils/cashierGuard.js';
+import { getMemberNotaInfo } from '../utils/memberNota.js';
 import { auditOrderPricing, priceCheckMode } from '../utils/priceAudit.js';
 import { AVAILABLE_SQL, EFFECTIVE_CATEGORY_ID_SQL } from '../utils/serviceOutlet.js';
 import { insertCleanoxItemsForDetail, getCleanoxItemsByTransaction, attachCleanoxHoldCount } from '../utils/cleanoxItems.js';
@@ -2163,6 +2164,17 @@ export const getPaymentBatchByNo = async (req, res) => {
  * Pastikan nota punya access_code 4 digit + kembalikan URL tracking customer yang valid.
  * Dipakai sebelum kasir kirim nota digital WhatsApp.
  */
+/** GET /api/transactions/:orderNo/member-info — blok member di nota cetak & nota digital (null = bukan member) */
+export const getTransactionMemberInfo = async (req, res) => {
+  try {
+    const data = await getMemberNotaInfo((sql, params) => myWaschenPool.query(sql, params), req.params.orderNo);
+    res.json({ success: true, data });
+  } catch (err) {
+    console.error('getTransactionMemberInfo error:', err);
+    res.status(500).json({ success: false, message: 'Gagal mengambil info member nota' });
+  }
+};
+
 export const ensureDigitalNotaAccess = async (req, res) => {
   try {
     const key = String(req.params.orderNo || '').trim();

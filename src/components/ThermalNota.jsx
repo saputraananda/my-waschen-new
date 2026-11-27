@@ -21,6 +21,7 @@ import {
   setNotaPaperSize
 } from '../utils/escpos80.js';
 import ThermalNotaBody from './ThermalNotaBody.jsx';
+import { useMemberNotaReceipt } from '../utils/memberNotaInfo.js';
 
 /**
  * Modal cetak thermal 58mm (bawaan) atau 80mm (pilihan, escpos80.js).
@@ -28,7 +29,9 @@ import ThermalNotaBody from './ThermalNotaBody.jsx';
  * - Jika transaksi punya paymentBatchNo (pelunasan gabungan):
  *   ada pilihan Cetak Nota Gabungan vs Cetak Nota Individu
  */
-export default function ThermalNota({ createdOrderReceipt, onClose }) {
+export default function ThermalNota({ createdOrderReceipt: baseReceipt, onClose }) {
+  // Nota member: tambah Tipe Member, Saldo Sebelum, Saldo Terakhir, Masa Aktif
+  const createdOrderReceipt = useMemberNotaReceipt(baseReceipt);
   const navigate = useNavigate();
   const { showAlert } = useAppDialog();
   const {

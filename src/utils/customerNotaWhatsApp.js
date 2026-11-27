@@ -5,6 +5,7 @@ import { formatDateId } from './FilterDate.js';
 import { buildDigitalNotaMessage } from '../components/DigitalNota.jsx';
 import { buildCustomerTrackingUrl } from './customerTrackingUrl.js';
 import { isExpressRow } from './notaPricing.js';
+import { withMemberNotaInfo } from './memberNotaInfo.js';
 
 /** Nomor lokal 08… → digit WA internasional 62… */
 export function toWhatsAppDigits(phone) {
@@ -265,9 +266,12 @@ export async function sendCustomerNotaWhatsApp(receipt, options = {}) {
 }
 
 async function sendWithWindow(receipt, settings, digits, waWindow) {
-  const access = await ensureDigitalNotaAccess(receipt?.id);
+  const [access, withMember] = await Promise.all([
+    ensureDigitalNotaAccess(receipt?.id),
+    withMemberNotaInfo(receipt)
+  ]);
   const enriched = {
-    ...receipt,
+    ...withMember,
     id: access.orderNo || receipt.id,
     accessCode: access.accessCode,
     trackingUrl: access.trackingUrl || buildCustomerTrackingUrl(access.orderNo || receipt.id)

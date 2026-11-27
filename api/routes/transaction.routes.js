@@ -19,6 +19,7 @@ import {
   uploadItemPhoto,
   deleteItemPhoto,
   ensureDigitalNotaAccess,
+  getTransactionMemberInfo,
   decideCleanoxHold
 } from '../controllers/transaction.controller.js';
 import { uploadPaymentReceipt, uploadItemPhotoFile,uploadDeleteRequestAttachment, uploadRefundRequestAttachment, verifyUploadContents } from '../middleware/upload.js';
@@ -33,6 +34,7 @@ router.get('/batch/:batchNo', getPaymentBatchByNo);
 router.get('/refunds', getRefundRequests);
 router.get('/payment-voids', getPaymentVoidRequests);
 router.post('/:orderNo/digital-nota-access', ensureDigitalNotaAccess);
+router.get('/:orderNo/member-info', requirePosAuth, getTransactionMemberInfo);
 router.post('/:id/payment-proof', requirePosAuth, uploadPaymentReceipt, verifyUploadContents, uploadPaymentProof);
 router.post('/item-photo', requirePosAuth, uploadItemPhotoFile, verifyUploadContents, uploadItemPhotoDraft);
 router.post('/:id/items/:itemId/photo', requirePosAuth, uploadItemPhotoFile, verifyUploadContents, uploadItemPhoto);

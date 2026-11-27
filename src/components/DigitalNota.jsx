@@ -3,6 +3,7 @@ import { buildCustomerTrackingUrl } from '../utils/customerTrackingUrl.js';
 import { DEFAULT_CUSTOMER_SETTINGS } from '../utils/printerSettings.js';
 import { WIB_TZ, addWibDays, toWibDateKey } from '../utils/wib.js';
 import { getNotaPricing } from '../utils/notaPricing.js';
+import { getMemberNotaRows } from '../utils/notaLayout.js';
 
 /**
  * Satu sumber kalimat nota digital (WhatsApp / preview).
@@ -112,6 +113,13 @@ function pricingLines(pricing) {
 
 const RULE = '━━━━━━━━━━━━━━';
 
+/** Blok member (Tipe Member, Saldo Sebelum, Saldo Terakhir, Masa Aktif); kosong bila bukan member. */
+function memberLines(receipt) {
+  const rows = getMemberNotaRows(receipt);
+  if (!rows.length) return [];
+  return ['', '💳 *MEMBER WASCHEN*', ...rows.map(([label, value]) => `${label}: ${label === 'Saldo Terakhir' ? `*${value}*` : value}`)];
+}
+
 /**
  * Ringkasan rincian pesanan untuk chat WA.
  */
@@ -144,7 +152,8 @@ export function buildDigitalNotaBody(receipt) {
     ...pricingLines(pricing),
     `*TOTAL · ${formatRp(receipt.grandTotal)}*`,
     ...(pricing.hasPromo ? [`_Anda hemat ${formatRp(pricing.discount)}_`] : []),
-    `Pembayaran: *${paymentLabel(receipt)}*`
+    `Pembayaran: *${paymentLabel(receipt)}*`,
+    ...memberLines(receipt)
   ].join('\n');
 }
 

@@ -216,3 +216,28 @@ export function getRackOrMeta(receipt) {
   const n = Number(receipt?.queueNo);
   return Number.isFinite(n) && n > 0 ? `#${Math.round(n)}` : '';
 }
+
+const MONTHS_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+/** "2027-05-22" → "22 Mei 2027" (tanpa geser zona waktu). */
+export function formatMemberDate(ymd) {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return '-';
+  return `${Number(m[3])} ${MONTHS_ID[Number(m[2]) - 1] || m[2]} ${m[1]}`;
+}
+
+/**
+ * Baris blok MEMBER di nota customer (receipt.memberInfo dari /member-info; null = bukan member).
+ * Hasil: [[label, nilai], ...] — Tipe Member, Saldo Sebelum, Saldo Terakhir, Masa Aktif.
+ */
+export function getMemberNotaRows(receipt) {
+  const m = receipt?.memberInfo;
+  if (!m) return [];
+  const rows = [
+    ['Tipe Member', m.tier || 'Member'],
+    ['Saldo Sebelum', rupiah(m.balanceBefore)]
+  ];
+  rows.push(['Saldo Terakhir', rupiah(m.balanceAfter)]);
+  rows.push(['Masa Aktif', m.expiresAt ? `s/d ${formatMemberDate(m.expiresAt)}${m.isExpired ? ' (habis)' : ''}` : '-']);
+  return rows;
+}
