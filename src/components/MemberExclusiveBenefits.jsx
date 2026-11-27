@@ -16,8 +16,41 @@ import {
   Gem
 } from 'lucide-react';
 
-export default function MemberExclusiveBenefits({ tier = 'Gold', className = '' }) {
+/**
+ * outletPromos: paket khusus outlet (mis. Transyogi) → benefit HANYA promo member otomatis
+ * outlet itu (array baris mst_promo). null = paket umum, tampilkan benefit standar.
+ */
+export default function MemberExclusiveBenefits({ tier = 'Gold', className = '', outletPromos = null }) {
   const isDiamond = String(tier).toLowerCase().includes('diamond');
+
+  if (Array.isArray(outletPromos)) {
+    return (
+      <div className={`rounded-2xl p-4 border bg-gradient-to-br from-emerald-50 via-white to-emerald-50/60 border-emerald-300/60 ${className}`}>
+        <div className="flex items-center justify-between gap-2 border-b border-emerald-200/80 pb-2.5 mb-3">
+          <div>
+            <span className="text-[10px] font-black tracking-[0.25em] text-[#5f1340] uppercase block">Benefit Member</span>
+            <h4 className="text-xs font-black text-[#313030]">Member {tier}</h4>
+          </div>
+          <Percent className="h-5 w-5 text-emerald-600 shrink-0" />
+        </div>
+        {outletPromos.length ? (
+          <ul className="space-y-2">
+            {outletPromos.map((p) => (
+              <li key={p.id} className="p-2.5 bg-white border border-emerald-200 rounded-xl">
+                <span className="text-xs font-black text-emerald-800 block">{p.name}</span>
+                <span className="text-[10px] text-slate-500 font-semibold block">
+                  {Number(p.requires_member_balance) === 1 ? 'Otomatis saat bayar Potong Saldo Member' : 'Otomatis untuk member'}
+                  {Number(p.max_discount) > 0 ? ` · maks Rp ${Number(p.max_discount).toLocaleString('id-ID')} per nota` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[11px] text-slate-500 font-semibold">Belum ada promo member untuk tier ini.</p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

@@ -48,14 +48,35 @@ async function queryActive(table) {
  * GET /api/masters
  * Semua master option aktif sekaligus
  */
+/**
+ * Promo aktif untuk outlet (umum + khusus outlet), lengkap dengan service_ids
+ * (mst_promo_service; kosong = semua layanan). is_auto = promo member otomatis.
+ */
+async function queryPromosForOutlet(outletId) {
+  const [rows] = await myWaschenPool.query(
+    `SELECT * FROM mst_promo WHERE is_active = 1 AND (outlet_id IS NULL OR outlet_id = ?) ORDER BY sort_order ASC, id ASC`,
+    [Number(outletId) || 0]
+  );
+  if (!rows.length) return rows;
+  const [svc] = await myWaschenPool.query(
+    'SELECT promo_id, service_id FROM mst_promo_service WHERE promo_id IN (?)',
+    [rows.map((r) => r.id)]
+  );
+  return rows.map((r) => ({
+    ...r,
+    service_ids: svc.filter((x) => x.promo_id === r.id).map((x) => Number(x.service_id))
+  }));
+}
+
 export const getAllMasters = async (req, res) => {
   try {
+    const outletId = parseInt(req.query.outlet_id, 10) || null;
     const [paymentMethods, customerSources, pettyCashCategories, promos, customerTiers, workStatuses, outlets, laundryMethods, materials] =
       await Promise.all([
         queryActive('mst_payment_method'),
         queryActive('mst_customer_source'),
         myWaschenPool.query('SELECT * FROM mst_petty_cash_category WHERE is_active = 1 ORDER BY id ASC').then(([rows]) => rows),
-        queryActive('mst_promo'),
+        queryPromosForOutlet(outletId),
         queryActive('mst_customer_tier'),
         myWaschenPool.query('SELECT * FROM mst_work_status WHERE is_active = 1 ORDER BY percentage ASC, id ASC').then(([rows]) => rows),
         myWaschenPool.query('SELECT id, name, full_name, address FROM mst_outlet ORDER BY name ASC').then(([rows]) => rows),
@@ -215,7 +236,7 @@ export const getPettyCashCategories = async (req, res) => {
 
 export const getPromos = async (req, res) => {
   try {
-    const data = await queryActive('mst_promo');
+    const data = await queryPromosForOutlet(parseInt(req.query.outlet_id, 10) || null);
     return res.status(200).json({ success: true, data });
   } catch (error) {
     console.error('Error fetching promos:', error);

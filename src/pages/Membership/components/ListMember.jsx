@@ -29,6 +29,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
+import { packageBonus } from '../../../utils/membershipPackage.js';
 import { customerPickLabel } from '../../../utils/customerPickLabel.js';
 
 const PAGE_SIZE = 10;
@@ -143,7 +144,7 @@ export default function ListMember({
 
   useEffect(() => {
     Promise.all([
-      axios.get('/api/memberships/packages'),
+      axios.get('/api/memberships/packages', { params: { outlet_id: localStorage.getItem('activeOutletId') || undefined } }),
       axios.get('/api/masters/payment-methods')
     ])
       .then(([pkgRes, payRes]) => {
@@ -731,7 +732,7 @@ export default function ListMember({
                         Kelebihan masuk saldo. Estimasi saldo baru: Rp {(
                           (selectedMember?.balance || 0)
                           + packagePrice
-                          + (selectedPackage?.tier === 'Diamond' ? 50000 : 25000)
+                          + packageBonus(selectedPackage)
                           + excessAmount
                         ).toLocaleString('id-ID')}
                       </p>

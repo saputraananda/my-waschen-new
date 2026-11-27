@@ -10,6 +10,7 @@ export default function WaschenMemberCard({
   className = ''
 }) {
   const isDiamond = String(tier).toLowerCase().includes('diamond');
+  const isPlatinum = String(tier).toLowerCase().includes('platinum');
 
   // Dates calculation
   const today = new Date();
@@ -115,11 +116,13 @@ export default function WaschenMemberCard({
                 className={`block font-black uppercase tracking-wider ${
                   isDiamond
                     ? 'bg-gradient-to-r from-cyan-200 via-sky-100 to-cyan-400 bg-clip-text text-transparent drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)]'
+                    : isPlatinum
+                    ? 'bg-gradient-to-r from-slate-200 via-white to-slate-400 bg-clip-text text-transparent drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)]'
                     : 'bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-400 bg-clip-text text-transparent drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)]'
                 }`}
                 style={fs(6.2, 16)}
               >
-                {isDiamond ? 'DIAMOND' : 'GOLD'}
+                {isDiamond ? 'DIAMOND' : isPlatinum ? 'PLATINUM' : 'GOLD'}
               </span>
               <span className="mt-[0.8cqw] block font-bold uppercase tracking-wide text-white/80" style={fs(2.4, 8)}>
                 Member Card
@@ -216,6 +219,8 @@ export default function WaschenMemberCard({
               className={`min-w-0 rounded-[2.5cqw] px-[3cqw] py-[1.5cqw] text-right leading-tight shadow-md ${
                 isDiamond
                   ? 'bg-gradient-to-r from-cyan-500 to-sky-600 text-white border border-cyan-300/40'
+                  : isPlatinum
+                  ? 'bg-gradient-to-r from-slate-400 to-slate-600 text-white border border-slate-200/40'
                   : 'bg-gradient-to-r from-amber-500 to-yellow-600 text-white border border-amber-300/40'
               }`}
             >

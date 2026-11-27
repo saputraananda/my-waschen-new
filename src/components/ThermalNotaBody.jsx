@@ -25,6 +25,9 @@ export default function ThermalNotaBody({
   // Header 80mm: ukuran huruf = px di raster cetak (lebar 576 dots)
   const dots80 = (px) => (is80 ? { fontSize: `calc(100cqw * ${px} / 576)`, lineHeight: 1.2 } : undefined);
   const fit80 = (chars) => (is80 ? { fontSize: `calc(100cqw / ${(chars * 0.6).toFixed(1)})`, whiteSpace: 'pre-wrap' } : undefined);
+  // 58mm: baris teks = 32 kolom seperti cetakan. Spasi perata kanan (padNotaRow) harus dipertahankan
+  // dan rata tengah dihitung dari lebar 32 kolom, bukan lebar kotak pratinjau.
+  const col58 = is80 ? undefined : { whiteSpace: 'pre-wrap', maxWidth: '32ch' };
 
   return (
     <div className={`w-full ${is80 ? 'max-w-[420px]' : 'max-w-[300px]'} mx-auto min-w-0`}>
@@ -39,7 +42,7 @@ export default function ThermalNotaBody({
 
             if (row.type === 'dash') {
               return (
-                <p key={idx} className="whitespace-pre overflow-hidden text-ellipsis" style={fit80(48)}>
+                <p key={idx} className="whitespace-pre overflow-hidden text-ellipsis" style={fit80(48) || col58}>
                   {row.text || NOTA_DASH}
                 </p>
               );
@@ -99,7 +102,7 @@ export default function ThermalNotaBody({
               <p
                 key={idx}
                 className={`min-w-0 ${align} ${weight} ${size}`}
-                style={fit80(row.size === 'huge' ? 24 : 48)}
+                style={fit80(row.size === 'huge' ? 24 : 48) || (row.size === 'huge' || row.size === 'tall' ? undefined : col58)}
               >
                 {row.boldTail && String(row.text || '').endsWith(row.boldTail) ? (
                   <>

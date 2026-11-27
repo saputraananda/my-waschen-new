@@ -140,7 +140,10 @@ export default function Dashboard() {
           serviceType: o.speed_name ? `${o.order_category} - ${o.speed_name}` : o.order_category,
           category: o.order_category,
           qty: o.order_category === 'Kiloan' ? `${o.total_weight_kg} Kg` : `${o.total_pcs} Pcs`,
-          perfume: o.parfume_name || 'Standar',
+          // Nota parfum per item (Transyogi): ringkas nama parfum item, bukan "Standar"
+          perfume: o.parfume_name
+            || [...new Set((o.items || []).map((it) => it.parfume_name).filter(Boolean))].join(', ')
+            || 'Standar',
           speed: o.speed_name || 'Reguler',
           totalAmount: parseFloat(o.grand_total) || 0,
           paidAmount: parseFloat(o.paid_amount) || 0,
@@ -172,6 +175,10 @@ export default function Dashboard() {
             size: it.size,
             conditionNotes: it.condition_notes,
             isCleanox: it.is_cleanox === 1,
+            parfumeName: it.parfume_name || null,
+            parfumePrice: parseFloat(it.parfume_price) || 0,
+            isGoGreen: Number(it.is_go_green) === 1,
+            goGreenDiscount: parseFloat(it.go_green_discount) || 0,
             fulfillmentType: it.fulfillment_type || (o.is_delivery === 1 ? 'Delivery_Kurir' : 'Ambil_Di_Outlet')
           })) : [
             {

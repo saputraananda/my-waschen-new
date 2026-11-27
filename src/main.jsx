@@ -26,7 +26,9 @@ axios.interceptors.response.use(
     (r) => r,
     (err) => {
         const url = String(err?.config?.url || '');
-        if (err?.response?.status === 401 && !url.includes('/api/auth/login') && window.location.pathname !== '/login') {
+        // PIN salah bukan sesi habis: jangan logout untuk endpoint verifikasi PIN
+        const isPinCheck = url.includes('verify-pin');
+        if (err?.response?.status === 401 && !isPinCheck && !url.includes('/api/auth/login') && window.location.pathname !== '/login') {
             logoutSession();
             window.location.replace('/login');
             return new Promise(() => {});

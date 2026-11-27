@@ -21,7 +21,7 @@ import ChangeFulfillmentModal from '../../../components/ChangeFulfillmentModal.j
 import PinVerifyModal from '../../Shift/PinVerifyModal.jsx';
 import CleanoxItemsPanel from './CleanoxItemsPanel.jsx';
 import WhatsAppPhoneLink from '../../../components/WhatsAppPhoneLink.jsx';
-import { getNotaPricing, isExpressRow } from '../../../utils/notaPricing.js';
+import { getNotaPricing, isExpressRow, itemExtrasFromRow, orderExtrasFromRow, itemParfumeLabel, hasItemParfume } from '../../../utils/notaPricing.js';
 import {
   CheckCircle2,
   ChevronDown,
@@ -144,6 +144,7 @@ export default function DetailTransaction() {
     speedSurcharge: parseFloat(raw.speed_surcharge) || 0,
     discountAmount: parseFloat(raw.discount_amount) || 0,
     promoName: raw.discount_notes || '',
+    ...orderExtrasFromRow(raw),
     grandTotal: parseFloat(raw.grand_total) || 0,
     paidAmount: parseFloat(raw.paid_amount) || 0,
     changeAmount: parseFloat(raw.change_amount) || 0,
@@ -187,6 +188,7 @@ export default function DetailTransaction() {
       : (it.photo_url ? [{ id: `legacy-${it.id}`, photo_url: it.photo_url }] : [])
     ).map((p) => ({ id: p.id, url: p.photo_url })),
     workers: Array.isArray(it.workers) ? it.workers : [],
+    ...itemExtrasFromRow(it),
     fulfillmentType: it.fulfillment_type || (orderIsDelivery ? 'Delivery_Kurir' : 'Ambil_Di_Outlet')
   }));
 
@@ -574,6 +576,7 @@ export default function DetailTransaction() {
       speedSurcharge: order.speedSurcharge,
       discountAmount: order.discountAmount,
       promoName: order.promoName,
+      memberDiscountAmount: order.memberDiscountAmount,
       grandTotal: order.grandTotal,
       paidAmount: order.paidAmount,
       changeAmount: order.changeAmount,
@@ -595,6 +598,11 @@ export default function DetailTransaction() {
         brand: it.brand,
         color: it.color,
         note: it.note,
+        isDryClean: it.isDryClean,
+        parfumeName: it.parfumeName,
+        parfumePrice: it.parfumePrice,
+        isGoGreen: it.isGoGreen,
+        goGreenDiscount: it.goGreenDiscount,
         isCleanox: it.isCleanox
       }))
     });
@@ -635,7 +643,7 @@ export default function DetailTransaction() {
 
   const paymentStatus = normalizePaymentStatus(order?.paymentStatus);
   const remaining = Math.max(0, (order?.grandTotal || 0) - (order?.paidAmount || 0));
-  const pricing = getNotaPricing(order);
+  const pricing = getNotaPricing({ ...order, items });
 
   return (
     <div className="min-h-screen bg-[#f8f8f8] text-[#313030] flex flex-col font-sans">
@@ -771,7 +779,9 @@ export default function DetailTransaction() {
                   <div className="p-3.5 bg-[#f8f8f8] border border-[#e0e0e0] rounded-2xl">
                     <span className="text-[10px] font-bold text-slate-400 uppercase block">Layanan</span>
                     <span className="font-black text-sm text-[#313030] block mt-0.5">{order.serviceType}</span>
-                    <span className="text-[11px] text-pink-700 font-bold">Aroma: {order.perfume}</span>
+                    <span className="text-[11px] text-pink-700 font-bold">
+                      Aroma: {hasItemParfume(items) ? 'per item (lihat rincian item)' : order.perfume}
+                    </span>
                     <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                       {pricing.isExpress && (
                         <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border bg-amber-50 text-amber-800 border-amber-300">
@@ -801,17 +811,29 @@ export default function DetailTransaction() {
                     <span className="text-[10px] font-bold text-slate-400 uppercase block">Tagihan</span>
                     {pricing.showBreakdown && (
                       <div className="mt-1 mb-1 space-y-0.5 text-[11px]">
+                        {(pricing.hasSurcharge || pricing.hasParfume || pricing.hasGoGreen) && (
+                          <div className="flex justify-between gap-2 text-slate-500">
+                            <span>Subtotal</span>
+                            <span className="font-bold tabular-nums">Rp {pricing.subtotal.toLocaleString('id-ID')}</span>
+                          </div>
+                        )}
                         {pricing.hasSurcharge && (
-                          <>
-                            <div className="flex justify-between gap-2 text-slate-500">
-                              <span>Subtotal</span>
-                              <span className="font-bold tabular-nums">Rp {pricing.subtotal.toLocaleString('id-ID')}</span>
-                            </div>
-                            <div className="flex justify-between gap-2 text-amber-700">
-                              <span>Biaya Express</span>
-                              <span className="font-bold tabular-nums">+Rp {pricing.surcharge.toLocaleString('id-ID')}</span>
-                            </div>
-                          </>
+                          <div className="flex justify-between gap-2 text-amber-700">
+                            <span>Biaya Express</span>
+                            <span className="font-bold tabular-nums">+Rp {pricing.surcharge.toLocaleString('id-ID')}</span>
+                          </div>
+                        )}
+                        {pricing.hasParfume && (
+                          <div className="flex justify-between gap-2 text-pink-700">
+                            <span>Parfum</span>
+                            <span className="font-bold tabular-nums">+Rp {pricing.parfumeTotal.toLocaleString('id-ID')}</span>
+                          </div>
+                        )}
+                        {pricing.hasGoGreen && (
+                          <div className="flex justify-between gap-2 text-emerald-700">
+                            <span>Kemasan Go-Green</span>
+                            <span className="font-bold tabular-nums">-Rp {pricing.goGreenTotal.toLocaleString('id-ID')}</span>
+                          </div>
                         )}
                         <div className="flex justify-between gap-2 text-slate-500">
                           <span>Harga normal</span>
@@ -819,12 +841,20 @@ export default function DetailTransaction() {
                             Rp {pricing.original.toLocaleString('id-ID')}
                           </span>
                         </div>
-                        {pricing.hasPromo && (
+                        {pricing.hasManualPromo && (
                           <div className="flex justify-between gap-2 text-emerald-700">
                             <span className="min-w-0 truncate" title={pricing.promoName}>
                               Promo {pricing.promoName}
                             </span>
-                            <span className="font-bold tabular-nums shrink-0">-Rp {pricing.discount.toLocaleString('id-ID')}</span>
+                            <span className="font-bold tabular-nums shrink-0">-Rp {pricing.manualDiscount.toLocaleString('id-ID')}</span>
+                          </div>
+                        )}
+                        {pricing.hasMemberPromo && (
+                          <div className="flex justify-between gap-2 text-emerald-700">
+                            <span className="min-w-0 truncate" title={pricing.memberPromoName}>
+                              Promo Member {pricing.memberPromoName}
+                            </span>
+                            <span className="font-bold tabular-nums shrink-0">-Rp {pricing.memberDiscount.toLocaleString('id-ID')}</span>
                           </div>
                         )}
                         <div className="border-t border-dashed border-slate-300 pt-0.5" />
@@ -972,6 +1002,16 @@ export default function DetailTransaction() {
                               {it.isCleanox && (
                                 <span className="text-[9px] font-extrabold text-sky-800 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-md">
                                   Cleanox
+                                </span>
+                              )}
+                              {it.parfumeName && (
+                                <span className="text-[9px] font-extrabold text-pink-800 bg-pink-50 border border-pink-200 px-1.5 py-0.5 rounded-md">
+                                  🌸 {itemParfumeLabel(it)}
+                                </span>
+                              )}
+                              {it.isGoGreen && (
+                                <span className="text-[9px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-md">
+                                  🌱 Go-Green{it.goGreenDiscount > 0 ? ` -Rp ${it.goGreenDiscount.toLocaleString('id-ID')}` : ''}
                                 </span>
                               )}
                               <span className="text-[11px] font-bold text-slate-500">

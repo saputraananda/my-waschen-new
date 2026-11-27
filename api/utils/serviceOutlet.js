@@ -9,6 +9,8 @@
 export const EFFECTIVE_SERVICE_COLUMNS = `
   s.id, s.code, s.description, s.is_cleanox, s.is_featured, s.is_active,
   COALESCE(so.is_dc_required, s.is_dc_required) AS is_dc_required,
+  COALESCE(so.is_special_parfume, 0) AS is_special_parfume,
+  COALESCE(so.go_green_discount, 0) AS go_green_discount,
   s.created_at, s.updated_at,
   COALESCE(so.name, s.name) AS name,
   COALESCE(so.category_id, s.category_id) AS category_id,

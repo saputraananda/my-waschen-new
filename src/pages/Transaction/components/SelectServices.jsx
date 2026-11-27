@@ -26,7 +26,9 @@ export default function SelectServices({
   serviceCurrentPage,
   setServiceCurrentPage,
   setCurrentStep,
-  calculations
+  calculations,
+  parfumePerItem = false,
+  parfumeOptions = []
 }) {
   return (
     <div className="flex flex-col gap-6">
@@ -257,6 +259,8 @@ export default function SelectServices({
         setItemSpecs={setItemSpecs}
         handleAddToCart={handleAddToCart}
         isEditing={Boolean(configuringItem?.editingCartId)}
+        parfumePerItem={parfumePerItem}
+        parfumeOptions={parfumeOptions}
       />
     </div>
   );

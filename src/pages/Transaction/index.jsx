@@ -55,8 +55,28 @@ const mapPromoFromApi = (p) => ({
   value: Number(p.discount_value) || 0,
   // Batas maksimal potongan (Rp); null = tanpa batas
   maxDiscount: Number(p.max_discount) > 0 ? Number(p.max_discount) : null,
-  desc: p.description || ''
+  desc: p.description || '',
+  // Phase 20: promo member otomatis (tidak dipilih kasir)
+  dbId: p.id,
+  isAuto: Number(p.is_auto) === 1,
+  memberTiers: String(p.member_tiers || '').split(',').map((t) => t.trim()).filter(Boolean),
+  requiresMemberBalance: Number(p.requires_member_balance) === 1,
+  serviceIds: Array.isArray(p.service_ids) ? p.service_ids.map(Number) : []
 });
+
+/** Tier member aktif customer (Gold/Platinum/Diamond) bila masa aktif belum lewat. */
+const activeMemberTier = (c) => {
+  if (!c?.membershipTier) return null;
+  if (c.membershipEndDate) {
+    // end_date dikirim sebagai ISO UTC (mis. 2027-05-07T17:00Z = 8 Mei WIB): bandingkan dalam WIB
+    const raw = String(c.membershipEndDate);
+    const end = raw.includes('T')
+      ? new Date(raw).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
+      : raw.slice(0, 10);
+    if (end < new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })) return null;
+  }
+  return c.membershipTier;
+};
 
 const mapCustomer = (c) => ({
   id: c.customer_code || `CUST-${String(c.id).padStart(3, '0')}`,
@@ -78,7 +98,9 @@ const mapCustomer = (c) => ({
   periodSpending: parseFloat(c.monthly_spending) || 0,
   yearSpending: parseFloat(c.spending_value_year) || 0,
   totalTrx: parseInt(c.total_orders, 10) || 0,
-  memberBalance: parseFloat(c.deposit_balance) || 0
+  memberBalance: parseFloat(c.deposit_balance) || 0,
+  membershipTier: c.membership_tier || null,
+  membershipEndDate: c.membership_end_date || null
 });
 
 const FAVORITE_LIMIT = 3;
@@ -133,7 +155,10 @@ export default function TransactionPage() {
   const [activeOutletId, setActiveOutletId] = useState(localStorage.getItem('activeOutletId') || '2');
   const [outlets, setOutlets] = useState([]);
   const [parfumes, setParfumes] = useState([]);
+  // Outlet dengan parfum khusus (mis. Transyogi) → parfum dipilih per item, berharga
+  const [parfumePerItem, setParfumePerItem] = useState(false);
   const [promoList, setPromoList] = useState(PROMO_FALLBACK);
+  const [autoPromos, setAutoPromos] = useState([]);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [customerTiers, setCustomerTiers] = useState([]);
 
@@ -256,6 +281,8 @@ export default function TransactionPage() {
     note: '',
     isCleanox: false,
     isDryClean: false,
+    parfumeId: null,
+    isGoGreen: false,
     length: 1,
     width: 1
   });
@@ -286,7 +313,9 @@ export default function TransactionPage() {
             // Minimal order murni dari master layanan (min_order_qty); kosong/0 = tanpa minimal
             minWeight: parseFloat(s.min_order_qty) > 0 ? parseFloat(s.min_order_qty) : 1,
             minPrice: (parseFloat(s.min_order_qty) > 0 ? parseFloat(s.min_order_qty) : 1) * (parseFloat(s.price) || 0),
-            isCleanox: s.is_cleanox === 1 || s.is_cleanox === true
+            isCleanox: s.is_cleanox === 1 || s.is_cleanox === true,
+            isSpecialParfume: Number(s.is_special_parfume) === 1,
+            goGreenDiscount: parseFloat(s.go_green_discount) > 0 ? parseFloat(s.go_green_discount) : 0
           }));
           setServicesList(mapped);
         }
@@ -344,36 +373,49 @@ export default function TransactionPage() {
       })
       .catch(err => console.error('Gagal mengambil data outlet:', err));
 
-    axios.get('/api/services/parfumes')
+  }, [navigate]);
+
+  // Parfum & promo mengikuti outlet aktif (Phase 20: parfum/promo khusus outlet)
+  useEffect(() => {
+    axios.get('/api/services/parfumes', { params: { outlet_id: activeOutletId } })
       .then(res => {
         if (res.data?.success && res.data.data?.length > 0) {
-          setParfumes(res.data.data);
-          const first = res.data.data[0];
-          // Jangan timpa parfum dari draf yang dipulihkan
-          setSelectedPerfume((prev) => prev || first.name);
-          setSelectedPerfumeId((prev) => prev ?? first.id);
+          const list = res.data.data;
+          setParfumes(list);
+          setParfumePerItem(res.data.meta?.perItem === true);
+          const first = list[0];
+          // Jangan timpa parfum dari draf yang dipulihkan (kecuali tidak tersedia di outlet ini)
+          setSelectedPerfume((prev) => (prev && list.some((p) => p.name === prev) ? prev : first.name));
+          setSelectedPerfumeId((prev) => (prev != null && list.some((p) => Number(p.id) === Number(prev)) ? prev : first.id));
         }
       })
       .catch(err => console.error('Gagal mengambil data parfum:', err));
 
-    axios.get('/api/masters')
+    axios.get('/api/masters', { params: { outlet_id: activeOutletId } })
       .then(res => {
         if (!res.data?.success || !res.data.data) return;
         const { promos, paymentMethods: methods, customerTiers: tiers } = res.data.data;
-        if (promos?.length) {
-          // "Tanpa Promo" selalu ada di urutan pertama & jadi pilihan awal: promo harus dipilih kasir secara sadar
-          const mapped = [PROMO_FALLBACK[0], ...promos.map(mapPromoFromApi).filter((p) => p.code !== 'NONE')];
-          setPromoList(mapped);
-          setSelectedPromoCode((prev) => (mapped.some((p) => p.code === prev) ? prev : 'NONE'));
-        }
+        const all = (promos || []).map(mapPromoFromApi).filter((p) => p.code !== 'NONE');
+        // "Tanpa Promo" selalu ada di urutan pertama & jadi pilihan awal: promo harus dipilih kasir secara sadar.
+        // Promo member otomatis tidak masuk pilihan kasir.
+        const mapped = [PROMO_FALLBACK[0], ...all.filter((p) => !p.isAuto)];
+        setPromoList(mapped);
+        setAutoPromos(all.filter((p) => p.isAuto));
+        setSelectedPromoCode((prev) => (mapped.some((p) => p.code === prev) ? prev : 'NONE'));
         if (methods?.length) {
           setPaymentMethods(methods);
         }
         if (tiers?.length) setCustomerTiers(tiers);
       })
       .catch(err => console.error('Gagal mengambil data master:', err));
+  }, [activeOutletId]);
 
-  }, [navigate]);
+  /** Parfum default item: pilihan nota saat ini, bila tidak ada parfum pertama. */
+  const defaultItemParfumeId = () => {
+    if (!parfumePerItem) return null;
+    const cur = parfumes.find((p) => Number(p.id) === Number(selectedPerfumeId));
+    return (cur || parfumes[0])?.id ?? null;
+  };
 
   // Guard: Order Baru wajib punya shift aktif di sesi ini
   useEffect(() => {
@@ -484,6 +526,8 @@ export default function TransactionPage() {
         note: '',
         isCleanox: service.isCleanox === true,
         isDryClean: service.isDcRequired === true,
+        parfumeId: defaultItemParfumeId(),
+        isGoGreen: false,
         length: 1,
         width: 1
       });
@@ -498,6 +542,8 @@ export default function TransactionPage() {
         note: '',
         isCleanox: service.isCleanox === true,
         isDryClean: service.isDcRequired === true,
+        parfumeId: defaultItemParfumeId(),
+        isGoGreen: false,
         length: 1,
         width: 1
       });
@@ -518,6 +564,8 @@ export default function TransactionPage() {
       isCleanox: cartItem.serviceIsCleanox === true,
       isDcRequired: cartItem.isDcRequired === true,
       dcPriceAdd: cartItem.dcPriceAdd || 0,
+      isSpecialParfume: cartItem.isSpecialParfume === true,
+      goGreenDiscount: cartItem.goGreenRate || 0,
       minWeight: cartItem.minWeight || 1,
       editingCartId: cartItem.cartId
     });
@@ -531,6 +579,8 @@ export default function TransactionPage() {
       note: cartItem.note === '-' ? '' : (cartItem.note || ''),
       isCleanox: cartItem.isCleanox === true,
       isDryClean: cartItem.isDcRequired === true || cartItem.isDryClean === true,
+      parfumeId: cartItem.parfumeId ?? defaultItemParfumeId(),
+      isGoGreen: cartItem.isGoGreen === true,
       length: cartItem.length || 1,
       width: cartItem.width || 1
     });
@@ -600,8 +650,22 @@ export default function TransactionPage() {
           note: itemSpecs.note || '-'
         };
 
+    // Phase 20: parfum per item (harga per baris item; Special Parfum = gratis) & Go-Green
+    const goGreenRate = isAddon ? 0 : Number(configuringItem.goGreenDiscount) || 0;
+    const itemParfume = parfumePerItem && !isAddon
+      ? parfumes.find((p) => Number(p.id) === Number(itemSpecs.parfumeId)) || null
+      : null;
+    const extraFields = {
+      parfumeId: itemParfume ? itemParfume.id : null,
+      parfumeName: itemParfume ? itemParfume.name : null,
+      parfumePrice: itemParfume && configuringItem.isSpecialParfume !== true ? Number(itemParfume.price) || 0 : 0,
+      isGoGreen: goGreenRate > 0 && itemSpecs.isGoGreen === true,
+      goGreenDiscount: goGreenRate > 0 && itemSpecs.isGoGreen === true ? goGreenRate : 0
+    };
+
     const lineFields = {
       ...specsForCart,
+      ...extraFields,
       qty: isAddon ? addonQty : isKiloan ? (parseFloat(itemSpecs.weight) || minWeight) : 1,
       weight: parseFloat(itemSpecs.weight) || (isKiloan ? minWeight : 1),
       minWeight,
@@ -632,6 +696,8 @@ export default function TransactionPage() {
       serviceIsCleanox: configuringItem.isCleanox === true,
       isDcRequired: configuringItem.isDcRequired === true,
       dcPriceAdd: configuringItem.dcPriceAdd || 0,
+      isSpecialParfume: configuringItem.isSpecialParfume === true,
+      goGreenRate: Number(configuringItem.goGreenDiscount) || 0,
       name: configuringItem.name,
       category: configuringItem.category,
       categoryName: configuringItem.categoryName,
@@ -703,30 +769,73 @@ export default function TransactionPage() {
   const activePromo = promoList.find(p => p.code === selectedPromoCode) || promoList[0] || PROMO_FALLBACK[0];
 
   // Financial Calculations
+  // Rumus sama dengan server (api/utils/orderExtras.js):
+  //   base  = subtotal × express + parfum − Go-Green
+  //   grand = base − promo manual − promo member (member dari sisa setelah promo manual)
   const calculations = useMemo(() => {
     const rawSubtotal = cartItems.reduce((sum, item) => sum + item.effectiveSubtotal, 0);
     const expressMultiplier = isExpress ? 2 : 1;
     const subtotalAfterExpress = rawSubtotal * expressMultiplier;
+    const parfumeTotal = cartItems.reduce((s, it) => s + (Number(it.parfumePrice) || 0), 0);
+    const goGreenTotal = cartItems.reduce((s, it) => s + (it.isGoGreen ? Number(it.goGreenDiscount) || 0 : 0), 0);
+    const baseTotal = subtotalAfterExpress + parfumeTotal - goGreenTotal;
 
     let discountAmount = 0;
     if (activePromo.type === 'percentage') {
-      discountAmount = Math.round((subtotalAfterExpress * activePromo.value) / 100);
+      discountAmount = Math.round((baseTotal * activePromo.value) / 100);
       if (activePromo.maxDiscount) discountAmount = Math.min(discountAmount, activePromo.maxDiscount);
     } else if (activePromo.type === 'nominal') {
-      discountAmount = Math.min(subtotalAfterExpress, activePromo.value);
+      discountAmount = Math.min(baseTotal, activePromo.value);
+    }
+    const remaining = Math.max(0, baseTotal - discountAmount);
+
+    // Promo member otomatis: tier cocok, Lunas, (bila disyaratkan) bayar Potong Saldo Member
+    const tier = activeMemberTier(selectedCustomer);
+    const payBalance = mainCategory === 'Potong Saldo Member';
+    let memberPromo = null;
+    let memberDiscount = 0;
+    // Promo member yang bisa didapat customer ini (untuk info sebelum pilih metode bayar)
+    let memberPromoHint = null;
+    if (tier && remaining > 0) {
+      for (const p of autoPromos) {
+        if (p.memberTiers.length && !p.memberTiers.includes(tier)) continue;
+        const scope = p.serviceIds.length ? new Set(p.serviceIds) : null;
+        const eligible = cartItems.reduce((s, it) => {
+          if (scope && !scope.has(Number(it.serviceDbId))) return s;
+          return s + (Number(it.effectiveSubtotal) || 0) * expressMultiplier
+            + (Number(it.parfumePrice) || 0) - (it.isGoGreen ? Number(it.goGreenDiscount) || 0 : 0);
+        }, 0);
+        const basis = Math.max(0, Math.min(eligible, remaining));
+        if (basis <= 0) continue;
+        let amount = p.type === 'percentage' ? Math.round((basis * p.value) / 100) : Math.min(basis, p.value);
+        if (p.maxDiscount) amount = Math.min(amount, p.maxDiscount);
+        if (!memberPromoHint || amount > memberPromoHint.amount) memberPromoHint = { promo: p, amount };
+        const applies = paymentStatus === 'Lunas' && (!p.requiresMemberBalance || payBalance);
+        if (applies && amount > memberDiscount) {
+          memberDiscount = amount;
+          memberPromo = p;
+        }
+      }
     }
 
-    const grandTotal = Math.max(0, subtotalAfterExpress - discountAmount);
+    const grandTotal = Math.max(0, remaining - memberDiscount);
 
     return {
       rawSubtotal,
       subtotalAfterExpress,
       // Tambahan biaya express (disimpan ke tr_transaction.speed_surcharge)
       expressSurcharge: subtotalAfterExpress - rawSubtotal,
+      parfumeTotal,
+      goGreenTotal,
+      baseTotal,
+      // discountAmount = promo manual (dikirim ke server); promo member dihitung ulang server
       discountAmount,
+      memberPromo,
+      memberDiscount,
+      memberPromoHint,
       grandTotal
     };
-  }, [cartItems, isExpress, activePromo]);
+  }, [cartItems, isExpress, activePromo, autoPromos, selectedCustomer, mainCategory, paymentStatus]);
 
   const isMemberBalanceMethod = mainCategory === 'Potong Saldo Member';
 
@@ -894,8 +1003,9 @@ export default function TransactionPage() {
       totalPcs,
       speedId: isExpress ? 2 : 1,
       speedName: isExpress ? 'Express (1x24 Jam)' : 'Reguler (2 Hari)',
-      parfumeId: selectedPerfumeId || parfumes.find(p => p.name === selectedPerfume)?.id || null,
-      parfumeName: selectedPerfume,
+      // Mode parfum per item: parfum nota kosong (tersimpan di tiap item)
+      parfumeId: parfumePerItem ? null : (selectedPerfumeId || parfumes.find(p => p.name === selectedPerfume)?.id || null),
+      parfumeName: parfumePerItem ? null : selectedPerfume,
       subtotal: calculations.rawSubtotal,
       speedSurcharge: calculations.expressSurcharge,
       discountAmount: calculations.discountAmount,
@@ -928,7 +1038,9 @@ export default function TransactionPage() {
         material: item.material,
         size: item.size,
         conditionNotes: item.note,
-        photoUrls: itemPhotoUrls(item)
+        photoUrls: itemPhotoUrls(item),
+        parfumeId: item.parfumeId || null,
+        isGoGreen: item.isGoGreen === true
       }))
     };
 
@@ -1011,11 +1123,15 @@ export default function TransactionPage() {
         cashierName: formatEmployeeName(cashierNameResolved, 'Frontliner'),
         cashierFullName: cashierNameResolved || `Karyawan #${resolvedCashierId}`,
         items: cartItems,
-        perfume: selectedPerfume,
+        perfume: parfumePerItem ? '' : selectedPerfume,
         isExpress,
-        promoName: activePromo.name,
+        promoName: [activePromo.code !== 'NONE' ? activePromo.name : null, calculations.memberPromo?.name].filter(Boolean).join(' + '),
         speedSurcharge: calculations.expressSurcharge,
-        discountAmount: calculations.discountAmount,
+        discountAmount: calculations.discountAmount + calculations.memberDiscount,
+        memberDiscountAmount: calculations.memberDiscount,
+        memberPromoName: calculations.memberPromo?.name || '',
+        parfumeTotal: calculations.parfumeTotal,
+        goGreenTotal: calculations.goGreenTotal,
         isDelivery,
         generalNotes: generalOrderNotes || '-',
         subtotal: calculations.rawSubtotal,
@@ -1260,6 +1376,8 @@ export default function TransactionPage() {
             setServiceCurrentPage={setServiceCurrentPage}
             setCurrentStep={setCurrentStep}
             calculations={calculations}
+            parfumePerItem={parfumePerItem}
+            parfumeOptions={parfumes}
           />
         )}
 
@@ -1297,6 +1415,7 @@ export default function TransactionPage() {
               setSelectedPerfumeId(match?.id || null);
             }}
             parfumes={parfumes}
+            parfumePerItem={parfumePerItem}
             generalOrderNotes={generalOrderNotes}
             setGeneralOrderNotes={setGeneralOrderNotes}
             calculations={calculations}

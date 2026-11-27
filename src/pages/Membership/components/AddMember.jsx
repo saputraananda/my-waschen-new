@@ -25,6 +25,7 @@ import PaymentProofFields from '../../../components/PaymentProofFields.jsx';
 import MemberExclusiveBenefits from '../../../components/MemberExclusiveBenefits.jsx';
 import { formatName } from '../../../utils/FormatName.js';
 import { formatRupiah, parseRupiah } from '../../../utils/FormatRupiah.js';
+import { packageBonus, isOutletPackage, memberPromosForTier } from '../../../utils/membershipPackage.js';
 import { customerPickLabel } from '../../../utils/customerPickLabel.js';
 
 const PAGE_SIZE = 6;
@@ -54,6 +55,8 @@ export default function AddMember({
   const navigate = useNavigate();
   const dropdownRef = useRef(null);
   const [packages, setPackages] = useState([]);
+  // Promo member otomatis outlet (benefit paket khusus outlet, mis. Transyogi)
+  const [outletPromos, setOutletPromos] = useState([]);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [customersList, setCustomersList] = useState([]);
   const [customersTotal, setCustomersTotal] = useState(0);
@@ -90,7 +93,7 @@ export default function AddMember({
 
   useEffect(() => {
     Promise.all([
-      axios.get('/api/memberships/packages'),
+      axios.get('/api/memberships/packages', { params: { outlet_id: localStorage.getItem('activeOutletId') || undefined } }),
       axios.get('/api/masters/payment-methods')
     ])
       .then(([pkgRes, payRes]) => {
@@ -105,6 +108,9 @@ export default function AddMember({
         }
       })
       .catch((err) => console.error('Gagal memuat master membership:', err));
+    axios.get('/api/masters/promos', { params: { outlet_id: localStorage.getItem('activeOutletId') || undefined } })
+      .then((res) => setOutletPromos(Array.isArray(res.data?.data) ? res.data.data : []))
+      .catch(() => setOutletPromos([]));
   }, []);
 
   useEffect(() => {
@@ -527,7 +533,11 @@ export default function AddMember({
               </div>
 
               {/* Exclusive Benefits Display Panel */}
-              <MemberExclusiveBenefits tier={selectedPackage?.tier || 'Gold'} className="mt-3" />
+              <MemberExclusiveBenefits
+                tier={selectedPackage?.tier || 'Gold'}
+                className="mt-3"
+                outletPromos={isOutletPackage(selectedPackage) ? memberPromosForTier(outletPromos, selectedPackage.tier) : null}
+              />
             </>
           )}
         </div>
@@ -575,13 +585,16 @@ export default function AddMember({
               <div className="flex items-center gap-2">
                 <Sparkles className={`h-4 w-4 shrink-0 ${selectedPackage?.tier === 'Diamond' ? 'text-cyan-600' : 'text-amber-600'}`} />
                 <span>
-                  Deposit <strong>Rp {Number(selectedPackage?.top_up_amount || 500000).toLocaleString('id-ID')}</strong> + <span className="text-emerald-700 font-extrabold">Bonus Saldo +Rp {(selectedPackage?.tier === 'Diamond' ? 50000 : 25000).toLocaleString('id-ID')}</span>
+                  Deposit <strong>Rp {Number(selectedPackage?.top_up_amount || 500000).toLocaleString('id-ID')}</strong>
+                  {packageBonus(selectedPackage) > 0
+                    ? <> + <span className="text-emerald-700 font-extrabold">Bonus Saldo +Rp {packageBonus(selectedPackage).toLocaleString('id-ID')}</span></>
+                    : <span className="text-slate-500 font-semibold"> (tanpa bonus saldo)</span>}
                 </span>
               </div>
               <div className="px-3 py-1 bg-white rounded-lg border border-slate-200 shadow-2xs text-[#313030] flex items-center gap-1.5 shrink-0">
                 <span className="text-[10px] text-slate-400 font-bold uppercase">Total Saldo:</span>
                 <span className="font-black text-emerald-600 text-xs sm:text-sm">
-                  Rp {(Number(selectedPackage?.top_up_amount || 500000) + (selectedPackage?.tier === 'Diamond' ? 50000 : 25000)).toLocaleString('id-ID')}
+                  Rp {(Number(selectedPackage?.top_up_amount || 500000) + packageBonus(selectedPackage)).toLocaleString('id-ID')}
                 </span>
               </div>
             </div>
@@ -702,7 +715,7 @@ export default function AddMember({
                     Estimasi saldo baru: Rp {(
                       parseFloat(selectedCustomer?.deposit_balance || 0)
                       + packagePrice
-                      + (selectedPackage?.tier === 'Diamond' ? 50000 : 25000)
+                      + packageBonus(selectedPackage)
                       + excessAmount
                     ).toLocaleString('id-ID')}
                   </p>

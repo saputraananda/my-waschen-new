@@ -75,9 +75,15 @@ const CUSTOMER_SELECT_PICKER = `
          st.id AS spending_tier_id,
          st.code AS spending_tier_code,
          st.name AS tier,
-         st.label AS tier_label
+         st.label AS tier_label,
+         -- membership aktif: dipakai promo member otomatis di Order Baru (Phase 20)
+         mpkg.tier AS membership_tier,
+         am.end_date AS membership_end_date,
+         am.status AS membership_status
   FROM mst_customer c
   LEFT JOIN mst_customer_tier st ON c.spending_tier_id = st.id
+  LEFT JOIN tr_membership am ON c.active_membership_id = am.id AND am.status = 'Active'
+  LEFT JOIN mst_membership_package mpkg ON am.package_id = mpkg.id
 `;
 
 /** Prioritas kasir di Order Baru: VIP, Gold, Reguler, One-Time. Tanpa tier dianggap Reguler. */

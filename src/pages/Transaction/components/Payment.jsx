@@ -243,11 +243,38 @@ export default function Payment({
               </div>
             )}
 
+            {calculations.parfumeTotal > 0 && (
+              <div className="flex justify-between items-center text-pink-700">
+                <span>Parfum (per item)</span>
+                <span className="font-bold">+ Rp {calculations.parfumeTotal.toLocaleString('id-ID')}</span>
+              </div>
+            )}
+
+            {calculations.goGreenTotal > 0 && (
+              <div className="flex justify-between items-center text-emerald-700">
+                <span>Kemasan Go-Green</span>
+                <span className="font-bold">- Rp {calculations.goGreenTotal.toLocaleString('id-ID')}</span>
+              </div>
+            )}
+
             {calculations.discountAmount > 0 && (
               <div className="flex justify-between items-center text-emerald-700">
                 <span>Diskon Promo ({activePromo?.name})</span>
                 <span className="font-bold">- Rp {calculations.discountAmount.toLocaleString('id-ID')}</span>
               </div>
+            )}
+
+            {calculations.memberDiscount > 0 && (
+              <div className="flex justify-between items-center text-emerald-700">
+                <span>Promo Member ({calculations.memberPromo?.name})</span>
+                <span className="font-bold">- Rp {calculations.memberDiscount.toLocaleString('id-ID')}</span>
+              </div>
+            )}
+
+            {calculations.memberPromoHint && !calculations.memberPromo && (
+              <p className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-2.5 py-1.5">
+                {calculations.memberPromoHint.promo.name} (-Rp {calculations.memberPromoHint.amount.toLocaleString('id-ID')}) otomatis aktif bila Lunas dengan Potong Saldo Member.
+              </p>
             )}
 
             <div className="p-4 bg-gradient-to-r from-[#5f1340]/10 via-[#5f1340]/5 to-transparent border border-[#5f1340]/20 rounded-2xl flex flex-wrap justify-between items-center gap-x-3 gap-y-1 mt-2">

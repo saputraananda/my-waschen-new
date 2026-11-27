@@ -4,7 +4,7 @@ import { DEFAULT_CUSTOMER_SETTINGS } from './printerSettings.js';
 import { formatDateId } from './FilterDate.js';
 import { buildDigitalNotaMessage } from '../components/DigitalNota.jsx';
 import { buildCustomerTrackingUrl } from './customerTrackingUrl.js';
-import { isExpressRow } from './notaPricing.js';
+import { isExpressRow, itemExtrasFromRow, orderExtrasFromRow } from './notaPricing.js';
 import { withMemberNotaInfo } from './memberNotaInfo.js';
 
 /** Nomor lokal 08… → digit WA internasional 62… */
@@ -37,7 +37,12 @@ function normalizeReceiptItems(itemsSrc, order) {
       brand: it.brand,
       color: it.color,
       note: it.note || it.conditionNotes,
-      isCleanox: Boolean(it.isCleanox)
+      isCleanox: Boolean(it.isCleanox),
+      isDryClean: Boolean(it.isDryClean),
+      parfumeName: it.parfumeName || null,
+      parfumePrice: Number(it.parfumePrice) || 0,
+      isGoGreen: Boolean(it.isGoGreen),
+      goGreenDiscount: Number(it.goGreenDiscount) || 0
     };
   });
 
@@ -75,6 +80,7 @@ export function toCustomerNotaReceipt(order, itemsOverride) {
     speedSurcharge: Number(order.speedSurcharge) || 0,
     discountAmount: Number(order.discountAmount) || 0,
     promoName: order.promoName || order.discountNotes || '',
+    memberDiscountAmount: Number(order.memberDiscountAmount) || 0,
     grandTotal: Number(order.grandTotal ?? order.totalAmount) || 0,
     paidAmount: Number(order.paidAmount) || 0,
     changeAmount: Number(order.changeAmount) || 0,
@@ -111,6 +117,7 @@ export function mapApiTransactionToReceipt(raw) {
     speedSurcharge: parseFloat(raw.speed_surcharge) || 0,
     discountAmount: parseFloat(raw.discount_amount) || 0,
     promoName: raw.discount_notes || '',
+    ...orderExtrasFromRow(raw),
     grandTotal: parseFloat(raw.grand_total) || 0,
     paidAmount: parseFloat(raw.paid_amount) || 0,
     changeAmount: parseFloat(raw.change_amount) || 0,
@@ -137,7 +144,8 @@ export function mapApiTransactionToReceipt(raw) {
     brand: it.brand,
     color: it.color,
     note: it.condition_notes,
-    isCleanox: it.is_cleanox === 1
+    isCleanox: it.is_cleanox === 1,
+    ...itemExtrasFromRow(it)
   }));
   return toCustomerNotaReceipt(order, items);
 }

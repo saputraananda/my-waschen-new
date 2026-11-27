@@ -733,7 +733,8 @@ export const closeShift = async (req, res) => {
       }
       const pinOwner = await findEmployeeIdByPin(pin);
       if (!pinOwner) {
-        return res.status(401).json({ success: false, message: 'PIN tidak ditemukan' });
+        // 403, bukan 401: 401 dipakai frontend sebagai tanda sesi habis -> auto logout
+        return res.status(403).json({ success: false, message: 'PIN tidak ditemukan' });
       }
       const loggedIn = sessionEmployeeId || closerId;
       if (Number(pinOwner) !== Number(loggedIn) || Number(pinOwner) !== closerId) {
@@ -998,7 +999,8 @@ export const verifyPin = async (req, res) => {
     }
 
     if (!rows.length) {
-      return res.status(401).json({
+      // 403, bukan 401: 401 dipakai frontend sebagai tanda sesi habis -> auto logout
+      return res.status(403).json({
         success: false,
         message: 'PIN tidak ditemukan. Pastikan PIN frontliner sudah terdaftar di sistem.'
       });

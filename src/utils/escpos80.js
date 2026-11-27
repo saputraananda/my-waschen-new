@@ -13,7 +13,7 @@ import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QRCodeCanvas } from 'qrcode.react';
 import { on, PERHATIAN_ITEMS } from './printerSettings.js';
-import { getNotaPricing } from './notaPricing.js';
+import { getNotaPricing, itemParfumeLabel, hasItemParfume } from './notaPricing.js';
 import { formatWibDateTime } from './wib.js';
 import {
   rupiah,
@@ -115,24 +115,42 @@ function pushTipe(rows, receipt, settings) {
 function pushTotals(rows, receipt, settings) {
   const p = getNotaPricing(receipt);
   const showPromo = p.hasPromo && on(settings, 'show_discount');
-  if (!p.hasSurcharge && !showPromo) {
+  if (!p.hasSurcharge && !showPromo && !p.hasParfume && !p.hasGoGreen) {
     rows.push(T(padNota80('Total :', rupiah(p.grand))));
     rows.push(DASH);
     rows.push(T(padNota80('Grand Total', rupiah(p.grand)), { bold: true }));
     return;
   }
-  if (p.hasSurcharge) {
+  if (p.hasSurcharge || p.hasParfume || p.hasGoGreen) {
     rows.push(T(padNota80('Subtotal :', rupiah(p.subtotal))));
-    rows.push(T(padNota80('Biaya Express :', `+${rupiah(p.surcharge)}`)));
+    if (p.hasSurcharge) rows.push(T(padNota80('Biaya Express :', `+${rupiah(p.surcharge)}`)));
+    if (p.hasParfume) rows.push(T(padNota80('Parfum :', `+${rupiah(p.parfumeTotal)}`)));
+    if (p.hasGoGreen) rows.push(T(padNota80('Kemasan Go-Green :', `-${rupiah(p.goGreenTotal)}`)));
   }
   rows.push(T(padNota80('Harga Normal :', rupiah(p.original))));
-  if (showPromo) {
+  if (showPromo && p.hasManualPromo) {
     wrapNota80(`Promo : ${p.promoName}`).forEach((l) => rows.push(T(l)));
-    rows.push(T(padNota80('Potongan Promo :', `-${rupiah(p.discount)}`)));
+    rows.push(T(padNota80('Potongan Promo :', `-${rupiah(p.manualDiscount)}`)));
+  }
+  if (showPromo && p.hasMemberPromo) {
+    wrapNota80(`Promo Member : ${p.memberPromoName}`).forEach((l) => rows.push(T(l)));
+    rows.push(T(padNota80('Potongan Member :', `-${rupiah(p.memberDiscount)}`)));
   }
   rows.push(DASH);
   rows.push(T(padNota80('Grand Total', rupiah(p.grand)), { bold: true }));
-  if (showPromo) rows.push(T(`Anda hemat ${rupiah(p.discount)}`, { align: 'center' }));
+  const saved = (showPromo ? p.discount : 0) + p.goGreenTotal;
+  if (saved > 0) rows.push(T(padNota80('Anda hemat', rupiah(saved))));
+}
+
+/** Baris parfum & Go-Green di bawah item (parfum per item, Phase 20) */
+function pushItemExtras(rows, item, withPrice) {
+  const parf = withPrice ? itemParfumeLabel(item) : item?.parfumeName;
+  if (parf) wrapNota80(`  Parfum: ${parf}`).forEach((l) => rows.push(T(l)));
+  if (item?.isGoGreen) {
+    rows.push(T(withPrice && Number(item.goGreenDiscount) > 0
+      ? `  Kemasan Go-Green (-${rupiah(item.goGreenDiscount)})`
+      : '  Kemasan Go-Green'));
+  }
 }
 
 const DC_TAG = '(DC)';
@@ -174,7 +192,7 @@ export function buildInternalNotaModel80(receipt, settings) {
     wrapNota80(`Terima : ${getReceivedLabel(receipt)}`).forEach((l) => rows.push(T(l)));
   }
   rows.push(T(estimasiLine(receipt)));
-  if (on(settings, 'show_perfume')) {
+  if (on(settings, 'show_perfume') && !hasItemParfume(receipt.items)) {
     rows.push(T(`Parfum : ${receipt.perfume && receipt.perfume !== '-' ? receipt.perfume : '-'}`));
   }
   if (on(settings, 'show_notes') && receipt.generalNotes && receipt.generalNotes !== '-') {
@@ -183,7 +201,10 @@ export function buildInternalNotaModel80(receipt, settings) {
 
   rows.push(DASH);
   rows.push(T('Layanan :'));
-  for (const item of groupNotaItems(receipt.items)) pushItemText(rows, `> ${formatItemTitle(item)}`, item);
+  for (const item of groupNotaItems(receipt.items)) {
+    pushItemText(rows, `> ${formatItemTitle(item)}`, item);
+    pushItemExtras(rows, item, false);
+  }
   rows.push(DASH);
 
   rows.push(T(`Sisa bayar : ${rupiah(getRemaining(receipt))}`));
@@ -222,7 +243,7 @@ export function buildCustomerNotaModel80(receipt, settings) {
     wrapNota80(`Terima : ${getReceivedLabel(receipt)}`).forEach((l) => rows.push(T(l)));
   }
   wrapNota80(estimasiLine(receipt)).forEach((l) => rows.push(T(l)));
-  if (on(settings, 'show_perfume')) {
+  if (on(settings, 'show_perfume') && !hasItemParfume(items)) {
     wrapNota80(`Parfum : ${receipt.perfume || 'Tanpa parfum'}`).forEach((l) => rows.push(T(l)));
   }
   if (on(settings, 'show_customer_address')) {
@@ -242,6 +263,7 @@ export function buildCustomerNotaModel80(receipt, settings) {
       wrapNota80(name).forEach((l) => rows.push(T(l)));
     }
     pushItemText(rows, `- ${getItemQtyCount(item)} Barang`, item);
+    pushItemExtras(rows, item, true);
   }
 
   rows.push(DASH);

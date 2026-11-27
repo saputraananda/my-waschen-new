@@ -3,6 +3,8 @@ import { Receipt, Trash2, Edit3, Zap, Truck, ArrowLeft, ArrowRight } from 'lucid
 import ItemConfigModal from './ItemConfigModal.jsx';
 import ItemPhotosField from '../../../components/ItemPhotosField.jsx';
 
+const activeTierLabel = (c) => c?.membershipTier || '';
+
 export default function Cart({
   cartItems,
   setCurrentStep,
@@ -31,6 +33,7 @@ export default function Cart({
   selectedPerfume,
   setSelectedPerfume,
   parfumes = [],
+  parfumePerItem = false,
   generalOrderNotes,
   setGeneralOrderNotes,
   calculations
@@ -75,6 +78,16 @@ export default function Cart({
                           {item.isDryClean && (
                             <span className="inline-block text-[9px] font-black text-amber-900 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full">
                               Dry Clean (DC)
+                            </span>
+                          )}
+                          {item.parfumeName && (
+                            <span className="inline-block text-[9px] font-black text-pink-800 bg-pink-50 border border-pink-200 px-2 py-0.5 rounded-full">
+                              🌸 {item.parfumeName}{Number(item.parfumePrice) > 0 ? ` +Rp ${Number(item.parfumePrice).toLocaleString('id-ID')}` : ''}
+                            </span>
+                          )}
+                          {item.isGoGreen && (
+                            <span className="inline-block text-[9px] font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                              🌱 Go-Green -Rp {Number(item.goGreenDiscount || 0).toLocaleString('id-ID')}
                             </span>
                           )}
                           {item.serviceIsCleanox && !item.isCleanox && (
@@ -287,8 +300,8 @@ export default function Cart({
               </label>
             </div>
 
-            {/* Perfume Selector */}
-            <div>
+            {/* Perfume Selector — outlet parfum per item: dipilih di rincian tiap item */}
+            {!parfumePerItem && (<div>
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                 Aroma Parfum
               </label>
@@ -306,7 +319,7 @@ export default function Cart({
                   ))
                 )}
               </select>
-            </div>
+            </div>)}
 
             {/* General Order Notes */}
             <div>
@@ -326,6 +339,25 @@ export default function Cart({
 
           {/* Subtotal & Next Step Button */}
           <div className="pt-3 border-t border-[#e0e0e0] space-y-3">
+            {(calculations.parfumeTotal > 0 || calculations.goGreenTotal > 0) && (
+              <div className="space-y-1 text-[11px] font-bold">
+                {calculations.parfumeTotal > 0 && (
+                  <div className="flex justify-between text-pink-700">
+                    <span>Parfum</span><span>+ Rp {calculations.parfumeTotal.toLocaleString('id-ID')}</span>
+                  </div>
+                )}
+                {calculations.goGreenTotal > 0 && (
+                  <div className="flex justify-between text-emerald-700">
+                    <span>Kemasan Go-Green</span><span>- Rp {calculations.goGreenTotal.toLocaleString('id-ID')}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            {calculations.memberPromoHint && !calculations.memberPromo && (
+              <p className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-2.5 py-1.5">
+                Member {activeTierLabel(selectedCustomer)}: {calculations.memberPromoHint.promo.name} (-Rp {calculations.memberPromoHint.amount.toLocaleString('id-ID')}) otomatis bila Lunas dengan Potong Saldo Member.
+              </p>
+            )}
             <div className="flex justify-between items-center text-xs">
               <span className="font-bold text-slate-500">Estimasi Total Tagihan:</span>
               <span className="font-black text-base text-[#5f1340]">Rp {calculations.grandTotal.toLocaleString('id-ID')}</span>
@@ -362,6 +394,8 @@ export default function Cart({
         setItemSpecs={setItemSpecs}
         handleAddToCart={handleAddToCart}
         isEditing={Boolean(configuringItem?.editingCartId)}
+        parfumePerItem={parfumePerItem}
+        parfumeOptions={parfumes}
       />
 
     </div>

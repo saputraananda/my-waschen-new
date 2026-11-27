@@ -226,15 +226,24 @@ export const getServiceSpeeds = async (req, res) => {
 };
 
 /**
- * GET /api/services/parfumes
- * Mengambil daftar aroma parfum aktif
+ * GET /api/services/parfumes?outlet_id=
+ * Parfum aktif: umum (outlet_id NULL) + khusus outlet. Outlet yang punya parfum khusus
+ * memakai mode parfum per item (meta.perItem), harga per item dari mst_parfume.price.
  */
 export const getParfumes = async (req, res) => {
   try {
-    const [rows] = await myWaschenPool.query('SELECT * FROM mst_parfume WHERE is_active = 1 ORDER BY id ASC');
+    const outletId = parseInt(req.query.outlet_id, 10) || null;
+    const [rows] = await myWaschenPool.query(
+      `SELECT * FROM mst_parfume
+       WHERE is_active = 1 AND (outlet_id IS NULL OR outlet_id = ?)
+       ORDER BY (outlet_id IS NULL) DESC, sort_order ASC, id ASC`,
+      [outletId || 0]
+    );
+    const perItem = Boolean(outletId) && rows.some((r) => Number(r.outlet_id) === outletId);
     return res.status(200).json({
       success: true,
-      data: rows
+      data: rows,
+      meta: { perItem }
     });
   } catch (error) {
     console.error('Error fetching parfumes:', error);

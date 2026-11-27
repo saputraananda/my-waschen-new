@@ -1,5 +1,5 @@
 import { on, PERHATIAN_ITEMS } from './printerSettings.js';
-import { getNotaPricing } from './notaPricing.js';
+import { getNotaPricing, itemParfumeLabel, hasItemParfume } from './notaPricing.js';
 import {
   rupiah,
   getQrValue,
@@ -22,7 +22,8 @@ import {
 
 /** Lebar karakter efektif 58mm */
 export const NOTA_WIDTH = 32;
-export const NOTA_DASH = '-'.repeat(26);
+// Selebar baris teks (32 kolom) supaya angka rata kanan sejajar ujung garis
+export const NOTA_DASH = '-'.repeat(NOTA_WIDTH);
 
 export function wrapNotaText(str, width = NOTA_WIDTH) {
   const raw = String(str ?? '');
@@ -92,24 +93,43 @@ function pushTipe(rows, receipt, settings) {
 function pushTotals(rows, receipt, settings) {
   const p = getNotaPricing(receipt);
   const showPromo = p.hasPromo && on(settings, 'show_discount');
-  if (!p.hasSurcharge && !showPromo) {
+  if (!p.hasSurcharge && !showPromo && !p.hasParfume && !p.hasGoGreen) {
     rows.push(T(padNotaRow('Total :', rupiah(p.grand))));
     rows.push({ type: 'dash' });
     rows.push(T(padNotaRow('Grand Total', rupiah(p.grand)), { bold: true }));
     return;
   }
-  if (p.hasSurcharge) {
+  if (p.hasSurcharge || p.hasParfume || p.hasGoGreen) {
     rows.push(T(padNotaRow('Subtotal :', rupiah(p.subtotal))));
-    rows.push(T(padNotaRow('Biaya Express :', `+${rupiah(p.surcharge)}`)));
+    if (p.hasSurcharge) rows.push(T(padNotaRow('Biaya Express :', `+${rupiah(p.surcharge)}`)));
+    if (p.hasParfume) rows.push(T(padNotaRow('Parfum :', `+${rupiah(p.parfumeTotal)}`)));
+    if (p.hasGoGreen) rows.push(T(padNotaRow('Go-Green :', `-${rupiah(p.goGreenTotal)}`)));
   }
   rows.push(T(padNotaRow('Harga Normal :', rupiah(p.original))));
-  if (showPromo) {
+  if (showPromo && p.hasManualPromo) {
     wrapNotaText(`Promo : ${p.promoName}`).forEach((l) => rows.push(T(l)));
-    rows.push(T(padNotaRow('Potongan Promo :', `-${rupiah(p.discount)}`)));
+    rows.push(T(padNotaRow('Potongan Promo :', `-${rupiah(p.manualDiscount)}`)));
+  }
+  if (showPromo && p.hasMemberPromo) {
+    wrapNotaText(`Promo Member : ${p.memberPromoName}`).forEach((l) => rows.push(T(l)));
+    rows.push(T(padNotaRow('Potongan Member :', `-${rupiah(p.memberDiscount)}`)));
   }
   rows.push({ type: 'dash' });
   rows.push(T(padNotaRow('Grand Total', rupiah(p.grand)), { bold: true }));
-  if (showPromo) rows.push(T(`Anda hemat ${rupiah(p.discount)}`, { align: 'center' }));
+  const saved = (showPromo ? p.discount : 0) + p.goGreenTotal;
+  // Rata kanan sejajar Grand Total (bukan center: tengah kertas 32 kolom tidak sejajar garis)
+  if (saved > 0) rows.push(T(padNotaRow('Anda hemat', rupiah(saved))));
+}
+
+/** Baris parfum & Go-Green di bawah item (parfum per item, Phase 20) */
+function pushItemExtras(rows, item, withPrice) {
+  const parf = withPrice ? itemParfumeLabel(item) : item?.parfumeName;
+  if (parf) wrapNotaText(`  Parfum: ${parf}`).forEach((l) => rows.push(T(l)));
+  if (item?.isGoGreen) {
+    rows.push(T(withPrice && Number(item.goGreenDiscount) > 0
+      ? `  Go-Green (-${rupiah(item.goGreenDiscount)})`
+      : '  Kemasan Go-Green'));
+  }
 }
 
 const DC_TAG = '(DC)';
@@ -182,7 +202,7 @@ export function buildInternalNotaModel(receipt, settings) {
 
   rows.push(T(estimasiLine(receipt)));
 
-  if (on(settings, 'show_perfume')) {
+  if (on(settings, 'show_perfume') && !hasItemParfume(receipt.items)) {
     rows.push(T(`Parfum : ${receipt.perfume && receipt.perfume !== '-' ? receipt.perfume : '-'}`));
   }
   if (on(settings, 'show_notes') && receipt.generalNotes && receipt.generalNotes !== '-') {
@@ -193,6 +213,7 @@ export function buildInternalNotaModel(receipt, settings) {
   rows.push(T('Layanan :'));
   for (const item of groupNotaItems(receipt.items)) {
     pushItemText(rows, `> ${formatItemTitle(item)}`, item);
+    pushItemExtras(rows, item, false);
   }
   rows.push({ type: 'dash' });
 
@@ -242,7 +263,7 @@ export function buildCustomerNotaModel(receipt, settings) {
     wrapNotaText(`Terima : ${getReceivedLabel(receipt)}`).forEach((l) => rows.push(T(l)));
   }
   wrapNotaText(estimasiLine(receipt)).forEach((l) => rows.push(T(l)));
-  if (on(settings, 'show_perfume')) {
+  if (on(settings, 'show_perfume') && !hasItemParfume(items)) {
     wrapNotaText(`Parfum : ${receipt.perfume || 'Tanpa parfum'}`).forEach((l) => rows.push(T(l)));
   }
   if (on(settings, 'show_customer_address')) {
@@ -262,6 +283,7 @@ export function buildCustomerNotaModel(receipt, settings) {
       wrapNotaText(title).forEach((l) => rows.push(T(l)));
     }
     pushItemText(rows, `- ${getItemQtyCount(item)} Barang`, item);
+    pushItemExtras(rows, item, true);
   }
 
   rows.push({ type: 'dash' });

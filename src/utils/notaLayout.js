@@ -132,7 +132,8 @@ export function groupNotaItems(items = []) {
       continue;
     }
     const name = String(it.name || it.serviceName || 'Layanan').trim();
-    const key = [name.toLowerCase(), unit.toLowerCase(), getUnitPrice(it), it.isDryClean ? 1 : 0].join('|');
+    const key = [name.toLowerCase(), unit.toLowerCase(), getUnitPrice(it), it.isDryClean ? 1 : 0,
+      String(it.parfumeName || '').toLowerCase(), it.isGoGreen ? 1 : 0].join('|');
     const g = groups.get(key);
     if (!g) {
       const copy = { ...it, qty, qtyDisplay: `${qty} ${unit}`, _unitLabel: unit };
@@ -142,6 +143,8 @@ export function groupNotaItems(items = []) {
     }
     g.qty += qty;
     g.qtyDisplay = `${g.qty} ${g._unitLabel}`;
+    g.parfumePrice = (Number(g.parfumePrice) || 0) + (Number(it.parfumePrice) || 0);
+    g.goGreenDiscount = (Number(g.goGreenDiscount) || 0) + (Number(it.goGreenDiscount) || 0);
     if (it.subtotal != null || g.subtotal != null) g.subtotal = (Number(g.subtotal) || 0) + (Number(it.subtotal) || 0);
     if (it.effectiveSubtotal != null || g.effectiveSubtotal != null) {
       g.effectiveSubtotal = (Number(g.effectiveSubtotal || g.subtotal) || 0) + (Number(it.effectiveSubtotal || it.subtotal) || 0);

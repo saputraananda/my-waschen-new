@@ -20,6 +20,7 @@ import { toWibYmdCompact, formatWibTime } from '../utils/wib.js';
 import { isShiftOptionalCashier, resolveValidCashier } from '../utils/cashierGuard.js';
 import { getMemberNotaInfo } from '../utils/memberNota.js';
 import { auditOrderPricing, priceCheckMode } from '../utils/priceAudit.js';
+import { resolveItemExtras, resolveMemberPromo } from '../utils/orderExtras.js';
 import { AVAILABLE_SQL, EFFECTIVE_CATEGORY_ID_SQL } from '../utils/serviceOutlet.js';
 import { insertCleanoxItemsForDetail, getCleanoxItemsByTransaction, attachCleanoxHoldCount } from '../utils/cleanoxItems.js';
 import path from 'path';
@@ -226,10 +227,41 @@ export const createTransaction = async (req, res) => {
     orderNoLock = lockName;
     const orderNo = await generateOrderNo(outletId, connection);
     const accessCode = generateAccessCode();
-    const grandTotalNum = parseFloat(grandTotal) || 0;
+    // Phase 20: parfum per item, Go-Green, promo member — dihitung ulang dari master.
+    const manualDiscount = Math.max(0, parseFloat(discountAmount) || 0);
+    const expressMultiplier = Number(speedId) === 2 ? 2 : 1;
+    const itemExtras = await resolveItemExtras(connection, { outletId: resolvedOutletId, items });
+    const extrasNet = itemExtras.parfumeTotal - itemExtras.goGreenTotal;
+    const baseTotal = (parseFloat(subtotal) || 0) * expressMultiplier + extrasNet;
+    const memberPromo = await resolveMemberPromo(connection, {
+      outletId: resolvedOutletId,
+      customerId: resolvedCustomerId,
+      items,
+      lines: itemExtras.lines,
+      expressMultiplier,
+      paymentMethod,
+      paymentStatus,
+      remaining: Math.max(0, baseTotal - manualDiscount)
+    });
+    const memberDiscount = memberPromo.amount;
+    const serverGrand = Math.max(0, baseTotal - manualDiscount - memberDiscount);
+    const clientGrand = parseFloat(grandTotal) || 0;
+    // Komponen baru ini pasti (tidak ada pembulatan kasir), jadi selisih = data klien basi.
+    if ((itemExtras.parfumeTotal || itemExtras.goGreenTotal || memberDiscount) && Math.abs(serverGrand - clientGrand) > 1) {
+      await connection.rollback();
+      return res.status(409).json({
+        success: false,
+        message: `Total nota berubah (parfum / Go-Green / promo member). Total yang benar Rp ${serverGrand.toLocaleString('id-ID')}. Muat ulang halaman lalu coba lagi.`
+      });
+    }
+    const grandTotalNum = clientGrand;
+    const totalDiscount = manualDiscount + memberDiscount;
+    const discountNotesResolved = [discountNotes, memberPromo.promo?.name].filter(Boolean).join(' + ') || null;
 
     // Audit harga di server (total dari klien tidak dipercaya begitu saja).
-    const audit = await auditOrderPricing(connection, { items, subtotal, discountAmount, grandTotal, speedId, outletId: resolvedOutletId });
+    const audit = await auditOrderPricing(connection, {
+      items, subtotal, discountAmount: manualDiscount, grandTotal, speedId, outletId: resolvedOutletId, extrasNet, memberDiscount
+    });
     if (audit.fatal.length) {
       await connection.rollback();
       return res.status(400).json({ success: false, message: `Nota ditolak: ${audit.fatal.join('; ')}` });
@@ -300,8 +332,8 @@ export const createTransaction = async (req, res) => {
     try {
       [orderResult] = await connection.query(
         `INSERT INTO tr_transaction 
-         (order_no, barcode, customer_id, outlet_id, cashier_employee_id, shift_id, order_category, total_weight_kg, total_pcs, speed_id, parfume_id, subtotal, speed_surcharge, discount_amount, discount_notes, grand_total, payment_status, payment_method, paid_amount, change_amount, payment_proof_url, paid_at, work_status, is_delivery, delivery_address, delivery_notes, special_notes, order_date, access_code)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?, ?, ?, ?, NOW(), ?)`,
+         (order_no, barcode, customer_id, outlet_id, cashier_employee_id, shift_id, order_category, total_weight_kg, total_pcs, speed_id, parfume_id, subtotal, speed_surcharge, discount_amount, discount_notes, member_promo_id, member_discount_amount, grand_total, payment_status, payment_method, paid_amount, change_amount, payment_proof_url, paid_at, work_status, is_delivery, delivery_address, delivery_notes, special_notes, order_date, access_code)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?, ?, ?, ?, NOW(), ?)`,
         [
           orderNo,
           orderNo,
@@ -316,8 +348,10 @@ export const createTransaction = async (req, res) => {
           resolvedParfumeId,
           parseFloat(subtotal) || 0,
           parseFloat(speedSurcharge) || 0,
-          parseFloat(discountAmount) || 0,
-          discountNotes || null,
+          totalDiscount,
+          discountNotesResolved,
+          memberPromo.promo?.id || null,
+          memberDiscount,
           grandTotalNum,
           resolvedStatus,
           isOutstanding ? '-' : (paymentMethod || 'Tunai'),
@@ -337,8 +371,8 @@ export const createTransaction = async (req, res) => {
       // Kolom belum dimigrasi — tetap buat nota tanpa access_code
       [orderResult] = await connection.query(
         `INSERT INTO tr_transaction 
-         (order_no, barcode, customer_id, outlet_id, cashier_employee_id, shift_id, order_category, total_weight_kg, total_pcs, speed_id, parfume_id, subtotal, speed_surcharge, discount_amount, discount_notes, grand_total, payment_status, payment_method, paid_amount, change_amount, payment_proof_url, paid_at, work_status, is_delivery, delivery_address, delivery_notes, special_notes, order_date)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?, ?, ?, ?, NOW())`,
+         (order_no, barcode, customer_id, outlet_id, cashier_employee_id, shift_id, order_category, total_weight_kg, total_pcs, speed_id, parfume_id, subtotal, speed_surcharge, discount_amount, discount_notes, member_promo_id, member_discount_amount, grand_total, payment_status, payment_method, paid_amount, change_amount, payment_proof_url, paid_at, work_status, is_delivery, delivery_address, delivery_notes, special_notes, order_date)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?, ?, ?, ?, NOW())`,
         [
           orderNo,
           orderNo,
@@ -353,8 +387,10 @@ export const createTransaction = async (req, res) => {
           resolvedParfumeId,
           parseFloat(subtotal) || 0,
           parseFloat(speedSurcharge) || 0,
-          parseFloat(discountAmount) || 0,
-          discountNotes || null,
+          totalDiscount,
+          discountNotesResolved,
+          memberPromo.promo?.id || null,
+          memberDiscount,
           grandTotalNum,
           resolvedStatus,
           isOutstanding ? '-' : (paymentMethod || 'Tunai'),
@@ -455,7 +491,8 @@ export const createTransaction = async (req, res) => {
 
     const inventoryUsages = [];
     let cleanoxOutletName;
-    for (const item of items) {
+    for (const [itemIndex, item] of items.entries()) {
+      const itemExtra = itemExtras.lines[itemIndex];
       const serviceId = parseInt(item.serviceId || item.serviceDbId || item.id, 10);
       const mustDc = dcRequiredOf.get(parseInt(serviceId, 10)) === true;
       const isDryClean = mustDc || (item.isDryClean || item.is_dry_clean || item.laundryMethodId === 2 || item.laundry_method_id === 2) ? true : false;
@@ -488,9 +525,17 @@ export const createTransaction = async (req, res) => {
 
       const [detailResult] = await connection.query(
         `INSERT INTO tr_transaction_detail
-         (transaction_id, service_id, service_name, is_production, qty, unit, unit_price, subtotal, is_cleanox, laundry_method_id, brand, color, material, size, condition_notes, item_work_status, item_completed_at, photo_url, fulfillment_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        detailParams
+         (transaction_id, service_id, service_name, is_production, qty, unit, unit_price, subtotal, is_cleanox, laundry_method_id, brand, color, material, size, condition_notes, item_work_status, item_completed_at, photo_url, fulfillment_type,
+          parfume_id, parfume_name, parfume_price, is_go_green, go_green_discount)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          ...detailParams,
+          itemExtra.parfumeId,
+          itemExtra.parfumeName,
+          itemExtra.parfumePrice,
+          itemExtra.isGoGreen ? 1 : 0,
+          itemExtra.goGreenDiscount
+        ]
       );
       await insertItemPhotos(connection, {
         transactionId,

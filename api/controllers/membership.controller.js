@@ -3,14 +3,30 @@ import { todayWibISO, toWibDateKey, addWibDays } from '../utils/wib.js';
 import { buildPaymentProofUrl } from '../utils/paymentLog.js';
 import { safeUnlinkAbsPath } from '../middleware/upload.js';
 
+/** Paket aktif untuk outlet: paket khusus outlet bila ada, selain itu paket umum. */
+async function listPackagesForOutlet(conn, outletId) {
+  if (outletId) {
+    const [own] = await conn.query(
+      'SELECT * FROM mst_membership_package WHERE is_active = 1 AND outlet_id = ? ORDER BY top_up_amount ASC',
+      [outletId]
+    );
+    if (own.length) return own;
+  }
+  const [rows] = await conn.query(
+    'SELECT * FROM mst_membership_package WHERE is_active = 1 AND outlet_id IS NULL ORDER BY top_up_amount ASC'
+  );
+  return rows;
+}
+
 /**
- * GET /api/memberships/packages
+ * GET /api/memberships/packages?outlet_id=
  */
 export const getMembershipPackages = async (req, res) => {
   try {
-    const [rows] = await myWaschenPool.query(
-      'SELECT * FROM mst_membership_package WHERE is_active = 1 ORDER BY top_up_amount ASC'
-    );
+    // Outlet yang punya paket sendiri (mst_membership_package.outlet_id) hanya menampilkan paketnya;
+    // outlet lain memakai paket umum (outlet_id NULL).
+    const outletId = parseInt(req.query.outlet_id, 10) || null;
+    const rows = await listPackagesForOutlet(myWaschenPool, outletId);
     return res.status(200).json({
       success: true,
       data: rows
@@ -172,14 +188,22 @@ export const createMembership = async (req, res) => {
     }
 
     const requestedPkg = pkgRows[0];
+    // Paket khusus outlet hanya bisa dibeli di outlet itu.
+    if (requestedPkg.outlet_id != null && Number(requestedPkg.outlet_id) !== Number(outletId)) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: 'Paket membership ini tidak tersedia di outlet ini.' });
+    }
     const topUpAmount = parseFloat(requestedPkg.top_up_amount) || 0;
     const validityDays = requestedPkg.validity_days || 180;
 
     // Bonus Saldo Deposit:
     // Paket Gold (500K) -> Bonus Rp 25.000 (Total saldo bertambah +525.000)
     // Paket Diamond (1M) -> Bonus Rp 50.000 (Total saldo bertambah +1.050.000)
+    // Paket khusus outlet (mis. Transyogi) tanpa bonus saldo.
     let bonusAmount = 0;
-    if (String(requestedPkg.tier).toLowerCase().includes('diamond') || topUpAmount >= 1000000) {
+    if (requestedPkg.outlet_id != null) {
+      bonusAmount = 0;
+    } else if (String(requestedPkg.tier).toLowerCase().includes('diamond') || topUpAmount >= 1000000) {
       bonusAmount = 50000;
     } else if (String(requestedPkg.tier).toLowerCase().includes('gold') || topUpAmount >= 500000) {
       bonusAmount = 25000;
@@ -253,8 +277,8 @@ export const createMembership = async (req, res) => {
           : '';
     const depositNotes = `Top Up Paket ${requestedPkg.name} (Bayar Rp ${paidAmount.toLocaleString('id-ID')} → Setoran paket Rp ${topUpAmount.toLocaleString('id-ID')} + Bonus Rp ${bonusAmount.toLocaleString('id-ID')}${excessNote})`;
 
-    // Hierarchy Tier: Diamond (Rank 2) > Gold (Rank 1)
-    const TIER_RANK = { 'Gold': 1, 'Diamond': 2 };
+    // Hierarchy Tier: Diamond > Platinum > Gold
+    const TIER_RANK = { 'Gold': 1, 'Platinum': 2, 'Diamond': 3 };
     const currentTier = customer.active_tier || null;
     const currentRank = currentTier ? (TIER_RANK[currentTier] || 1) : 0;
     const requestedRank = TIER_RANK[requestedPkg.tier] || 1;

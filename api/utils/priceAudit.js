@@ -2,7 +2,8 @@
  * Audit harga nota di server. Total dari klien tidak dipercaya begitu saja:
  * - Selalu ditolak: angka tidak valid / negatif, diskon melebihi subtotal.
  * - Selisih rumus & harga master: dicatat (mode log). Set PRICE_CHECK_MODE=enforce untuk menolak.
- * Rumus kasir (Transaction/index.jsx): grand = max(0, subtotal x (express ? 2 : 1) - diskon).
+ * Rumus kasir (Transaction/index.jsx): grand = max(0, subtotal x (express ? 2 : 1) + parfum - Go-Green - diskon - promo member).
+ * extrasNet = total parfum - total Go-Green, memberDiscount = promo member (dihitung server, utils/orderExtras.js).
  */
 const TOLERANCE = 1; // rupiah, pembulatan
 
@@ -15,7 +16,7 @@ export function priceCheckMode() {
   return String(process.env.PRICE_CHECK_MODE || 'log').toLowerCase() === 'enforce' ? 'enforce' : 'log';
 }
 
-export async function auditOrderPricing(connection, { items, subtotal, discountAmount, grandTotal, speedId, outletId }) {
+export async function auditOrderPricing(connection, { items, subtotal, discountAmount, grandTotal, speedId, outletId, extrasNet = 0, memberDiscount = 0 }) {
   const fatal = [];
   const issues = [];
 
@@ -28,10 +29,10 @@ export async function auditOrderPricing(connection, { items, subtotal, discountA
   }
 
   const express = Number(speedId) === 2;
-  const afterSpeed = sub * (express ? 2 : 1);
+  const afterSpeed = sub * (express ? 2 : 1) + (num(extrasNet) || 0);
   if (disc > afterSpeed + TOLERANCE) fatal.push('Diskon melebihi subtotal');
 
-  const expectedGrand = Math.max(0, afterSpeed - disc);
+  const expectedGrand = Math.max(0, afterSpeed - disc - (num(memberDiscount) || 0));
   if (Math.abs(expectedGrand - grand) > TOLERANCE) {
     issues.push(`total klien ${grand} != rumus ${expectedGrand}`);
   }

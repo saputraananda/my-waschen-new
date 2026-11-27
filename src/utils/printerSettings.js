@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { isExpressRow } from './notaPricing.js';
+import { isExpressRow, itemExtrasFromRow, orderExtrasFromRow } from './notaPricing.js';
 
 export const PERHATIAN_ITEMS = [
   'Pengambilan barang harap disertai nota',
@@ -101,7 +101,8 @@ export function mapDbTransactionToReceipt(raw, fallbackOutletName = '') {
       note: it.condition_notes || it.note || '-',
       isDryClean: it.is_dry_clean === 1 || it.laundry_method_code === 'DC',
       isCleanox: it.is_cleanox === 1,
-      laundry_method_code: it.laundry_method_code
+      laundry_method_code: it.laundry_method_code,
+      ...itemExtrasFromRow(it)
     };
   });
 
@@ -129,6 +130,7 @@ export function mapDbTransactionToReceipt(raw, fallbackOutletName = '') {
     speedSurcharge: parseFloat(raw.speed_surcharge) || 0,
     discountAmount: parseFloat(raw.discount_amount) || 0,
     promoName: raw.discount_notes || '',
+    ...orderExtrasFromRow(raw),
     grandTotal: grand,
     paidAmount: paid,
     changeAmount: parseFloat(raw.change_amount) || 0,

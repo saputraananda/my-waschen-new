@@ -142,9 +142,16 @@ export default function ItemConfigModal({
   setItemSpecs,
   handleAddToCart,
   isEditing = false,
-  materialsList = []
+  materialsList = [],
+  // Phase 20: parfum per item (outlet dengan parfum khusus, mis. Transyogi)
+  parfumePerItem = false,
+  parfumeOptions = []
 }) {
   if (!configuringItem) return null;
+  const isSpecialParfume = configuringItem.isSpecialParfume === true;
+  const goGreenRate = Number(configuringItem.goGreenDiscount) || 0;
+  const parfumePriceOf = (p) => (isSpecialParfume ? 0 : Number(p?.price) || 0);
+  const chosenParfume = parfumeOptions.find((p) => Number(p.id) === Number(itemSpecs.parfumeId)) || null;
 
   const dcLocked = configuringItem.isDcRequired === true;
   const isMeterService = configuringItem.unit_id === 4 || configuringItem.unit === 'm²' || configuringItem.unit === 'm2' || configuringItem.unit === 'Meter';
@@ -576,6 +583,78 @@ export default function ItemConfigModal({
               </>
             )}
 
+            {/* Parfum per item + Kemasan Go-Green (Phase 20) */}
+            {!isAddon && parfumePerItem && parfumeOptions.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Aroma Parfum Item</label>
+                  {isSpecialParfume && (
+                    <span className="text-[9px] font-black text-pink-800 bg-pink-50 border border-pink-200 px-2 py-0.5 rounded-full">
+                      Special Parfum · semua gratis
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                  {parfumeOptions.map((p) => {
+                    const active = Number(itemSpecs.parfumeId) === Number(p.id);
+                    const price = parfumePriceOf(p);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setItemSpecs((prev) => ({ ...prev, parfumeId: p.id }))}
+                        className={`px-2.5 py-2 rounded-xl border text-left transition-all cursor-pointer select-none ${
+                          active
+                            ? 'bg-pink-600 border-pink-600 text-white shadow-sm'
+                            : 'bg-white border-[#e0e0e0] text-slate-700 hover:border-pink-300 hover:bg-pink-50/40'
+                        }`}
+                      >
+                        <span className="block text-[11px] font-extrabold leading-tight truncate">{p.name}</span>
+                        <span className={`block text-[10px] font-bold ${active ? 'text-pink-100' : price > 0 ? 'text-pink-700' : 'text-emerald-600'}`}>
+                          {price > 0 ? `+Rp ${price.toLocaleString('id-ID')}` : 'Free'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {!isAddon && goGreenRate > 0 && (
+              <button
+                type="button"
+                onClick={() => setItemSpecs((prev) => ({ ...prev, isGoGreen: !prev.isGoGreen }))}
+                className={`w-full p-3 rounded-2xl border transition-all text-left flex items-center justify-between gap-3 cursor-pointer select-none active:scale-[0.99] ${
+                  itemSpecs.isGoGreen
+                    ? 'bg-emerald-600 border-emerald-600 text-white shadow-md ring-2 ring-emerald-300/50'
+                    : 'bg-white border-[#e0e0e0] text-slate-700 hover:border-emerald-300 hover:bg-emerald-50/40'
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className="font-extrabold text-xs block">Kemasan Go-Green Waschen?</span>
+                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
+                      itemSpecs.isGoGreen
+                        ? 'bg-white text-emerald-700'
+                        : 'bg-slate-100 text-slate-400 border border-slate-200'
+                    }`}>
+                      {itemSpecs.isGoGreen ? 'YA ✓' : 'TIDAK'}
+                    </span>
+                  </div>
+                  <span className={`text-[10px] block truncate ${itemSpecs.isGoGreen ? 'text-emerald-100' : 'text-slate-400'}`}>
+                    Customer bawa kemasan sendiri · potongan Rp {goGreenRate.toLocaleString('id-ID')} per item
+                  </span>
+                </div>
+                <div className={`w-11 h-6 rounded-full relative p-0.5 transition-colors shrink-0 ${
+                  itemSpecs.isGoGreen ? 'bg-white/30' : 'bg-slate-300'
+                }`}>
+                  <div className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                    itemSpecs.isGoGreen ? 'translate-x-5' : 'translate-x-0'
+                  }`} />
+                </div>
+              </button>
+            )}
+
             {/* Notes Input */}
             <div>
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
@@ -613,6 +692,15 @@ export default function ItemConfigModal({
               {!isKiloan && !isAddon && parseInt(itemSpecs.qty, 10) > 1 && (
                 <span className="block text-[10px] font-bold text-slate-500">
                   Dipecah jadi {parseInt(itemSpecs.qty, 10)} item terpisah (QC per item)
+                </span>
+              )}
+              {!isAddon && ((parfumePerItem && chosenParfume && parfumePriceOf(chosenParfume) > 0) || (itemSpecs.isGoGreen && goGreenRate > 0)) && (
+                <span className="block text-[10px] font-bold text-slate-500">
+                  {[
+                    parfumePerItem && chosenParfume && parfumePriceOf(chosenParfume) > 0
+                      ? `Parfum +Rp ${parfumePriceOf(chosenParfume).toLocaleString('id-ID')}` : null,
+                    itemSpecs.isGoGreen && goGreenRate > 0 ? `Go-Green -Rp ${goGreenRate.toLocaleString('id-ID')}` : null
+                  ].filter(Boolean).join(' · ')} per item (di luar subtotal layanan)
                 </span>
               )}
             </div>

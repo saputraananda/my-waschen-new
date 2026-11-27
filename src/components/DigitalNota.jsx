@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { buildCustomerTrackingUrl } from '../utils/customerTrackingUrl.js';
 import { DEFAULT_CUSTOMER_SETTINGS } from '../utils/printerSettings.js';
 import { WIB_TZ, addWibDays, toWibDateKey } from '../utils/wib.js';
-import { getNotaPricing } from '../utils/notaPricing.js';
+import { getNotaPricing, itemParfumeLabel } from '../utils/notaPricing.js';
 import { getMemberNotaRows } from '../utils/notaLayout.js';
 
 /**
@@ -37,9 +37,12 @@ function itemBlock(it) {
   const name = it?.name || it?.serviceName || 'Layanan';
   const unit = Number(it?.unitPrice) || 0;
   const sub = Number(it?.effectiveSubtotal ?? it?.subtotal) || 0;
+  const parf = itemParfumeLabel(it);
   return [
     `✦ *${name}*`,
     `${formatQtyUnit(it)} · ${formatRp(unit)}`,
+    ...(parf ? [`🌸 Parfum: ${parf}`] : []),
+    ...(it?.isGoGreen ? [`🌱 Kemasan Go-Green${Number(it.goGreenDiscount) > 0 ? `: -${formatRp(it.goGreenDiscount)}` : ''}`] : []),
     `*${formatRp(sub)}*`
   ].join('\n');
 }
@@ -99,13 +102,18 @@ function selesaiStamp(receipt) {
 function pricingLines(pricing) {
   if (!pricing.showBreakdown) return [];
   const lines = [];
-  if (pricing.hasSurcharge) {
+  if (pricing.hasSurcharge || pricing.hasParfume || pricing.hasGoGreen) {
     lines.push(`Subtotal: ${formatRp(pricing.subtotal)}`);
-    lines.push(`Biaya Express: +${formatRp(pricing.surcharge)}`);
+    if (pricing.hasSurcharge) lines.push(`Biaya Express: +${formatRp(pricing.surcharge)}`);
+    if (pricing.hasParfume) lines.push(`Parfum: +${formatRp(pricing.parfumeTotal)}`);
+    if (pricing.hasGoGreen) lines.push(`Kemasan Go-Green: -${formatRp(pricing.goGreenTotal)}`);
   }
   lines.push(`Harga normal: ${formatRp(pricing.original)}`);
-  if (pricing.hasPromo) {
-    lines.push(`🎁 Promo ${pricing.promoName}: -${formatRp(pricing.discount)}`);
+  if (pricing.hasManualPromo) {
+    lines.push(`🎁 Promo ${pricing.promoName}: -${formatRp(pricing.manualDiscount)}`);
+  }
+  if (pricing.hasMemberPromo) {
+    lines.push(`💳 Promo Member ${pricing.memberPromoName}: -${formatRp(pricing.memberDiscount)}`);
   }
   lines.push('');
   return lines;
@@ -151,7 +159,7 @@ export function buildDigitalNotaBody(receipt) {
     '',
     ...pricingLines(pricing),
     `*TOTAL · ${formatRp(receipt.grandTotal)}*`,
-    ...(pricing.hasPromo ? [`_Anda hemat ${formatRp(pricing.discount)}_`] : []),
+    ...(pricing.saved > 0 ? [`_Anda hemat ${formatRp(pricing.saved)}_`] : []),
     `Pembayaran: *${paymentLabel(receipt)}*`,
     ...memberLines(receipt)
   ].join('\n');
